@@ -1,11 +1,12 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Plus, Trash2, Mail, MessageCircle, Instagram, Clock, Send, Save, Layers } from 'lucide-react';
+import { Plus, Trash2, Mail, MessageCircle, Instagram, Clock, Send, Save, Layers, Sparkles, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
 import { ChannelIcon } from '@/components/ChannelIcon';
 import type { Store } from '@/store';
 import type { Campaign, SequenceStep, Channel } from '@/types';
 import { uid } from '@/mockData';
+import { api } from '@/services/api';
 
 const channelOptions: { value: Channel; label: string; icon: typeof Mail }[] = [
   { value: 'email', label: 'Email', icon: Mail },
@@ -33,14 +34,16 @@ export function CampaignBuilderPage({ store }: Props) {
   const [targetCategory, setTargetCategory] = useState<string>('all');
   const [targetChannel, setTargetChannel] = useState<Channel | 'all'>('all');
   const [steps, setSteps] = useState<SequenceStep[]>([
-    { id: uid('step'), name: 'Intro', channel: 'email', delayDays: 0, body: '' },
+    { id: uid('step'), name: 'Intro Outreach', channel: 'email', delayDays: 0, body: '' },
   ]);
+  const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [aiGeneratingId, setAiGeneratingId] = useState<string | null>(null);
 
   const addStep = useCallback(() => {
     setSteps((prev) => [
       ...prev,
-      { id: uid('step'), name: `Step ${prev.length + 1}`, channel: 'email', delayDays: 4, body: '' },
+      { id: uid('step'), name: `Follow-up ${prev.length}`, channel: 'email', delayDays: 4, body: '' },
     ]);
     setSaved(false);
   }, []);
@@ -68,19 +71,49 @@ export function CampaignBuilderPage({ store }: Props) {
     });
   }, [store.leads, targetCategory, targetChannel]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!campaignName.trim()) return;
-    const campaign: Campaign = {
-      id: uid('camp'),
-      name: campaignName,
-      targetCategory,
-      targetChannel,
-      steps,
-      createdAt: new Date().toISOString(),
-    };
-    store.addCampaign(campaign);
-    setSaved(true);
+
+    try {
+      setIsSaving(true);
+      const campaign: Campaign = {
+        id: uid('camp'),
+        name: campaignName.trim(),
+        targetCategory,
+        targetChannel,
+        steps,
+        createdAt: new Date().toISOString(),
+      };
+
+      await store.addCampaign(campaign);
+      setSaved(true);
+    } catch (err) {
+      console.error('Failed to save campaign:', err);
+      alert('Failed to save campaign. Check console logs.');
+    } finally {
+      setIsSaving(false);
+    }
   }, [campaignName, targetCategory, targetChannel, steps, store]);
+
+  // AI draft generator for sequence steps
+  const handleGenerateAi = useCallback(
+    async (stepId: string, channel: Channel) => {
+      try {
+        setAiGeneratingId(stepId);
+        const res = await api.generateAiDraft({
+          category: targetCategory === 'all' ? 'Local Business' : targetCategory,
+          channel,
+          intent: 'Cold outreach meeting booking',
+        });
+        updateStep(stepId, { body: res.draft });
+      } catch (err) {
+        console.error('AI draft generation failed:', err);
+      } finally {
+        setAiGeneratingId(null);
+      }
+    },
+    [targetCategory, updateStep]
+  );
 
   const totalDays = steps.reduce((sum, s) => sum + s.delayDays, 0);
 
@@ -88,10 +121,22 @@ export function CampaignBuilderPage({ store }: Props) {
     <div>
       <PageHeader
         title="Campaign Builder"
-        subtitle="Design outreach sequences with multi-channel steps and segment targeting."
+        subtitle="Design multi-channel outreach drip sequences saved directly to PostgreSQL."
         actions={
-          <button onClick={handleSave} disabled={!campaignName.trim()} className="btn-primary">
-            <Save size={16} /> Save Campaign
+          <button
+            onClick={handleSave}
+            disabled={!campaignName.trim() || isSaving}
+            className="btn-primary"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 size={16} className="animate-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <Save size={16} /> Save Campaign
+              </>
+            )}
           </button>
         }
       />
@@ -99,7 +144,9 @@ export function CampaignBuilderPage({ store }: Props) {
       {saved && (
         <div className="mb-6 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 animate-fade-in">
           <Send size={18} className="text-emerald-600" />
-          <p className="text-sm font-semibold text-emerald-800">Campaign saved — it's now visible in your campaigns list.</p>
+          <p className="text-sm font-semibold text-emerald-800">
+            Campaign saved to PostgreSQL database — sequence is now registered in the system.
+          </p>
         </div>
       )}
 
@@ -112,27 +159,48 @@ export function CampaignBuilderPage({ store }: Props) {
                 <label className="label">Campaign Name</label>
                 <input
                   value={campaignName}
-                  onChange={(e) => { setCampaignName(e.target.value); setSaved(false); }}
-                  placeholder="e.g. Q4 Holiday Outreach"
+                  onChange={(e) => {
+                    setCampaignName(e.target.value);
+                    setSaved(false);
+                  }}
+                  placeholder="e.g. Q4 Growth Sequence"
                   className="input"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">Target Segment — Category</label>
-                  <select value={targetCategory} onChange={(e) => { setTargetCategory(e.target.value); setSaved(false); }} className="input">
+                  <select
+                    value={targetCategory}
+                    onChange={(e) => {
+                      setTargetCategory(e.target.value);
+                      setSaved(false);
+                    }}
+                    className="input"
+                  >
                     <option value="all">All Categories</option>
                     {categoryOptions.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="label">Target Segment — Channel</label>
-                  <select value={targetChannel} onChange={(e) => { setTargetChannel(e.target.value as Channel | 'all'); setSaved(false); }} className="input">
+                  <select
+                    value={targetChannel}
+                    onChange={(e) => {
+                      setTargetChannel(e.target.value as Channel | 'all');
+                      setSaved(false);
+                    }}
+                    className="input"
+                  >
                     <option value="all">Any Channel</option>
                     {channelOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -163,11 +231,29 @@ export function CampaignBuilderPage({ store }: Props) {
                         className="rounded border border-transparent bg-transparent px-2 py-0.5 text-sm font-semibold text-ink-900 hover:border-slate-200 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-200"
                       />
                     </div>
-                    {steps.length > 1 && (
-                      <button onClick={() => removeStep(step.id)} className="text-ink-300 hover:text-red-600 transition-colors">
-                        <Trash2 size={16} />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleGenerateAi(step.id, step.channel)}
+                        disabled={aiGeneratingId === step.id}
+                        className="flex items-center gap-1 text-xs text-brand-600 bg-brand-50 hover:bg-brand-100 px-2 py-1 rounded transition-colors"
+                        title="Generate copy with Ollama AI"
+                      >
+                        {aiGeneratingId === step.id ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={12} />
+                        )}
+                        <span>AI Draft</span>
                       </button>
-                    )}
+                      {steps.length > 1 && (
+                        <button
+                          onClick={() => removeStep(step.id)}
+                          className="text-ink-300 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 mb-3">
@@ -206,7 +292,9 @@ export function CampaignBuilderPage({ store }: Props) {
                           type="number"
                           min={0}
                           value={step.delayDays}
-                          onChange={(e) => updateStep(step.id, { delayDays: Math.max(0, parseInt(e.target.value) || 0) })}
+                          onChange={(e) =>
+                            updateStep(step.id, { delayDays: Math.max(0, parseInt(e.target.value) || 0) })
+                          }
                           className="input pl-9"
                         />
                       </div>
@@ -214,11 +302,11 @@ export function CampaignBuilderPage({ store }: Props) {
                   </div>
 
                   <div>
-                    <label className="label">Message Body</label>
+                    <label className="label">Message Body Template</label>
                     <textarea
                       value={step.body}
                       onChange={(e) => updateStep(step.id, { body: e.target.value })}
-                      placeholder="Write your message here. Use {businessName} or {category} as placeholders..."
+                      placeholder="Write your message here. Supports {{business_name}}, {{category}} placeholders..."
                       rows={4}
                       className="textarea"
                     />
@@ -239,9 +327,15 @@ export function CampaignBuilderPage({ store }: Props) {
               {steps.map((step, idx) => (
                 <div key={step.id} className="flex gap-3">
                   <div className="flex flex-col items-center">
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-white shrink-0 ${
-                      step.channel === 'email' ? 'bg-brand-500' : step.channel === 'whatsapp' ? 'bg-emerald-500' : 'bg-violet-500'
-                    }`}>
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-white shrink-0 ${
+                        step.channel === 'email'
+                          ? 'bg-brand-500'
+                          : step.channel === 'whatsapp'
+                          ? 'bg-emerald-500'
+                          : 'bg-violet-500'
+                      }`}
+                    >
                       <ChannelIcon channel={step.channel} size={14} className="text-white" />
                     </div>
                     {idx < steps.length - 1 && <div className="w-px h-12 bg-slate-200" />}
@@ -300,7 +394,7 @@ export function CampaignBuilderPage({ store }: Props) {
 
       {store.campaigns.length > 0 && (
         <div className="mt-8">
-          <h3 className="mb-3 text-sm font-bold text-ink-900">Saved Campaigns</h3>
+          <h3 className="mb-3 text-sm font-bold text-ink-900">Database Campaigns ({store.campaigns.length})</h3>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {store.campaigns.map((camp) => (
               <div key={camp.id} className="card p-4">
@@ -313,9 +407,15 @@ export function CampaignBuilderPage({ store }: Props) {
                   {camp.steps.map((s, i) => (
                     <span key={s.id} className="flex items-center gap-1">
                       {i > 0 && <span className="text-ink-300 text-xs">→</span>}
-                      <span className={`flex h-6 w-6 items-center justify-center rounded-full text-white ${
-                        s.channel === 'email' ? 'bg-brand-500' : s.channel === 'whatsapp' ? 'bg-emerald-500' : 'bg-violet-500'
-                      }`}>
+                      <span
+                        className={`flex h-6 w-6 items-center justify-center rounded-full text-white ${
+                          s.channel === 'email'
+                            ? 'bg-brand-500'
+                            : s.channel === 'whatsapp'
+                            ? 'bg-emerald-500'
+                            : 'bg-violet-500'
+                        }`}
+                      >
                         <ChannelIcon channel={s.channel} size={11} className="text-white" />
                       </span>
                     </span>

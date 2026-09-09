@@ -4,6 +4,7 @@ interface BadgeProps {
   variant?: 'gray' | 'green' | 'blue' | 'yellow' | 'red' | 'purple';
   children: ReactNode;
   className?: string;
+  title?: string;
 }
 
 const variantMap: Record<NonNullable<BadgeProps['variant']>, string> = {
@@ -15,6 +16,6 @@ const variantMap: Record<NonNullable<BadgeProps['variant']>, string> = {
   purple: 'badge-purple',
 };
 
-export function Badge({ variant = 'gray', children, className = '' }: BadgeProps) {
-  return <span className={`${variantMap[variant]} ${className}`}>{children}</span>;
+export function Badge({ variant = 'gray', children, className = '', title }: BadgeProps) {
+  return <span title={title} className={`${variantMap[variant]} ${className}`}>{children}</span>;
 }

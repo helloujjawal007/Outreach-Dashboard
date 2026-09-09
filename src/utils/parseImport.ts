@@ -11,17 +11,22 @@ export interface ParsedLeadRow {
   facebook: string;
   whatsapp: string;
   isDuplicate: boolean;
+  duplicateReason?: string;
   isIncomplete: boolean;
 }
 
 function cleanValue(v: string): string {
-  return v.trim();
+  return v.replace(/^["']|["']$/g, '').trim();
+}
+
+function normalizePhone(p: string): string {
+  return p.replace(/\D/g, '');
 }
 
 /**
  * Parses pasted raw text or CSV content into lead rows.
  * Expected CSV header: business_name,category,phone,email,instagram,facebook,whatsapp
- * If no header is detected, tries comma-separated pipe fallback.
+ * Supports varied headers like company, industry, tel, ig, wa, fb.
  */
 export function parseImport(rawText: string): ParsedLeadRow[] {
   const text = rawText.trim();
@@ -33,32 +38,41 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
   const firstLine = lines[0].toLowerCase();
   const hasHeader =
     firstLine.includes('business') ||
+    firstLine.includes('company') ||
     firstLine.includes('email') ||
     firstLine.includes('phone') ||
     firstLine.includes('name');
 
   const dataLines = hasHeader ? lines.slice(1) : lines;
-  const headers = hasHeader
-    ? firstLine.split(',').map((h) => h.trim())
-    : ['business_name', 'category', 'phone', 'email', 'instagram', 'facebook', 'whatsapp'];
+  const rawHeaders = hasHeader
+    ? parseCsvLine(lines[0]).map((h) => h.toLowerCase().trim().replace(/[\s_-]+/g, ''))
+    : ['businessname', 'category', 'phone', 'email', 'instagram', 'facebook', 'whatsapp'];
 
   const rows: ParsedLeadRow[] = [];
 
   for (const line of dataLines) {
+    if (!line.trim()) continue;
     const parts = parseCsvLine(line);
-    const get = (key: string): string => {
-      const idx = headers.indexOf(key);
-      return idx >= 0 ? cleanValue(parts[idx] || '') : '';
+
+    const get = (...possibleKeys: string[]): string => {
+      for (const key of possibleKeys) {
+        const idx = rawHeaders.findIndex((h) => h === key || h.includes(key));
+        if (idx >= 0 && parts[idx]) {
+          return cleanValue(parts[idx]);
+        }
+      }
+      return '';
     };
 
-    const businessName = get('business_name') || get('business') || get('name') || '';
-    const category = get('category') || get('notes') || '';
-    const phone = get('phone') || '';
-    const email = get('email') || '';
-    const instagram = get('instagram') || get('ig') || '';
-    const facebook = get('facebook') || get('fb') || '';
-    const whatsapp = get('whatsapp') || get('wa') || '';
+    const businessName = get('businessname', 'company', 'name', 'business') || '';
+    const category = get('category', 'industry', 'niche', 'notes') || '';
+    const phone = get('phone', 'tel', 'mobile', 'cell') || '';
+    const email = get('email', 'mail') || '';
+    const instagram = get('instagram', 'ig', 'insta') || '';
+    const facebook = get('facebook', 'fb') || '';
+    const whatsapp = get('whatsapp', 'wa') || '';
 
+    // Ignore completely empty rows
     if (!businessName && !email && !phone && !instagram && !facebook && !whatsapp) continue;
 
     rows.push({
@@ -79,6 +93,7 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
 }
 
 function parseCsvLine(line: string): string[] {
+  const delimiter = line.includes('\t') ? '\t' : ',';
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -92,7 +107,7 @@ function parseCsvLine(line: string): string[] {
       } else {
         inQuotes = !inQuotes;
       }
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       result.push(current);
       current = '';
     } else {
@@ -103,17 +118,54 @@ function parseCsvLine(line: string): string[] {
   return result;
 }
 
-export function markDuplicates(rows: ParsedLeadRow[], existingLeads: Lead[]): ParsedLeadRow[] {
+/**
+ * Deduplicates rows against:
+ * 1. Existing database leads & clients
+ * 2. Intra-batch duplicates (same email or phone appearing twice in the file)
+ */
+export function markDuplicates(rows: ParsedLeadRow[], existingRecords: Lead[]): ParsedLeadRow[] {
+  const seenEmails = new Set<string>();
+  const seenPhones = new Set<string>();
+
+  // Pre-populate with existing database records (both leads and clients)
+  for (const item of existingRecords) {
+    if (item.email) seenEmails.add(item.email.trim().toLowerCase());
+    const digits = normalizePhone(item.phone || '');
+    if (digits) seenPhones.add(digits);
+  }
+
   return rows.map((row) => {
-    const isDuplicate = existingLeads.some((lead) => {
-      if (row.email && lead.email && row.email.toLowerCase() === lead.email.toLowerCase()) return true;
-      if (row.phone && lead.phone && row.phone.replace(/\D/g, '') === lead.phone.replace(/\D/g, '')) return true;
-      return false;
-    });
-    return { ...row, isDuplicate };
+    const emailKey = row.email ? row.email.trim().toLowerCase() : '';
+    const phoneKey = row.phone ? normalizePhone(row.phone) : '';
+
+    let isDuplicate = false;
+    let duplicateReason = '';
+
+    if (emailKey && seenEmails.has(emailKey)) {
+      isDuplicate = true;
+      duplicateReason = `Email ${emailKey} already exists`;
+    } else if (phoneKey && phoneKey.length >= 7 && seenPhones.has(phoneKey)) {
+      isDuplicate = true;
+      duplicateReason = `Phone number already exists`;
+    }
+
+    // If this row is valid and not a dupe, record it so subsequent batch items with same details are caught
+    if (!isDuplicate) {
+      if (emailKey) seenEmails.add(emailKey);
+      if (phoneKey && phoneKey.length >= 7) seenPhones.add(phoneKey);
+    }
+
+    return {
+      ...row,
+      isDuplicate,
+      duplicateReason,
+    };
   });
 }
 
+/**
+ * Flags rows missing all contact channels (email, phone, IG, FB, WA)
+ */
 export function markIncomplete(rows: ParsedLeadRow[]): ParsedLeadRow[] {
   return rows.map((row) => {
     const hasContact =

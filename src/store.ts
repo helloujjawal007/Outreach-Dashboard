@@ -11,6 +11,8 @@ import type {
   Client,
   AutoSendNextResult,
   InboundReplyMessage,
+  ScheduledDispatch,
+  ScheduleListRequest,
 } from './types';
 import { api, type HealthResponse, type SendReplyResult } from './services/api';
 
@@ -22,6 +24,7 @@ export function useStore() {
   const [conversations, setConversations] = useState<ConversationMessage[]>([]);
   const [inboundReplies, setInboundReplies] = useState<InboundReplyMessage[]>([]);
   const [latestReplyNotification, setLatestReplyNotification] = useState<InboundReplyMessage | null>(null);
+  const [dispatches, setDispatches] = useState<ScheduledDispatch[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse['health'] | null>(null);
@@ -35,7 +38,7 @@ export function useStore() {
       setLoading(true);
       setError(null);
 
-      const [leadsData, clientsData, campaignsData, queueData, healthData, listsData, batchesData, trashData, inboundData] = await Promise.all([
+      const [leadsData, clientsData, campaignsData, queueData, healthData, listsData, batchesData, trashData, inboundData, dispatchesData] = await Promise.all([
         api.getLeads(listId, batchId).catch((err) => {
           console.error('Failed to load leads:', err);
           return [] as Lead[];
@@ -72,6 +75,10 @@ export function useStore() {
           console.error('Failed to load inbound replies:', err);
           return [] as InboundReplyMessage[];
         }),
+        api.getScheduledDispatches().catch((err) => {
+          console.error('Failed to load scheduled dispatches:', err);
+          return [] as ScheduledDispatch[];
+        }),
       ]);
 
       // If a specific list or batch is selected, only show leads matching that filter
@@ -86,6 +93,7 @@ export function useStore() {
       setBatches(batchesData);
       setTrashLeads(trashData);
       setInboundReplies(inboundData);
+      setDispatches(dispatchesData);
       setCampaigns(campaignsData);
       setQueue(queueData);
       if (healthData) {
@@ -98,6 +106,42 @@ export function useStore() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const fetchDispatches = useCallback(async (filter?: { status?: string; listId?: string }) => {
+    try {
+      const data = await api.getScheduledDispatches(filter);
+      setDispatches(data);
+    } catch (err) {
+      console.error('Failed to fetch scheduled dispatches:', err);
+    }
+  }, []);
+
+  const scheduleListDispatch = useCallback(
+    async (params: ScheduleListRequest) => {
+      const res = await api.scheduleListDispatch(params);
+      await fetchDispatches();
+      return res;
+    },
+    [fetchDispatches]
+  );
+
+  const cancelScheduledDispatch = useCallback(async (id: string) => {
+    await api.cancelScheduledDispatch(id);
+    setDispatches((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status: 'cancelled' as const } : d))
+    );
+  }, []);
+
+  const retryScheduledDispatch = useCallback(async (id: string) => {
+    await api.retryScheduledDispatch(id);
+    setDispatches((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? { ...d, status: 'scheduled' as const, scheduled_for: new Date().toISOString() }
+          : d
+      )
+    );
   }, []);
 
 
@@ -188,6 +232,19 @@ export function useStore() {
     }
   }, []);
 
+  // Unmark client and revert back to active lead
+  const unmarkClient = useCallback(async (clientId: string) => {
+    try {
+      const res = await api.unmarkClient(clientId);
+      const [freshLeads, freshClients] = await Promise.all([api.getLeads(), api.getClients()]);
+      setLeads([...freshLeads, ...freshClients]);
+      return res;
+    } catch (err) {
+      console.error('[Store] unmarkClient error:', err);
+      throw err;
+    }
+  }, []);
+
   // Update lead consent status
   const updateLeadConsent = useCallback(async (leadId: string, status: ConsentStatus) => {
     try {
@@ -220,7 +277,7 @@ export function useStore() {
           setQueue(freshQueue);
         }
 
-        // If recipient was a lead, refresh conversation history
+        // If recipient was a lead or client, refresh conversation history
         const entityId = params.leadId || params.clientId;
         if (entityId) {
           const msgs = params.clientId
@@ -230,6 +287,14 @@ export function useStore() {
             const others = prev.filter((m) => m.leadId !== entityId);
             return [...others, ...msgs];
           });
+        }
+
+        // Inbound inbox update: Immediately refresh inbound replies so answered messages leave the queue
+        try {
+          const freshInbound = await api.getInboundReplies();
+          setInboundReplies(freshInbound);
+        } catch (inboundErr) {
+          console.warn('[Store] Background inbound refresh warning:', inboundErr);
         }
 
         return res;
@@ -332,6 +397,36 @@ export function useStore() {
 
   const triggerNotification = useCallback((reply: InboundReplyMessage) => {
     setLatestReplyNotification(reply);
+  }, []);
+
+  const markInboundSeen = useCallback(async (replyId: string) => {
+    try {
+      await api.markInboundSeen(replyId);
+      const updated = await api.getInboundReplies();
+      setInboundReplies(updated);
+    } catch (err) {
+      console.error('[Store] markInboundSeen error:', err);
+    }
+  }, []);
+
+  const markInboundHandled = useCallback(async (replyId: string) => {
+    try {
+      await api.markInboundHandled(replyId);
+      const updated = await api.getInboundReplies();
+      setInboundReplies(updated);
+    } catch (err) {
+      console.error('[Store] markInboundHandled error:', err);
+    }
+  }, []);
+
+  const markEntityInboundSeen = useCallback(async (entityType: 'lead' | 'client', entityId: string) => {
+    try {
+      await api.markEntityInboundSeen(entityType, entityId);
+      const updated = await api.getInboundReplies();
+      setInboundReplies(updated);
+    } catch (err) {
+      console.error('[Store] markEntityInboundSeen error:', err);
+    }
   }, []);
 
   // Synchronize incoming email replies from Gmail IMAP
@@ -515,8 +610,13 @@ export function useStore() {
   const addLeadsToList = useCallback(async (listId: string, leadIds: string[]) => {
     try {
       await api.addLeadsToList(listId, leadIds);
-      const freshLists = await api.getLists();
+      const [freshLists, freshLeads, freshClients] = await Promise.all([
+        api.getLists(),
+        api.getLeads(),
+        api.getClients(),
+      ]);
       setLists(freshLists);
+      setLeads([...freshLeads, ...freshClients]);
     } catch (err) {
       console.error('[Store] addLeadsToList error:', err);
       throw err;
@@ -526,10 +626,31 @@ export function useStore() {
   const removeLeadsFromList = useCallback(async (listId: string, leadIds: string[]) => {
     try {
       await api.removeLeadsFromList(listId, leadIds);
-      const freshLists = await api.getLists();
+      const [freshLists, freshLeads, freshClients] = await Promise.all([
+        api.getLists(),
+        api.getLeads(),
+        api.getClients(),
+      ]);
       setLists(freshLists);
+      setLeads([...freshLeads, ...freshClients]);
     } catch (err) {
       console.error('[Store] removeLeadsFromList error:', err);
+      throw err;
+    }
+  }, []);
+
+  const removeLeadFromList = useCallback(async (listId: string, leadId: string) => {
+    try {
+      await api.removeLeadFromList(listId, leadId);
+      const [freshLists, freshLeads, freshClients] = await Promise.all([
+        api.getLists(),
+        api.getLeads(),
+        api.getClients(),
+      ]);
+      setLists(freshLists);
+      setLeads([...freshLeads, ...freshClients]);
+    } catch (err) {
+      console.error('[Store] removeLeadFromList error:', err);
       throw err;
     }
   }, []);
@@ -718,6 +839,7 @@ export function useStore() {
       deleteList,
       addLeadsToList,
       removeLeadsFromList,
+      removeLeadFromList,
       fetchBatches,
       shootBatchEmails,
       deleteBatch,
@@ -731,6 +853,7 @@ export function useStore() {
       clearTrash,
       autoSendNextStep,
       convertToClient,
+      unmarkClient,
       updateLeadConsent,
       updateLeadStatus,
       bulkUpdateLeadStatus,
@@ -745,10 +868,23 @@ export function useStore() {
       inboundReplies,
       latestReplyNotification,
       fetchInboundReplies,
+      markInboundSeen,
+      markInboundHandled,
+      markEntityInboundSeen,
       dismissNotification,
       triggerNotification,
+      dispatches,
+      fetchDispatches,
+      scheduleListDispatch,
+      cancelScheduledDispatch,
+      retryScheduledDispatch,
     }),
     [
+      dispatches,
+      fetchDispatches,
+      scheduleListDispatch,
+      cancelScheduledDispatch,
+      retryScheduledDispatch,
       leads,
       lists,
       batches,
@@ -770,6 +906,7 @@ export function useStore() {
       deleteList,
       addLeadsToList,
       removeLeadsFromList,
+      removeLeadFromList,
       fetchBatches,
       shootBatchEmails,
       deleteBatch,
@@ -783,6 +920,7 @@ export function useStore() {
       clearTrash,
       autoSendNextStep,
       convertToClient,
+      unmarkClient,
       updateLeadConsent,
       updateLeadStatus,
       bulkUpdateLeadStatus,
@@ -797,6 +935,9 @@ export function useStore() {
       inboundReplies,
       latestReplyNotification,
       fetchInboundReplies,
+      markInboundSeen,
+      markInboundHandled,
+      markEntityInboundSeen,
       dismissNotification,
       triggerNotification,
     ]

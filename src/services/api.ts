@@ -11,6 +11,9 @@ import type {
   Client,
   AutoSendNextResult,
   InboundReplyMessage,
+  ScheduledDispatch,
+  ScheduleListRequest,
+  HumanizerPreviewResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -58,6 +61,7 @@ export interface BackendLead {
   days_remaining?: number;
   notes?: string;
   status?: 'active' | 'inactive' | 'paused';
+  lists?: Array<{ id: string; name: string }>;
 }
 
 export interface BackendClient {
@@ -221,6 +225,7 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     daysRemaining: b.days_remaining,
     notes: b.notes || '',
     status: b.status || 'active',
+    lists: b.lists || [],
   };
 }
 
@@ -477,6 +482,12 @@ export const api = {
     });
   },
 
+  async removeLeadFromList(listId: string, leadId: string): Promise<void> {
+    await request(`/lists/${listId}/members/${leadId}`, {
+      method: 'DELETE',
+    });
+  },
+
   async importLeads(leads: Partial<Lead>[], batchName?: string): Promise<{
     importedCount: number;
     duplicateCount: number;
@@ -533,6 +544,21 @@ export const api = {
     return {
       success: data.success,
       client: mapBackendClientToLead(data.client),
+      message: data.message,
+    };
+  },
+
+  async unmarkClient(clientId: string): Promise<{ success: boolean; lead: Lead; message?: string }> {
+    const data = await request<{
+      success: boolean;
+      lead: BackendLead;
+      message?: string;
+    }>(`/clients/${clientId}/unmark`, {
+      method: 'POST',
+    });
+    return {
+      success: data.success,
+      lead: mapBackendLeadToLead(data.lead),
       message: data.message,
     };
   },
@@ -604,12 +630,37 @@ export const api = {
     });
   },
 
-  async getInboundReplies(channel?: string): Promise<InboundReplyMessage[]> {
-    const queryStr = channel && channel !== 'all' ? `?channel=${channel}` : '';
+  async getInboundReplies(
+    channel?: string,
+    status: 'pending' | 'handled' | 'all' = 'pending'
+  ): Promise<InboundReplyMessage[]> {
+    const params = new URLSearchParams();
+    if (channel && channel !== 'all') params.append('channel', channel);
+    if (status !== 'pending') params.append('status', status);
+    const queryStr = params.toString() ? `?${params.toString()}` : '';
+
     const data = await request<{ success: boolean; count: number; replies: InboundReplyMessage[] }>(
       `/conversations/inbound-replies${queryStr}`
     );
     return data.replies || [];
+  },
+
+  async markInboundSeen(id: string): Promise<void> {
+    await request(`/conversations/inbound-replies/${id}/seen`, {
+      method: 'POST',
+    });
+  },
+
+  async markInboundHandled(id: string): Promise<void> {
+    await request(`/conversations/inbound-replies/${id}/handled`, {
+      method: 'POST',
+    });
+  },
+
+  async markEntityInboundSeen(entityType: 'lead' | 'client', entityId: string): Promise<void> {
+    await request(`/conversations/entity/${entityType}/${entityId}/seen`, {
+      method: 'POST',
+    });
   },
 
   // Campaigns
@@ -718,4 +769,65 @@ export const api = {
       method: 'POST',
     });
   },
+
+  // Automated Email Scheduler & Humanizer
+  async previewHumanizedEmail(params: {
+    listId?: string;
+    leadId?: string;
+    style?: 'conversational' | 'direct' | 'curious';
+    stage?: string;
+    customInstructions?: string;
+  }): Promise<HumanizerPreviewResponse> {
+    return request<HumanizerPreviewResponse>('/scheduler/preview', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  async scheduleListDispatch(params: ScheduleListRequest): Promise<{
+    success: boolean;
+    scheduledCount: number;
+    listName: string;
+    scheduledFor: string;
+    message: string;
+  }> {
+    return request<{
+      success: boolean;
+      scheduledCount: number;
+      listName: string;
+      scheduledFor: string;
+      message: string;
+    }>('/scheduler/schedule-list', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  async getScheduledDispatches(filter?: {
+    status?: string;
+    listId?: string;
+    limit?: number;
+  }): Promise<ScheduledDispatch[]> {
+    const params = new URLSearchParams();
+    if (filter?.status && filter.status !== 'all') params.append('status', filter.status);
+    if (filter?.listId && filter.listId !== 'all') params.append('listId', filter.listId);
+    if (filter?.limit) params.append('limit', String(filter.limit));
+
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await request<{ success: boolean; dispatches: ScheduledDispatch[] }>(`/scheduler/dispatches${qs}`);
+    return res.dispatches;
+  },
+
+  async cancelScheduledDispatch(id: string): Promise<void> {
+    await request(`/scheduler/dispatches/${id}/cancel`, {
+      method: 'POST',
+    });
+  },
+
+  async retryScheduledDispatch(id: string): Promise<void> {
+    await request(`/scheduler/dispatches/${id}/retry`, {
+      method: 'POST',
+    });
+  },
 };
+

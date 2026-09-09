@@ -118,3 +118,23 @@ listsRouter.delete('/:id/members', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to remove leads from list' });
   }
 });
+
+// DELETE /api/lists/:id/members/:leadId - Remove a single lead from a list
+listsRouter.delete('/:id/members/:leadId', async (req: Request, res: Response) => {
+  try {
+    const listId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const leadId = Array.isArray(req.params.leadId) ? req.params.leadId[0] : req.params.leadId;
+
+    const resDelete = await query(
+      `DELETE FROM lead_list_memberships
+       WHERE list_id = $1 AND lead_id = $2
+       RETURNING lead_id`,
+      [listId, leadId]
+    );
+
+    res.json({ success: true, removedCount: resDelete.rows.length });
+  } catch (error) {
+    console.error('[listsRouter.removeSingleMember]', error);
+    res.status(500).json({ success: false, error: 'Failed to remove lead from list' });
+  }
+});

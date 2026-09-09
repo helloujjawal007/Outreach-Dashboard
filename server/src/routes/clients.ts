@@ -224,3 +224,91 @@ const handleUpdateClient = async (req: Request, res: Response) => {
 
 clientsRouter.put('/:id', handleUpdateClient);
 clientsRouter.patch('/:id', handleUpdateClient);
+
+// POST /api/clients/:id/unmark - Unmark as client and revert back to an active lead
+clientsRouter.post('/:id/unmark', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const clientRes = await query(`SELECT * FROM clients WHERE id = $1`, [id]);
+    if (clientRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Client not found' });
+    }
+
+    const client = clientRes.rows[0];
+    const targetLeadId = client.original_lead_id || client.id;
+
+    // 1. Re-insert or restore lead record
+    await query(
+      `INSERT INTO leads (
+        id, business_name, category, phone, email, instagram, facebook, whatsapp,
+        notes, consent_status, status, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', 'active', COALESCE($10, NOW()), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        deleted_at = NULL,
+        deleted_expires_at = NULL,
+        business_name = EXCLUDED.business_name,
+        category = EXCLUDED.category,
+        phone = EXCLUDED.phone,
+        email = EXCLUDED.email,
+        instagram = EXCLUDED.instagram,
+        facebook = EXCLUDED.facebook,
+        whatsapp = EXCLUDED.whatsapp,
+        notes = EXCLUDED.notes,
+        consent_status = 'none',
+        status = 'active',
+        updated_at = NOW()`,
+      [
+        targetLeadId,
+        client.business_name,
+        client.category,
+        client.phone,
+        client.email,
+        client.instagram,
+        client.facebook,
+        client.whatsapp,
+        client.notes,
+        client.onboarded_at || client.created_at,
+      ]
+    );
+
+    // 2. Re-point conversation thread from client to lead
+    await query(
+      `UPDATE conversations 
+       SET entity_type = 'lead', lead_id = $1, client_id = NULL 
+       WHERE entity_type = 'client' AND client_id = $2`,
+      [targetLeadId, id]
+    );
+
+    // 3. Remove client retention / follow-up scheduler records
+    await query(`DELETE FROM follow_up_logs WHERE client_id = $1`, [id]);
+
+    // 4. Remove from clients table
+    await query(`DELETE FROM clients WHERE id = $1`, [id]);
+
+    // 5. Fetch restored lead with list memberships
+    const restoredRes = await query(
+      `SELECT l.*,
+              COALESCE(
+                (SELECT json_agg(json_build_object('id', lst.id, 'name', lst.name))
+                 FROM lead_list_memberships m
+                 JOIN lists lst ON lst.id = m.list_id
+                 WHERE m.lead_id = l.id),
+                '[]'::json
+              ) AS lists
+       FROM leads l WHERE l.id = $1`,
+      [targetLeadId]
+    );
+
+    console.log(`[clientsRouter.unmark] Successfully reverted Client ${id} -> Lead ${targetLeadId}`);
+    res.json({
+      success: true,
+      lead: restoredRes.rows[0],
+      message: `"${client.business_name}" unmarked as client and restored to active leads.`,
+    });
+  } catch (error) {
+    console.error('[clientsRouter.unmark]', error);
+    res.status(500).json({ success: false, error: 'Failed to unmark client' });
+  }
+});

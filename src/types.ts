@@ -24,6 +24,7 @@ export interface Lead {
   notes?: string;
   primaryContactName?: string;
   status?: 'active' | 'inactive' | 'paused' | 'churned';
+  lists?: Array<{ id: string; name: string }>;
 }
 
 export interface Client {
@@ -100,6 +101,10 @@ export interface InboundReplyMessage {
   text: string;
   sent_at: string;
   status: string;
+  is_seen?: boolean;
+  seen_at?: string | null;
+  is_replied?: boolean;
+  replied_at?: string | null;
   entity_type: 'lead' | 'client';
   lead_id?: string | null;
   client_id?: string | null;
@@ -167,3 +172,52 @@ export const consentLabels: Record<ConsentStatus, string> = {
   replied: 'Replied',
   opted_out: 'Opted out',
 };
+
+export interface ScheduledDispatch {
+  id: string;
+  list_id?: string;
+  list_name: string;
+  entity_type: 'lead' | 'client';
+  lead_id?: string;
+  client_id?: string;
+  recipient_email: string;
+  recipient_name: string;
+  subject: string;
+  body: string;
+  stage: string;
+  style: string;
+  status: 'scheduled' | 'processing' | 'sent' | 'failed' | 'cancelled';
+  scheduled_for: string;
+  sent_at?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduleListRequest {
+  listId: string;
+  scheduledFor?: string;
+  style?: 'conversational' | 'direct' | 'curious';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  customInstructions?: string;
+}
+
+export interface HumanizerPreviewResponse {
+  success: boolean;
+  sampleContact: {
+    id: string;
+    business_name: string;
+    primary_contact_name?: string;
+    email?: string;
+    category?: string;
+    notes?: string;
+  };
+  preview: {
+    subject: string;
+    body: string;
+    stage: string;
+    isAiGenerated: boolean;
+    modelUsed: string;
+  };
+}
+

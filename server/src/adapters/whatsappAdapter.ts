@@ -144,6 +144,14 @@ export class WhatsAppAdapter {
       [convId, text]
     );
 
+    // Mark all preceding inbound messages in this thread as replied & seen
+    await query(
+      `UPDATE messages
+       SET is_replied = true, replied_at = NOW(), is_seen = true, seen_at = COALESCE(seen_at, NOW())
+       WHERE conversation_id = $1 AND direction = 'inbound' AND (is_replied IS NOT TRUE OR is_seen IS NOT TRUE)`,
+      [convId]
+    );
+
     await query(`UPDATE conversations SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`, [convId]);
 
     // Record daily metric

@@ -89,6 +89,20 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
         text,
       });
 
+      if (sendResult.allowed) {
+        // Mark all preceding inbound messages for this lead as replied & seen
+        await query(
+          `UPDATE messages m
+           SET is_replied = true, replied_at = NOW(), is_seen = true, seen_at = COALESCE(seen_at, NOW())
+           FROM conversations c
+           WHERE m.conversation_id = c.id
+             AND c.entity_type = 'lead' AND c.lead_id = $1
+             AND m.direction = 'inbound'
+             AND (m.is_replied IS NOT TRUE OR m.is_seen IS NOT TRUE)`,
+          [leadId]
+        );
+      }
+
       return res.json({
         success: sendResult.allowed,
         result: sendResult,
@@ -163,6 +177,14 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
 
       await query(
         `UPDATE conversations SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [convId]
+      );
+
+      // Mark all preceding inbound messages in this client conversation as replied & seen
+      await query(
+        `UPDATE messages
+         SET is_replied = true, replied_at = NOW(), is_seen = true, seen_at = COALESCE(seen_at, NOW())
+         WHERE conversation_id = $1 AND direction = 'inbound' AND (is_replied IS NOT TRUE OR is_seen IS NOT TRUE)`,
         [convId]
       );
 
@@ -313,10 +335,13 @@ conversationsRouter.get('/sync-inbox', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/conversations/inbound-replies - Fetch all inbound replies across leads & clients
+// GET /api/conversations/inbound-replies - Fetch inbound replies (defaults to pending/unhandled)
 conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) => {
   try {
     const channel = req.query.channel as string;
+    const status = (req.query.status as string) || 'pending'; // 'pending' | 'handled' | 'all'
+    const includeHandled = req.query.includeHandled === 'true' || status === 'all';
+
     let sql = `
       SELECT 
         m.id,
@@ -326,6 +351,10 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
         m.text,
         m.sent_at,
         m.status,
+        COALESCE(m.is_seen, false) AS is_seen,
+        m.seen_at,
+        COALESCE(m.is_replied, false) AS is_replied,
+        m.replied_at,
         c.entity_type,
         c.lead_id,
         c.client_id,
@@ -342,10 +371,34 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
       WHERE m.direction = 'inbound'
     `;
     const params: any[] = [];
+    let paramIdx = 1;
+
     if (channel && channel !== 'all') {
       params.push(channel);
-      sql += ` AND m.channel = $1`;
+      sql += ` AND m.channel = $${paramIdx++}`;
     }
+
+    if (!includeHandled) {
+      if (status === 'handled') {
+        sql += ` AND (m.is_replied IS TRUE OR m.is_seen IS TRUE OR EXISTS (
+          SELECT 1 FROM messages out_m 
+          WHERE out_m.conversation_id = m.conversation_id 
+            AND out_m.direction = 'outbound' 
+            AND out_m.sent_at >= m.sent_at
+        ))`;
+      } else {
+        // Pending queue: Not replied, not seen, and no outbound reply sent after this inbound message
+        sql += ` AND COALESCE(m.is_replied, false) = false 
+                 AND COALESCE(m.is_seen, false) = false 
+                 AND NOT EXISTS (
+                   SELECT 1 FROM messages out_m 
+                   WHERE out_m.conversation_id = m.conversation_id 
+                     AND out_m.direction = 'outbound' 
+                     AND out_m.sent_at >= m.sent_at
+                 )`;
+      }
+    }
+
     sql += ` ORDER BY m.sent_at DESC LIMIT 100`;
 
     const result = await query(sql, params);
@@ -355,5 +408,82 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
     res.status(500).json({ success: false, error: 'Failed to fetch inbound replies' });
   }
 });
+
+// POST /api/conversations/inbound-replies/:id/seen - Mark an inbound message as seen
+conversationsRouter.post('/inbound-replies/:id/seen', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      `UPDATE messages
+       SET is_seen = true, seen_at = COALESCE(seen_at, NOW())
+       WHERE id = $1 AND direction = 'inbound'
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Inbound message not found' });
+    }
+
+    res.json({ success: true, message: result.rows[0] });
+  } catch (error) {
+    console.error('[conversationsRouter.inbound-replies.seen]', error);
+    res.status(500).json({ success: false, error: 'Failed to mark message as seen' });
+  }
+});
+
+// POST /api/conversations/inbound-replies/:id/handled - Mark an inbound message as seen & resolved
+conversationsRouter.post('/inbound-replies/:id/handled', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      `UPDATE messages
+       SET is_seen = true, seen_at = COALESCE(seen_at, NOW()),
+           is_replied = true, replied_at = COALESCE(replied_at, NOW())
+       WHERE id = $1 AND direction = 'inbound'
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Inbound message not found' });
+    }
+
+    res.json({ success: true, message: result.rows[0] });
+  } catch (error) {
+    console.error('[conversationsRouter.inbound-replies.handled]', error);
+    res.status(500).json({ success: false, error: 'Failed to mark message as handled' });
+  }
+});
+
+// POST /api/conversations/entity/:entityType/:id/seen - Mark all inbound messages for a lead/client as seen
+conversationsRouter.post('/entity/:entityType/:id/seen', async (req: Request, res: Response) => {
+  try {
+    const { entityType, id } = req.params;
+    if (entityType !== 'lead' && entityType !== 'client') {
+      return res.status(400).json({ success: false, error: 'entityType must be lead or client' });
+    }
+
+    await query(
+      `UPDATE messages m
+       SET is_seen = true, seen_at = COALESCE(seen_at, NOW())
+       FROM conversations c
+       WHERE m.conversation_id = c.id
+         AND (
+           (c.entity_type = 'lead' AND c.lead_id = $1)
+           OR (c.entity_type = 'client' AND c.client_id = $1)
+         )
+         AND m.direction = 'inbound'
+         AND (m.is_seen IS NOT TRUE)`,
+      [id]
+    );
+
+    res.json({ success: true, message: 'All inbound messages marked as seen' });
+  } catch (error) {
+    console.error('[conversationsRouter.entity.seen]', error);
+    res.status(500).json({ success: false, error: 'Failed to mark entity messages as seen' });
+  }
+});
+
 
 

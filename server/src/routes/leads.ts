@@ -7,15 +7,31 @@ export const leadsRouter = Router();
 leadsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const { consent, category, search, listId, batchId } = req.query;
-    let sql = `SELECT l.* FROM leads l`;
+    let sql = `
+      SELECT l.*,
+             COALESCE(
+               (SELECT json_agg(json_build_object('id', lst.id, 'name', lst.name))
+                FROM lead_list_memberships m
+                JOIN lists lst ON lst.id = m.list_id
+                WHERE m.lead_id = l.id),
+               '[]'::json
+             ) AS lists
+      FROM leads l
+    `;
     const params: unknown[] = [];
 
     if (listId && typeof listId === 'string' && listId !== 'all') {
-      params.push(listId);
-      sql += ` INNER JOIN lead_list_memberships m ON m.lead_id = l.id AND m.list_id = $${params.length}`;
+      if (listId === 'unassigned' || listId === 'none') {
+        sql += ` WHERE NOT EXISTS (SELECT 1 FROM lead_list_memberships m WHERE m.lead_id = l.id)`;
+      } else {
+        params.push(listId);
+        sql += ` INNER JOIN lead_list_memberships m ON m.lead_id = l.id AND m.list_id = $${params.length} WHERE 1=1`;
+      }
+    } else {
+      sql += ` WHERE 1=1`;
     }
 
-    sql += ` WHERE l.deleted_at IS NULL`;
+    sql += ` AND l.deleted_at IS NULL`;
 
     if (batchId && typeof batchId === 'string' && batchId !== 'all') {
       params.push(batchId);
@@ -477,7 +493,18 @@ leadsRouter.delete('/:id/permanent', async (req: Request, res: Response) => {
 leadsRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const result = await query(`SELECT * FROM leads WHERE id = $1`, [id]);
+    const result = await query(
+      `SELECT l.*,
+              COALESCE(
+                (SELECT json_agg(json_build_object('id', lst.id, 'name', lst.name))
+                 FROM lead_list_memberships m
+                 JOIN lists lst ON lst.id = m.list_id
+                 WHERE m.lead_id = l.id),
+                '[]'::json
+              ) AS lists
+       FROM leads l WHERE l.id = $1`,
+      [id]
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }

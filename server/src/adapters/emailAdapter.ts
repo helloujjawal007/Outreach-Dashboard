@@ -36,7 +36,8 @@ export class EmailAdapter {
     { stage: 5, limit: 500, label: 'Mature Sender (Days 15+)' },
   ];
 
-  private currentStageIndex = 2; // Default to Stage 3 (100/day) for active operation
+  // Upgraded to Stage 4 (200/day) by default to safely maximize capacity within Google SMTP limits
+  private currentStageIndex = 3; 
 
   /**
    * Returns current warm-up metrics, today's sent count, and DNS alignment status
@@ -48,14 +49,16 @@ export class EmailAdapter {
 
     const sentToday = todayRes.rows.length > 0 ? Number(todayRes.rows[0].sent_count) : 0;
     const currentTier = this.WARMUP_STAGES[this.currentStageIndex];
-    const remainingToday = Math.max(0, currentTier.limit - sentToday);
-    const isThrottled = sentToday >= currentTier.limit;
+    const configuredLimit = process.env.DAILY_EMAIL_LIMIT ? parseInt(process.env.DAILY_EMAIL_LIMIT, 10) : currentTier.limit;
+    const dailyLimit = Number.isNaN(configuredLimit) ? 200 : configuredLimit;
+    const remainingToday = Math.max(0, dailyLimit - sentToday);
+    const isThrottled = sentToday >= dailyLimit;
 
     return {
       subdomain: this.subdomain,
       stage: currentTier.stage,
       stageName: currentTier.label,
-      dailyLimit: currentTier.limit,
+      dailyLimit,
       sentToday,
       remainingToday,
       isThrottled,
@@ -158,14 +161,42 @@ export class EmailAdapter {
               }
         );
 
-        const cleanFrom = env.SMTP_FROM.trim();
-        const fromAddress = cleanFrom.includes('<') ? cleanFrom : `Outreach <${cleanFrom}>`;
+        const cleanFrom = (env.SMTP_FROM || env.SMTP_USER || '').trim();
+        const displayName = cleanFrom.toLowerCase().includes('team.onlinedigitalsolution')
+          ? 'Team Online Digital Solution'
+          : 'Outreach & Partnerships';
+        const fromAddress = cleanFrom.includes('<') ? cleanFrom : `"${displayName}" <${cleanFrom}>`;
+
+        // Anti-spam deliverability: clean plain text with opt-out footer
+        const plainText = `${params.body.trim()}\n\n---\nIf you prefer not to receive further emails from us, reply with "Unsubscribe" or "Stop".`;
+
+        // Anti-spam deliverability: structured HTML alternative prevents raw-script flagging
+        const htmlParagraphs = params.body
+          .trim()
+          .split(/\n\s*\n/)
+          .map((p) => `<p style="margin: 0 0 16px 0; line-height: 1.6;">${p.replace(/\n/g, '<br/>')}</p>`)
+          .join('');
+
+        const htmlBody = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1e293b; max-width: 600px; padding: 12px 0;">
+            ${htmlParagraphs}
+            <div style="margin-top: 28px; padding-top: 14px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5;">
+              <p style="margin: 0;">If you prefer not to receive future emails, simply reply with <strong>Unsubscribe</strong> or <strong>Stop</strong>.</p>
+            </div>
+          </div>
+        `.trim();
 
         await transporter.sendMail({
           from: fromAddress,
           to: params.to,
+          replyTo: cleanFrom,
           subject: params.subject || `Outreach Follow-up`,
-          text: params.body,
+          text: plainText,
+          html: htmlBody,
+          headers: {
+            'List-Unsubscribe': `<mailto:${cleanFrom}?subject=Unsubscribe>`,
+            'X-Mailer': 'ClientConnect Outreach Engine',
+          },
         });
         liveDelivery = 'sent_live';
         console.log(`[EmailAdapter] Live email successfully dispatched via ${isGmail ? 'Gmail' : env.SMTP_HOST} to ${params.to}`);
@@ -216,6 +247,14 @@ export class EmailAdapter {
          VALUES ($1, 'email', 'outbound', $2, 'sent', NOW())
          RETURNING id`,
         [convId, params.body]
+      );
+
+      // Mark all preceding inbound messages in this thread as replied & seen
+      await query(
+        `UPDATE messages
+         SET is_replied = true, replied_at = NOW(), is_seen = true, seen_at = COALESCE(seen_at, NOW())
+         WHERE conversation_id = $1 AND direction = 'inbound' AND (is_replied IS NOT TRUE OR is_seen IS NOT TRUE)`,
+        [convId]
       );
 
       // Increment daily sent metrics in database

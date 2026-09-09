@@ -13,8 +13,12 @@ import { aiRouter } from './routes/ai';
 import { adaptersRouter } from './routes/adapters';
 import { listsRouter } from './routes/lists';
 import { batchesRouter } from './routes/batches';
+import { schedulerRouter } from './routes/scheduler';
 import { emailInboundService } from './services/emailInboundService';
+import { emailSchedulerService } from './services/emailSchedulerService';
 import { addInboundEmailSyncTable } from './db/add_inbound_email_sync';
+import { addScheduledDispatchesTable } from './db/add_scheduled_dispatches';
+import { addSeenRepliedToMessages } from './db/add_seen_replied_to_messages';
 import { query } from './config/db';
 
 const app = express();
@@ -52,6 +56,7 @@ app.use('/api/ai', aiRouter);
 app.use('/api/adapters', adaptersRouter);
 app.use('/api/lists', listsRouter);
 app.use('/api/batches', batchesRouter);
+app.use('/api/scheduler', schedulerRouter);
 
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {
@@ -122,6 +127,21 @@ async function startServer() {
     console.error('[Migration Warning] Inbound email sync table error:', err);
   }
   emailInboundService.startPolling(30000);
+
+  // Initialize scheduled email dispatches table & background scheduler loop (every 20s)
+  try {
+    await addScheduledDispatchesTable();
+  } catch (err) {
+    console.error('[Migration Warning] Scheduled dispatches table error:', err);
+  }
+  emailSchedulerService.startScheduler(20000);
+
+  // Initialize seen & replied message tracking
+  try {
+    await addSeenRepliedToMessages();
+  } catch (err) {
+    console.error('[Migration Warning] Seen/replied messages migration error:', err);
+  }
 
   app.listen(env.PORT, () => {
     console.log(`🚀 Express Backend running on http://localhost:${env.PORT}`);

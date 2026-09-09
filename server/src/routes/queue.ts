@@ -79,6 +79,14 @@ queueRouter.post('/:id/send', async (req: Request, res: Response) => {
         [convId, item.channel, item.message_preview]
       );
 
+      // Mark all preceding inbound messages in this thread as replied & seen
+      await query(
+        `UPDATE messages
+         SET is_replied = true, replied_at = NOW(), is_seen = true, seen_at = COALESCE(seen_at, NOW())
+         WHERE conversation_id = $1 AND direction = 'inbound' AND (is_replied IS NOT TRUE OR is_seen IS NOT TRUE)`,
+        [convId]
+      );
+
       await query(`UPDATE leads SET last_contacted_at = NOW() WHERE id = $1`, [item.lead_id]);
     }
 

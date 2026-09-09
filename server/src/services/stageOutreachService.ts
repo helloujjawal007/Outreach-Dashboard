@@ -1,5 +1,6 @@
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
+import { humanizerService } from './humanizerService';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -53,37 +54,7 @@ export class StageOutreachService {
     const business = lead.business_name || 'your team';
     const category = lead.category || 'your industry';
 
-    if (sentCount === 0) {
-      return {
-        stage: 'initial',
-        stageLabel: 'First Message Needed',
-        nextStepLabel: 'Shoot First Message (Intro)',
-        sentCount,
-        outboundCount: sentCount,
-        subject: `Quick question regarding ${business}`,
-        body: `Hi ${business} Team,\n\nI came across your business in ${category} and wanted to reach out.\n\nWe specialize in helping companies scale client acquisition and automate lead follow-ups.\n\nWould you be open to a brief 5-minute conversation this week?\n\nBest regards,\nGrowth & Partnerships Team`,
-      };
-    } else if (sentCount === 1) {
-      return {
-        stage: 'followup_1',
-        stageLabel: 'Follow-up 1 Due',
-        nextStepLabel: 'Shoot Follow-up 1 (Check-in)',
-        sentCount,
-        outboundCount: sentCount,
-        subject: `Re: Quick question regarding ${business}`,
-        body: `Hi ${business} Team,\n\nJust following up on my previous note. I know you're busy running operations at ${business}!\n\nDid you get a chance to review my previous message regarding client outreach?\n\nHappy to share a quick 2-minute overview whenever suits you.\n\nBest regards,\nGrowth & Partnerships Team`,
-      };
-    } else if (sentCount === 2) {
-      return {
-        stage: 'followup_2',
-        stageLabel: 'Follow-up 2 Due',
-        nextStepLabel: 'Shoot Follow-up 2 (Final Nudge)',
-        sentCount,
-        outboundCount: sentCount,
-        subject: `Final check-in: ${business}`,
-        body: `Hi ${business} Team,\n\nI don't want to clutter your inbox, so this will be my final follow-up.\n\nIf you ever need assistance optimizing your outreach or customer retention in ${category}, please feel free to reach out anytime.\n\nWishing you and the team at ${business} continued success!\n\nBest regards,\nGrowth & Partnerships Team`,
-      };
-    } else {
+    if (sentCount >= 3) {
       return {
         stage: 'completed',
         stageLabel: 'Sequence Completed',
@@ -94,6 +65,43 @@ export class StageOutreachService {
         body: ``,
       };
     }
+
+    const resolvedStage: 'initial' | 'followup_1' | 'followup_2' =
+      sentCount === 0 ? 'initial' : sentCount === 1 ? 'followup_1' : 'followup_2';
+
+    const stageLabel =
+      resolvedStage === 'initial'
+        ? 'First Message Needed'
+        : resolvedStage === 'followup_1'
+        ? 'Follow-up 1 Due'
+        : 'Follow-up 2 Due';
+
+    const nextStepLabel =
+      resolvedStage === 'initial'
+        ? 'Shoot First Message (Intro)'
+        : resolvedStage === 'followup_1'
+        ? 'Shoot Follow-up 1 (Check-in)'
+        : 'Shoot Follow-up 2 (Final Nudge)';
+
+    const generated = await humanizerService.generateEmail(
+      {
+        id: lead.id,
+        business_name: lead.business_name,
+        category: lead.category,
+        entity_type: 'lead',
+      },
+      { stage: resolvedStage, style: 'conversational' }
+    );
+
+    return {
+      stage: resolvedStage,
+      stageLabel,
+      nextStepLabel,
+      sentCount,
+      outboundCount: sentCount,
+      subject: generated.subject,
+      body: generated.body,
+    };
   }
 
   /**
@@ -270,7 +278,8 @@ export class StageOutreachService {
     let failedCount = 0;
     const breakdown = { initial: 0, followup_1: 0, followup_2: 0 };
 
-    for (const id of leadIds) {
+    for (let i = 0; i < leadIds.length; i++) {
+      const id = leadIds[i];
       const res = await this.sendNextStageToLead(id);
       results.push(res);
 
@@ -283,6 +292,11 @@ export class StageOutreachService {
         skippedCount++;
       } else {
         failedCount++;
+      }
+
+      // Safe pacing delay (2-3s jitter) between successive sends to comply with Google SMTP guidelines & prevent spam flagging
+      if (i < leadIds.length - 1 && res.success) {
+        await new Promise((resolve) => setTimeout(resolve, 2000 + Math.floor(Math.random() * 1000)));
       }
     }
 

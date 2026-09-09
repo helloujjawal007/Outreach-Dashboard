@@ -14,6 +14,7 @@ import {
   Trash2,
   FolderPlus,
   Bookmark,
+  BookmarkPlus,
   Plus,
   X,
   ListFilter,
@@ -30,6 +31,7 @@ import { Badge } from '@/components/Badge';
 import { ChannelIcon } from '@/components/ChannelIcon';
 import { Modal } from '@/components/Modal';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
+import { ScheduleListModal } from '@/components/ScheduleListModal';
 import type { Store } from '@/store';
 import type { Lead, ConsentStatus, Channel, AutoSendNextResult } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
@@ -76,7 +78,10 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
   const [newListName, setNewListName] = useState('');
   const [newListDesc, setNewListDesc] = useState('');
   const [isCreatingList, setIsCreatingList] = useState(false);
+  const [leadsToAddToList, setLeadsToAddToList] = useState<string[]>([]);
+  const [isUnmarkingClient, setIsUnmarkingClient] = useState(false);
   const [bulkActionSuccess, setBulkActionSuccess] = useState<string | null>(null);
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
   // 28-day Deletion History / Trash state
   const [isTrashOpen, setIsTrashOpen] = useState(false);
@@ -155,7 +160,7 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
     const replyEntityIds = new Set(
       store.inboundReplies.map((r) => r.client_id || r.lead_id).filter(Boolean)
     );
-    return store.leads.filter((l) => replyEntityIds.has(l.id) || l.consentStatus === 'replied').length;
+    return store.leads.filter((l) => replyEntityIds.has(l.id)).length;
   }, [store.inboundReplies, store.leads]);
 
   const filtered = useMemo(() => {
@@ -185,7 +190,7 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         store.inboundReplies.map((r) => r.client_id || r.lead_id).filter(Boolean)
       );
       return store.leads.filter((l) => {
-        const hasReply = replyEntityIds.has(l.id) || l.consentStatus === 'replied';
+        const hasReply = replyEntityIds.has(l.id);
         if (!hasReply) return false;
         if (statusFilter !== 'all') {
           const s = l.status || 'active';
@@ -220,6 +225,13 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       }
       if (consentFilter !== 'all' && l.consentStatus !== consentFilter) return false;
       if (selectedBatchFilter !== 'all' && l.batchId !== selectedBatchFilter) return false;
+      if (selectedListFilter !== 'all') {
+        if (selectedListFilter === 'unassigned') {
+          if (l.lists && l.lists.length > 0) return false;
+        } else {
+          if (!l.lists || !l.lists.some((lst) => lst.id === selectedListFilter)) return false;
+        }
+      }
       if (channelFilter !== 'all') {
         if (channelFilter === 'email' && !l.email) return false;
         if (channelFilter === 'whatsapp' && !l.whatsapp) return false;
@@ -237,7 +249,7 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       }
       return true;
     });
-  }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, statusFilter, consentFilter, selectedBatchFilter, channelFilter, search]);
+  }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, statusFilter, consentFilter, selectedBatchFilter, selectedListFilter, channelFilter, search]);
 
   const leadConversations = useMemo(() => {
     if (!selectedLead) return [];
@@ -253,6 +265,8 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       setConversionMessage(null);
       setReplyChannel(lead.email ? 'email' : lead.whatsapp ? 'whatsapp' : 'instagram');
       await store.fetchConversationsForEntity(lead.id, lead.entityType === 'client');
+      // Mark inbound messages as seen
+      store.markEntityInboundSeen(lead.entityType, lead.id).catch(() => {});
       try {
         const win = await api.getWhatsAppWindowStatus(lead.id, lead.entityType === 'client');
         setWaWindow(win);
@@ -357,18 +371,23 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
 
   const handleAddSelectedToList = useCallback(
     async (listId: string) => {
-      if (selectedIds.size === 0) return;
+      const targetIds = leadsToAddToList.length > 0 ? leadsToAddToList : Array.from(selectedIds);
+      if (targetIds.length === 0) return;
       try {
-        await store.addLeadsToList(listId, Array.from(selectedIds));
+        await store.addLeadsToList(listId, targetIds);
         const targetList = store.lists.find((l) => l.id === listId);
         setIsAddToListOpen(false);
-        setBulkActionSuccess(`Added ${selectedIds.size} lead(s) to "${targetList?.name || 'List'}".`);
-        setTimeout(() => setBulkActionSuccess(null), 4000);
+        setLeadsToAddToList([]);
+        setSelectedIds(new Set());
+        setBulkActionSuccess(
+          `Added ${targetIds.length} lead(s) to "${targetList?.name || 'List'}" (marked as added and removed from Main List).`
+        );
+        setTimeout(() => setBulkActionSuccess(null), 4500);
       } catch (err) {
         console.error('Add to list failed:', err);
       }
     },
-    [selectedIds, store]
+    [leadsToAddToList, selectedIds, store]
   );
 
   const handleCreateNewList = useCallback(async () => {
@@ -381,17 +400,92 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       setNewListDesc('');
       setIsCreatingList(false);
 
-      if (isAddToListOpen && selectedIds.size > 0) {
-        await store.addLeadsToList(created.id, Array.from(selectedIds));
+      const targetIds = leadsToAddToList.length > 0 ? leadsToAddToList : Array.from(selectedIds);
+      if (isAddToListOpen && targetIds.length > 0) {
+        await store.addLeadsToList(created.id, targetIds);
         setIsAddToListOpen(false);
-        setBulkActionSuccess(`Created "${createdName}" and added ${selectedIds.size} lead(s)!`);
-        setTimeout(() => setBulkActionSuccess(null), 4000);
+        setLeadsToAddToList([]);
+        setSelectedIds(new Set());
+        setBulkActionSuccess(`Created "${createdName}" and added ${targetIds.length} lead(s)!`);
+        setTimeout(() => setBulkActionSuccess(null), 4500);
       }
     } catch (err) {
       console.error('Create list failed:', err);
       setIsCreatingList(false);
     }
-  }, [newListName, newListDesc, isAddToListOpen, selectedIds, store]);
+  }, [newListName, newListDesc, isAddToListOpen, leadsToAddToList, selectedIds, store]);
+
+  // Remove lead from list (from inside lead modal)
+  const handleRemoveLeadFromList = useCallback(
+    async (listId: string, leadId: string) => {
+      try {
+        await store.removeLeadFromList(listId, leadId);
+        setSelectedLead((prev) =>
+          prev && prev.id === leadId
+            ? { ...prev, lists: (prev.lists || []).filter((l) => l.id !== listId) }
+            : prev
+        );
+        const targetList = store.lists.find((l) => l.id === listId);
+        setBulkActionSuccess(`Removed lead from "${targetList?.name || 'List'}".`);
+        setTimeout(() => setBulkActionSuccess(null), 3000);
+      } catch (err) {
+        console.error('Failed to remove lead from list:', err);
+      }
+    },
+    [store]
+  );
+
+  // Add lead to single list (from inside lead modal)
+  const handleAddLeadToSingleList = useCallback(
+    async (listId: string, leadId: string) => {
+      try {
+        await store.addLeadsToList(listId, [leadId]);
+        const targetList = store.lists.find((l) => l.id === listId);
+        if (targetList) {
+          setSelectedLead((prev) =>
+            prev && prev.id === leadId
+              ? {
+                  ...prev,
+                  lists: [
+                    ...(prev.lists || []).filter((l) => l.id !== listId),
+                    { id: targetList.id, name: targetList.name },
+                  ],
+                }
+              : prev
+          );
+        }
+        setBulkActionSuccess(`Added to "${targetList?.name || 'List'}"!`);
+        setTimeout(() => setBulkActionSuccess(null), 3000);
+      } catch (err) {
+        console.error('Failed to add lead to list:', err);
+      }
+    },
+    [store]
+  );
+
+  // Unmark client and revert back to active lead
+  const handleUnmarkClient = useCallback(
+    async (client: Lead) => {
+      const confirmRevert = window.confirm(
+        `Are you sure you want to unmark "${client.businessName}" as a client? This will move them from Clients back to active Outreach Leads.`
+      );
+      if (!confirmRevert) return;
+
+      try {
+        setIsUnmarkingClient(true);
+        const res = await store.unmarkClient(client.id);
+        setSelectedLead(res.lead);
+        setBulkActionSuccess(res.message || `Reverted "${client.businessName}" back to active leads.`);
+        setTimeout(() => setBulkActionSuccess(null), 4500);
+      } catch (err) {
+        console.error('Failed to unmark client:', err);
+        alert('Failed to unmark client. Check server logs.');
+      } finally {
+        setIsUnmarkingClient(false);
+      }
+    },
+    [store]
+  );
 
   const handleDeleteList = useCallback(
     async (listId: string) => {
@@ -959,6 +1053,15 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="btn-primary text-xs flex items-center gap-1.5 shadow-sm bg-gradient-to-r from-amber-500 via-brand-600 to-indigo-600 hover:from-amber-600 hover:to-indigo-700 text-white font-bold"
+              title="Automatically write humanized emails and shoot or schedule list outreach"
+            >
+              <Zap size={14} className="text-amber-200 fill-amber-200" />
+              <span>Auto-Shoot & Schedule List</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setIsInboundInboxOpen(true)}
               className="btn-primary text-xs flex items-center gap-1.5 shadow-sm bg-blue-600 hover:bg-blue-700 text-white"
               title="Open Inbound Email Replies Center"
@@ -1066,10 +1169,12 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               onChange={(e) => handleListFilterChange(e.target.value)}
               className="input py-1.5 text-xs w-auto font-medium"
             >
-              <option value="all">📁 All Lists</option>
+              <option value="all">📁 All Contacts</option>
+              <option value="unassigned">📥 Main List (Unassigned)</option>
+              {store.lists.length > 0 && <option disabled>──────────</option>}
               {store.lists.map((lst) => (
                 <option key={lst.id} value={lst.id}>
-                  {lst.name} ({lst.lead_count})
+                  🏷️ {lst.name} ({lst.lead_count})
                 </option>
               ))}
             </select>
@@ -1081,6 +1186,30 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               <ListFilter size={13} />
               <span>Lists</span>
             </button>
+            {entityFilter !== 'trash' && (
+              <button
+                onClick={() => {
+                  setLeadsToAddToList(filtered.map((l) => l.id));
+                  setIsAddToListOpen(true);
+                }}
+                disabled={filtered.length === 0}
+                className="btn-secondary py-1.5 px-2.5 text-xs flex items-center gap-1 text-brand-700 bg-brand-50 hover:bg-brand-100 border-brand-200 font-medium transition"
+                title={`Add all ${filtered.length} filtered leads to a custom list`}
+              >
+                <BookmarkPlus size={13} className="text-brand-600" />
+                <span>Add Filtered ({filtered.length})</span>
+              </button>
+            )}
+            {selectedListFilter !== 'all' && selectedListFilter !== 'unassigned' && (
+              <button
+                onClick={() => setIsScheduleModalOpen(true)}
+                className="btn-primary py-1.5 px-2.5 text-xs flex items-center gap-1 font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs"
+                title="Shoot or schedule automated humanized outreach for this selected list"
+              >
+                <Zap size={13} className="fill-white" />
+                <span>Auto-Shoot List</span>
+              </button>
+            )}
           </div>
 
           {/* Batches Filter (28-day retention) */}
@@ -1471,9 +1600,23 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <p className={`font-semibold ${isInactive ? 'text-ink-600' : 'text-ink-900'}`}>
-                            {lead.businessName}
-                          </p>
+                          <div className={`font-semibold ${isInactive ? 'text-ink-600' : 'text-ink-900'} flex items-center gap-1.5 flex-wrap`}>
+                            <span>{lead.businessName}</span>
+                            {lead.lists && lead.lists.length > 0 && (
+                              <span className="flex flex-wrap gap-1">
+                                {lead.lists.map((lst) => (
+                                  <span
+                                    key={lst.id}
+                                    className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold bg-brand-50 text-brand-700 border border-brand-200"
+                                    title={`In list: ${lst.name}`}
+                                  >
+                                    <Bookmark size={9} />
+                                    <span>{lst.name}</span>
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-ink-300">{lead.email || lead.phone || 'No contact info'}</p>
                         </div>
                       </td>
@@ -1502,6 +1645,17 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                       </td>
                       <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
+                          {lead.entityType === 'client' && (
+                            <button
+                              onClick={() => handleUnmarkClient(lead)}
+                              disabled={isUnmarkingClient}
+                              className="p-1.5 rounded-lg transition text-xs font-semibold flex items-center gap-1 text-amber-700 hover:bg-amber-50 border border-amber-200 hover:border-amber-300"
+                              title="Unmark as Client (Revert to Lead)"
+                            >
+                              <RotateCcw size={12} />
+                              <span className="text-[10px]">Unmark</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => handleToggleLeadStatus(lead)}
                             className={`p-1.5 rounded-lg transition text-xs font-semibold flex items-center gap-1 ${
@@ -1569,6 +1723,15 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                     <span className="flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
                       <UserCheck size={18} /> Paying Client Account
                     </span>
+                    <button
+                      onClick={() => handleUnmarkClient(selectedLead)}
+                      disabled={isUnmarkingClient}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-300 shadow-xs transition"
+                      title="Revert client back to an active outreach lead"
+                    >
+                      <RotateCcw size={13} />
+                      <span>{isUnmarkingClient ? 'Reverting...' : 'Unmark as Client'}</span>
+                    </button>
                     <button
                       onClick={() => handleOpenEditClient(selectedLead)}
                       className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg border border-brand-200 transition"
@@ -1706,6 +1869,66 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                 </div>
               </div>
             )}
+
+            {/* List Memberships Widget: Add to List or Remove from List */}
+            <div className="rounded-xl border border-brand-200/80 bg-gradient-to-r from-brand-50/70 via-slate-50 to-indigo-50/50 p-3.5 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-700">
+                    <Bookmark size={14} className="text-brand-600" />
+                    <span>Lists:</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selectedLead.lists && selectedLead.lists.length > 0 ? (
+                      selectedLead.lists.map((lst) => (
+                        <span
+                          key={lst.id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-white text-brand-800 border border-brand-300 shadow-2xs"
+                        >
+                          <span>{lst.name}</span>
+                          <button
+                            onClick={() => handleRemoveLeadFromList(lst.id, selectedLead.id)}
+                            title={`Remove from "${lst.name}"`}
+                            className="hover:text-rose-600 hover:bg-rose-50 rounded-full p-0.5 transition text-slate-400"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-ink-400 italic">
+                        Not in any custom list (visible in Main List)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Add to list dropdown selector */}
+                <div className="flex items-center gap-2">
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAddLeadToSingleList(e.target.value, selectedLead.id);
+                        e.target.value = '';
+                      }
+                    }}
+                    defaultValue=""
+                    className="input py-1 px-2.5 text-xs font-semibold text-brand-700 bg-white border-brand-300 hover:border-brand-400 cursor-pointer shadow-xs"
+                  >
+                    <option value="" disabled>
+                      + Add to List...
+                    </option>
+                    {store.lists
+                      .filter((l) => !selectedLead.lists?.some((ml) => ml.id === l.id))
+                      .map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               <div>
@@ -2226,13 +2449,21 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       {/* Add to List Modal */}
       <Modal
         open={isAddToListOpen}
-        onClose={() => setIsAddToListOpen(false)}
-        title="Add Selected Leads to List"
+        onClose={() => {
+          setIsAddToListOpen(false);
+          setLeadsToAddToList([]);
+        }}
+        title="Add Leads to List"
         width="md"
       >
         <div className="space-y-4">
           <p className="text-sm text-ink-600">
-            Save <strong>{selectedIds.size}</strong> selected lead(s) into an organized list for future outreach.
+            Add{' '}
+            <strong className="text-brand-700">
+              {leadsToAddToList.length > 0 ? leadsToAddToList.length : selectedIds.size}
+            </strong>{' '}
+            {leadsToAddToList.length > 0 && selectedIds.size === 0 ? 'filtered' : 'selected'} lead(s)
+            into an organized list. After saving, these leads will be marked as added with a list badge and removed from the Main List (Unassigned).
           </p>
 
           <div className="space-y-2">
@@ -2428,6 +2659,16 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         onOpenConversation={(entityId, entityType) => handleOpenEntityById(entityId, entityType)}
         onSyncInbox={handleSyncInbox}
         isSyncing={isSyncingInbox}
+        onMarkSeen={store.markInboundSeen}
+        onMarkHandled={store.markInboundHandled}
+      />
+
+      {/* Automated List Outreach & Humanizer Scheduler Modal */}
+      <ScheduleListModal
+        open={isScheduleModalOpen}
+        onClose={() => setIsScheduleModalOpen(false)}
+        store={store}
+        defaultListId={selectedListFilter}
       />
     </div>
   );

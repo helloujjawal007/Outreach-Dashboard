@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { env } from './config/env';
-import { testConnection } from './config/db';
+import { testConnection, query } from './config/db';
 import { ollamaService } from './services/ollamaService';
 import { leadsRouter } from './routes/leads';
 import { clientsRouter } from './routes/clients';
@@ -14,12 +14,29 @@ import { adaptersRouter } from './routes/adapters';
 import { listsRouter } from './routes/lists';
 import { batchesRouter } from './routes/batches';
 import { schedulerRouter } from './routes/scheduler';
+import { inboxesRouter } from './routes/inboxes';
+import { linkedinRouter } from './routes/linkedin';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { addInboundEmailSyncTable } from './db/add_inbound_email_sync';
 import { addScheduledDispatchesTable } from './db/add_scheduled_dispatches';
+import { addMultiChannelScheduling } from './db/add_multichannel_scheduling';
 import { addSeenRepliedToMessages } from './db/add_seen_replied_to_messages';
-import { query } from './config/db';
+import { addInboxRotationAndTrigramIndexes } from './db/add_inbox_rotation_and_trigram_indexes';
+import { addLinkedInTables } from './db/add_linkedin_tables';
+import { addLinkedInPublishingColumns } from './db/add_linkedin_publishing_columns';
+import { addAiCommandHistoryTable } from './db/add_ai_command_history';
+import { addManualReviewStatus } from './db/add_manual_review_status';
+import { googleEnrichmentService } from './services/googleEnrichmentService';
+import { linkedinService } from './services/linkedinService';
+// Prevent unhandled errors or socket drops from crashing the Express API server
+process.on('uncaughtException', (err) => {
+  console.error('[Server UncaughtException Handled]', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server UnhandledRejection Handled]', reason);
+});
 
 const app = express();
 
@@ -38,7 +55,7 @@ if (env.NODE_ENV !== 'production') {
 // API Health / Status endpoint
 app.get('/api', (_req: Request, res: Response) => {
   res.json({
-    service: 'AI Client Follow-Up & Lead Outreach System API',
+    service: 'Online Digital Solution API',
     version: '2.0.0',
     status: 'operational',
     timestamp: new Date().toISOString(),
@@ -57,6 +74,8 @@ app.use('/api/adapters', adaptersRouter);
 app.use('/api/lists', listsRouter);
 app.use('/api/batches', batchesRouter);
 app.use('/api/scheduler', schedulerRouter);
+app.use('/api/inboxes', inboxesRouter);
+app.use('/api/linkedin', linkedinRouter);
 
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {
@@ -100,7 +119,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 // Start Server & Check Infrastructure
 async function startServer() {
-  console.log('--- Initializing AI Client Follow-Up & Lead Outreach System ---');
+  console.log('--- Initializing Online Digital Solution Omni-Channel Engine ---');
   
   // Test PostgreSQL Connection
   const dbConnected = await testConnection();
@@ -128,9 +147,10 @@ async function startServer() {
   }
   emailInboundService.startPolling(30000);
 
-  // Initialize scheduled email dispatches table & background scheduler loop (every 20s)
+  // Initialize scheduled dispatches table & multi-channel scheduling
   try {
     await addScheduledDispatchesTable();
+    await addMultiChannelScheduling();
   } catch (err) {
     console.error('[Migration Warning] Scheduled dispatches table error:', err);
   }
@@ -143,10 +163,64 @@ async function startServer() {
     console.error('[Migration Warning] Seen/replied messages migration error:', err);
   }
 
-  app.listen(env.PORT, () => {
+  // Initialize multi-inbox rotation & trigram indexing
+  try {
+    await addInboxRotationAndTrigramIndexes();
+  } catch (err) {
+    console.error('[Migration Warning] Inbox rotation table error:', err);
+  }
+
+  // Initialize LinkedIn tables & default account
+  try {
+    await addLinkedInTables();
+    await addLinkedInPublishingColumns();
+    linkedinService.startScheduler(30000);
+  } catch (err) {
+    console.error('[Migration Warning] LinkedIn tables error:', err);
+  }
+
+  // Initialize AI Command History table
+  try {
+    await addAiCommandHistoryTable();
+  } catch (err) {
+    console.error('[Migration Warning] AI Command History table error:', err);
+  }
+
+  // Initialize Manual Review Status & Columns
+  try {
+    await addManualReviewStatus();
+  } catch (err) {
+    console.error('[Migration Warning] Manual review migration error:', err);
+  }
+
+  // Check and auto-restore saved WhatsApp session if credentials exist
+  try {
+    const { whatsappSessionService } = await import('./services/whatsappSessionService');
+    await whatsappSessionService.autoRestoreSession();
+  } catch (err) {
+    console.error('[WhatsApp Warning] Failed to auto-restore WhatsApp session:', err);
+  }
+
+  // Initialize 12-hour automated Google Business Profile (GMB) sync engine
+  try {
+    googleEnrichmentService.start12HourGmbSync();
+  } catch (err) {
+    console.error('[GMB Sync Warning] Failed to initialize 12-hour GMB sync engine:', err);
+  }
+
+  const server = app.listen(env.PORT, () => {
     console.log(`🚀 Express Backend running on http://localhost:${env.PORT}`);
     console.log(`📡 API Endpoints available at http://localhost:${env.PORT}/api`);
   });
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log('[Server] Gracefully shutting down...');
+    server.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 startServer().catch((err) => {

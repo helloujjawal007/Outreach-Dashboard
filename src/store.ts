@@ -13,6 +13,8 @@ import type {
   InboundReplyMessage,
   ScheduledDispatch,
   ScheduleListRequest,
+  ScheduleSingleRequest,
+  ScheduleBatchRequest,
 } from './types';
 import { api, type HealthResponse, type SendReplyResult } from './services/api';
 
@@ -126,6 +128,24 @@ export function useStore() {
     [fetchDispatches]
   );
 
+  const scheduleSingleDispatch = useCallback(
+    async (params: ScheduleSingleRequest) => {
+      const res = await api.scheduleSingleDispatch(params);
+      await fetchDispatches();
+      return res;
+    },
+    [fetchDispatches]
+  );
+
+  const scheduleBatchDispatch = useCallback(
+    async (params: ScheduleBatchRequest) => {
+      const res = await api.scheduleBatchDispatch(params);
+      await fetchDispatches();
+      return res;
+    },
+    [fetchDispatches]
+  );
+
   const cancelScheduledDispatch = useCallback(async (id: string) => {
     await api.cancelScheduledDispatch(id);
     setDispatches((prev) =>
@@ -201,10 +221,12 @@ export function useStore() {
       instagram?: string;
       facebook?: string;
       whatsapp?: string;
+      linkedin?: string;
       status?: 'active' | 'inactive' | 'paused';
       notes?: string;
       listId?: string;
       batchId?: string;
+      enrichGoogle?: boolean;
     }) => {
       try {
         const created = await api.createLead(leadData);
@@ -267,6 +289,7 @@ export function useStore() {
       clientId?: string;
       channel: Channel;
       text: string;
+      alsoSubmitWebsiteForm?: boolean;
     }): Promise<SendReplyResult> => {
       try {
         const res = await api.sendReply(params);
@@ -289,7 +312,15 @@ export function useStore() {
           });
         }
 
-        // Inbound inbox update: Immediately refresh inbound replies so answered messages leave the queue
+        // Inbound inbox update: Immediately mark answered inbound messages as replied and read in local state
+        setInboundReplies((prev) =>
+          prev.map((r) =>
+            (r.lead_id === entityId || r.client_id === entityId)
+              ? { ...r, is_replied: true, replied_at: new Date().toISOString(), is_read: true, read_at: new Date().toISOString() }
+              : r
+          )
+        );
+
         try {
           const freshInbound = await api.getInboundReplies();
           setInboundReplies(freshInbound);
@@ -331,6 +362,18 @@ export function useStore() {
       setCampaigns(fresh);
     } catch (err) {
       console.error('[Store] addCampaign error:', err);
+      throw err;
+    }
+  }, []);
+
+  // Delete campaign
+  const deleteCampaign = useCallback(async (id: string) => {
+    try {
+      await api.deleteCampaign(id);
+      const fresh = await api.getCampaigns();
+      setCampaigns(fresh);
+    } catch (err) {
+      console.error('[Store] deleteCampaign error:', err);
       throw err;
     }
   }, []);
@@ -419,6 +462,40 @@ export function useStore() {
     }
   }, []);
 
+  const markMessageRead = useCallback(async (messageId: string, isRead: boolean = true) => {
+    try {
+      await api.markMessageRead(messageId, isRead);
+      const readTimestamp = isRead ? new Date().toISOString() : null;
+      setConversations((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, is_read: isRead, read_at: readTimestamp } : m))
+      );
+      setInboundReplies((prev) =>
+        prev.map((r) => (r.id === messageId ? { ...r, is_read: isRead, read_at: readTimestamp } : r))
+      );
+    } catch (err) {
+      console.error('[Store] markMessageRead error:', err);
+    }
+  }, []);
+
+  const markEntityInboundRead = useCallback(async (entityType: 'lead' | 'client', entityId: string, isRead: boolean = true) => {
+    try {
+      await api.markEntityInboundRead(entityType, entityId, isRead);
+      const readTimestamp = isRead ? new Date().toISOString() : null;
+      setConversations((prev) =>
+        prev.map((m) => (m.leadId === entityId ? { ...m, is_read: isRead, read_at: readTimestamp } : m))
+      );
+      setInboundReplies((prev) =>
+        prev.map((r) =>
+          (r.lead_id === entityId || r.client_id === entityId)
+            ? { ...r, is_read: isRead, read_at: readTimestamp }
+            : r
+        )
+      );
+    } catch (err) {
+      console.error('[Store] markEntityInboundRead error:', err);
+    }
+  }, []);
+
   const markEntityInboundSeen = useCallback(async (entityType: 'lead' | 'client', entityId: string) => {
     try {
       await api.markEntityInboundSeen(entityType, entityId);
@@ -482,6 +559,15 @@ export function useStore() {
     async (id: string) => {
       try {
         setLeads((prev) => prev.filter((l) => l.id !== id));
+        setInboundReplies((prev) =>
+          prev.filter(
+            (m) =>
+              (m as any).lead_id !== id &&
+              (m as any).leadId !== id &&
+              (m as any).client_id !== id &&
+              (m as any).clientId !== id
+          )
+        );
         const target = leads.find((l) => l.id === id);
         if (target?.entityType === 'client') {
           await api.deleteClient(id);
@@ -498,12 +584,38 @@ export function useStore() {
     [leads, refreshAll]
   );
 
+  // Update a single lead
+  const updateLead = useCallback(
+    async (id: string, updates: Partial<Lead>) => {
+      try {
+        const updated = await api.updateLead(id, updates);
+        setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updated } : l)));
+        await refreshAll();
+        return updated;
+      } catch (err) {
+        console.error('[Store] updateLead error:', err);
+        await refreshAll();
+        throw err;
+      }
+    },
+    [refreshAll]
+  );
+
   // Bulk delete leads/clients (moves to trash for 28 days, removes from leads & clients)
   const bulkDeleteLeads = useCallback(
     async (ids: string[]) => {
       try {
         const idSet = new Set(ids);
         setLeads((prev) => prev.filter((l) => !idSet.has(l.id)));
+        setInboundReplies((prev) =>
+          prev.filter(
+            (m) =>
+              !idSet.has((m as any).lead_id) &&
+              !idSet.has((m as any).leadId) &&
+              !idSet.has((m as any).client_id) &&
+              !idSet.has((m as any).clientId)
+          )
+        );
 
         const leadIds: string[] = [];
         const clientIds: string[] = [];
@@ -531,14 +643,14 @@ export function useStore() {
     [leads, refreshAll]
   );
 
-  // Update single lead or client status ('active' | 'inactive' | 'paused')
+  // Update single lead or client status ('active' | 'inactive' | 'paused' | 'manual_review')
   const updateLeadStatus = useCallback(
-    async (id: string, status: 'active' | 'inactive' | 'paused') => {
+    async (id: string, status: 'active' | 'inactive' | 'paused' | 'manual_review') => {
       try {
         setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
         const target = leads.find((l) => l.id === id);
         if (target?.entityType === 'client') {
-          await api.updateClientStatus(id, status);
+          await api.updateClientStatus(id, status as any);
         } else {
           await api.updateLeadStatus(id, status);
         }
@@ -554,7 +666,7 @@ export function useStore() {
 
   // Bulk update status for leads and clients
   const bulkUpdateLeadStatus = useCallback(
-    async (ids: string[], status: 'active' | 'inactive' | 'paused') => {
+    async (ids: string[], status: 'active' | 'inactive' | 'paused' | 'manual_review') => {
       try {
         const idSet = new Set(ids);
         setLeads((prev) => prev.map((l) => (idSet.has(l.id) ? { ...l, status } : l)));
@@ -570,11 +682,14 @@ export function useStore() {
           }
         }
 
-        await Promise.all([
-          leadIds.length > 0 ? api.bulkUpdateLeadStatus(leadIds, status) : Promise.resolve(),
-          ...clientIds.map((cid) => api.updateClientStatus(cid, status)),
-        ]);
-
+        const promises: Promise<any>[] = [];
+        if (leadIds.length > 0) promises.push(api.bulkUpdateLeadStatus(leadIds, status));
+        if (clientIds.length > 0) {
+          for (const cid of clientIds) {
+            promises.push(api.updateClientStatus(cid, status as any));
+          }
+        }
+        await Promise.all(promises);
         await refreshAll();
       } catch (err) {
         console.error('[Store] bulkUpdateLeadStatus error:', err);
@@ -583,6 +698,47 @@ export function useStore() {
       }
     },
     [leads, refreshAll]
+  );
+
+  // Approve lead from manual review back to active
+  const approveLeadReview = useCallback(
+    async (id: string) => {
+      try {
+        setLeads((prev) =>
+          prev.map((l) =>
+            l.id === id ? { ...l, status: 'active', manualReviewReason: undefined, manualReviewAt: undefined } : l
+          )
+        );
+        await api.approveLeadReview(id);
+        await refreshAll();
+      } catch (err) {
+        console.error('[Store] approveLeadReview error:', err);
+        await refreshAll();
+        throw err;
+      }
+    },
+    [refreshAll]
+  );
+
+  // Bulk approve leads from manual review back to active
+  const bulkApproveLeadReviews = useCallback(
+    async (ids: string[]) => {
+      try {
+        const idSet = new Set(ids);
+        setLeads((prev) =>
+          prev.map((l) =>
+            idSet.has(l.id) ? { ...l, status: 'active', manualReviewReason: undefined, manualReviewAt: undefined } : l
+          )
+        );
+        await api.bulkApproveLeadReviews(ids);
+        await refreshAll();
+      } catch (err) {
+        console.error('[Store] bulkApproveLeadReviews error:', err);
+        await refreshAll();
+        throw err;
+      }
+    },
+    [refreshAll]
   );
 
   // Lists management
@@ -770,6 +926,15 @@ export function useStore() {
     try {
       await api.permanentDeleteLead(id);
       setTrashLeads((prev) => prev.filter((l) => l.id !== id));
+      setInboundReplies((prev) =>
+        prev.filter(
+          (m) =>
+            (m as any).lead_id !== id &&
+            (m as any).leadId !== id &&
+            (m as any).client_id !== id &&
+            (m as any).clientId !== id
+        )
+      );
       await refreshAll();
     } catch (err) {
       console.error('[Store] permanentDeleteLead error:', err);
@@ -780,7 +945,17 @@ export function useStore() {
   const bulkPermanentDeleteLeads = useCallback(async (ids: string[]) => {
     try {
       const count = await api.bulkPermanentDeleteLeads(ids);
-      setTrashLeads((prev) => prev.filter((l) => !ids.includes(l.id)));
+      const idSet = new Set(ids);
+      setTrashLeads((prev) => prev.filter((l) => !idSet.has(l.id)));
+      setInboundReplies((prev) =>
+        prev.filter(
+          (m) =>
+            !idSet.has((m as any).lead_id) &&
+            !idSet.has((m as any).leadId) &&
+            !idSet.has((m as any).client_id) &&
+            !idSet.has((m as any).clientId)
+        )
+      );
       await refreshAll();
       return count;
     } catch (err) {
@@ -788,6 +963,104 @@ export function useStore() {
       throw err;
     }
   }, [refreshAll]);
+
+  const enrichLeadFromGoogle = useCallback(
+    async (leadId: string) => {
+      try {
+        const enriched = await api.enrichLeadFromGoogle(leadId);
+        setLeads((prev) => prev.map((l) => (l.id === leadId ? enriched : l)));
+        return enriched;
+      } catch (err) {
+        console.error('[Store] enrichLeadFromGoogle error:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  const syncLeadFromGoogleMaps = useCallback(
+    async (leadId: string, googleMapsUrl?: string) => {
+      try {
+        const synced = await api.syncGoogleMaps(leadId, googleMapsUrl);
+        setLeads((prev) => prev.map((l) => (l.id === leadId ? synced : l)));
+        return synced;
+      } catch (err) {
+        console.error('[Store] syncLeadFromGoogleMaps error:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  const submitWebsiteForm = useCallback(
+    async (
+      leadId: string,
+      payload: {
+        senderName?: string;
+        senderEmail?: string;
+        senderPhone?: string;
+        subject?: string;
+        message: string;
+      }
+    ) => {
+      try {
+        const res = await api.submitWebsiteForm(leadId, payload);
+        const msgs = await api.getMessagesByLead(leadId);
+        setConversations((prev) => {
+          const others = prev.filter((m) => m.leadId !== leadId);
+          return [...others, ...msgs];
+        });
+        return res;
+      } catch (err) {
+        console.error('[Store] submitWebsiteForm error:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  const fetchLeads = useCallback(async (listId?: string, batchId?: string) => {
+    try {
+      const [leadsData, clientsData] = await Promise.all([
+        api.getLeads(listId, batchId).catch((err) => {
+          console.error('Failed to load leads:', err);
+          return [] as Lead[];
+        }),
+        api.getClients().catch((err) => {
+          console.error('Failed to load clients:', err);
+          return [] as Lead[];
+        }),
+      ]);
+
+      if ((listId && listId !== 'all') || (batchId && batchId !== 'all')) {
+        setLeads(leadsData);
+      } else {
+        setLeads([...leadsData, ...clientsData]);
+      }
+    } catch (err) {
+      console.error('[Store] fetchLeads error:', err);
+    }
+  }, []);
+
+  const syncGmb = useCallback(async () => {
+    try {
+      const res = await api.syncGmb();
+      await fetchLeads();
+      return res;
+    } catch (err) {
+      console.error('[Store] syncGmb error:', err);
+      throw err;
+    }
+  }, [fetchLeads]);
+
+  const getGmbSyncStatus = useCallback(async () => {
+    try {
+      return await api.getGmbSyncStatus();
+    } catch (err) {
+      console.error('[Store] getGmbSyncStatus error:', err);
+      throw err;
+    }
+  }, []);
 
   const clearTrash = useCallback(async () => {
     try {
@@ -831,10 +1104,17 @@ export function useStore() {
       error,
       fetchHealth,
       refreshAll,
+      fetchLeads,
+      syncGmb,
+      getGmbSyncStatus,
       addLeads,
       createSingleLead,
       deleteLead,
+      updateLead,
       bulkDeleteLeads,
+      enrichLeadFromGoogle,
+      syncLeadFromGoogleMaps,
+      submitWebsiteForm,
       createList,
       deleteList,
       addLeadsToList,
@@ -857,9 +1137,12 @@ export function useStore() {
       updateLeadConsent,
       updateLeadStatus,
       bulkUpdateLeadStatus,
+      approveLeadReview,
+      bulkApproveLeadReviews,
       sendReply,
       addConversation,
       addCampaign,
+      deleteCampaign,
       sendQueueItem,
       removeQueueItem,
       fetchConversationsForEntity,
@@ -871,11 +1154,15 @@ export function useStore() {
       markInboundSeen,
       markInboundHandled,
       markEntityInboundSeen,
+      markMessageRead,
+      markEntityInboundRead,
       dismissNotification,
       triggerNotification,
       dispatches,
       fetchDispatches,
       scheduleListDispatch,
+      scheduleSingleDispatch,
+      scheduleBatchDispatch,
       cancelScheduledDispatch,
       retryScheduledDispatch,
     }),
@@ -883,6 +1170,8 @@ export function useStore() {
       dispatches,
       fetchDispatches,
       scheduleListDispatch,
+      scheduleSingleDispatch,
+      scheduleBatchDispatch,
       cancelScheduledDispatch,
       retryScheduledDispatch,
       leads,
@@ -898,10 +1187,17 @@ export function useStore() {
       error,
       fetchHealth,
       refreshAll,
+      fetchLeads,
+      syncGmb,
+      getGmbSyncStatus,
       addLeads,
       createSingleLead,
       deleteLead,
+      updateLead,
       bulkDeleteLeads,
+      enrichLeadFromGoogle,
+      syncLeadFromGoogleMaps,
+      submitWebsiteForm,
       createList,
       deleteList,
       addLeadsToList,
@@ -924,9 +1220,12 @@ export function useStore() {
       updateLeadConsent,
       updateLeadStatus,
       bulkUpdateLeadStatus,
+      approveLeadReview,
+      bulkApproveLeadReviews,
       sendReply,
       addConversation,
       addCampaign,
+      deleteCampaign,
       sendQueueItem,
       removeQueueItem,
       fetchConversationsForEntity,
@@ -938,6 +1237,8 @@ export function useStore() {
       markInboundSeen,
       markInboundHandled,
       markEntityInboundSeen,
+      markMessageRead,
+      markEntityInboundRead,
       dismissNotification,
       triggerNotification,
     ]

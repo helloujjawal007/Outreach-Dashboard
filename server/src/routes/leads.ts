@@ -1,12 +1,149 @@
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
+import { whatsappValidator } from '../services/whatsappValidator';
+import { googleEnrichmentService } from '../services/googleEnrichmentService';
 
 export const leadsRouter = Router();
 
-// GET /api/leads - Fetch active (non-deleted) leads
+// GET /api/leads/by-channel - Automatically segregate leads into email, whatsapp, facebook, and instagram sections
+leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
+  try {
+    const { summaryOnly } = req.query;
+
+    if (summaryOnly === 'true') {
+      const summaryRes = await query(`
+        SELECT
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND email IS NOT NULL AND email LIKE '%@%') AS email_count,
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_count,
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND whatsapp_eligible = true AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_eligible_count,
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND whatsapp_eligible IS NOT TRUE AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_ineligible_count,
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND facebook IS NOT NULL AND TRIM(facebook) != '') AS facebook_count,
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND instagram IS NOT NULL AND TRIM(instagram) != '') AS instagram_count
+        FROM leads
+      `);
+
+      const s = summaryRes.rows[0];
+      return res.json({
+        success: true,
+        summary: {
+          email: parseInt(s.email_count || '0', 10),
+          whatsapp: parseInt(s.whatsapp_count || '0', 10),
+          whatsappEligible: parseInt(s.whatsapp_eligible_count || '0', 10),
+          whatsappIneligible: parseInt(s.whatsapp_ineligible_count || '0', 10),
+          facebook: parseInt(s.facebook_count || '0', 10),
+          instagram: parseInt(s.instagram_count || '0', 10),
+        },
+      });
+    }
+
+    const allLeadsRes = await query(`
+      SELECT l.*,
+             COALESCE(
+               (SELECT json_agg(json_build_object('id', lst.id, 'name', lst.name))
+                FROM lead_list_memberships m
+                JOIN lists lst ON lst.id = m.list_id
+                WHERE m.lead_id = l.id),
+               '[]'::json
+             ) AS lists
+      FROM leads l
+      WHERE l.deleted_at IS NULL
+      ORDER BY l.created_at DESC
+    `);
+
+    const leads = allLeadsRes.rows;
+
+    const emailLeads = leads.filter((l) => l.email && l.email.includes('@'));
+    const whatsappLeads = leads.filter((l) => (l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
+    const whatsappEligible = whatsappLeads.filter((l) => l.whatsapp_eligible === true);
+    const whatsappIneligible = whatsappLeads.filter((l) => l.whatsapp_eligible !== true);
+    const facebookLeads = leads.filter((l) => (l.facebook || '').trim().length > 0);
+    const instagramLeads = leads.filter((l) => (l.instagram || '').trim().length > 0);
+
+    res.json({
+      success: true,
+      channels: {
+        email: {
+          total: emailLeads.length,
+          leads: emailLeads,
+        },
+        whatsapp: {
+          total: whatsappLeads.length,
+          eligibleCount: whatsappEligible.length,
+          ineligibleCount: whatsappIneligible.length,
+          leads: whatsappLeads,
+          eligibleLeads: whatsappEligible,
+          ineligibleLeads: whatsappIneligible,
+        },
+        facebook: {
+          total: facebookLeads.length,
+          leads: facebookLeads,
+        },
+        instagram: {
+          total: instagramLeads.length,
+          leads: instagramLeads,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[leadsRouter.byChannel]', error);
+    res.status(500).json({ success: false, error: 'Failed to segregate leads by channel' });
+  }
+});
+
+// GET /api/leads - Fetch active (non-deleted) leads with optional pagination and trigram-accelerated search
 leadsRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const { consent, category, search, listId, batchId } = req.query;
+    const { consent, category, search, listId, batchId, status, page, limit } = req.query;
+
+    const pageNum = page ? Math.max(1, parseInt(String(page), 10)) : undefined;
+    const limitNum = limit ? Math.max(1, parseInt(String(limit), 10)) : undefined;
+
+    let baseFilter = `WHERE 1=1 AND l.deleted_at IS NULL`;
+    const filterParams: unknown[] = [];
+    let joinClause = ``;
+
+    if (listId && typeof listId === 'string' && listId !== 'all') {
+      if (listId === 'unassigned' || listId === 'none') {
+        baseFilter += ` AND NOT EXISTS (SELECT 1 FROM lead_list_memberships m WHERE m.lead_id = l.id)`;
+      } else {
+        filterParams.push(listId);
+        joinClause += ` INNER JOIN lead_list_memberships m ON m.lead_id = l.id AND m.list_id = $${filterParams.length}`;
+      }
+    }
+
+    if (batchId && typeof batchId === 'string' && batchId !== 'all') {
+      filterParams.push(batchId);
+      baseFilter += ` AND l.batch_id = $${filterParams.length}`;
+    }
+
+    if (status && status !== 'all') {
+      filterParams.push(status);
+      baseFilter += ` AND l.status = $${filterParams.length}`;
+    }
+
+    if (consent && consent !== 'all') {
+      filterParams.push(consent);
+      baseFilter += ` AND l.consent_status = $${filterParams.length}`;
+    }
+
+    if (category && category !== 'all') {
+      filterParams.push(category);
+      baseFilter += ` AND l.category = $${filterParams.length}`;
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      filterParams.push(`%${search.trim()}%`);
+      // Utilizes PostgreSQL GIN trigram indexes on business_name, email, and category
+      baseFilter += ` AND (l.business_name ILIKE $${filterParams.length} OR l.email ILIKE $${filterParams.length} OR l.category ILIKE $${filterParams.length} OR l.phone LIKE $${filterParams.length})`;
+    }
+
+    let totalCount = 0;
+    if (pageNum && limitNum) {
+      const countSql = `SELECT COUNT(*) FROM leads l ${joinClause} ${baseFilter}`;
+      const countRes = await query(countSql, filterParams);
+      totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
+    }
+
     let sql = `
       SELECT l.*,
              COALESCE(
@@ -17,46 +154,39 @@ leadsRouter.get('/', async (req: Request, res: Response) => {
                '[]'::json
              ) AS lists
       FROM leads l
+      ${joinClause}
+      ${baseFilter}
+      ORDER BY l.created_at DESC
     `;
-    const params: unknown[] = [];
 
-    if (listId && typeof listId === 'string' && listId !== 'all') {
-      if (listId === 'unassigned' || listId === 'none') {
-        sql += ` WHERE NOT EXISTS (SELECT 1 FROM lead_list_memberships m WHERE m.lead_id = l.id)`;
-      } else {
-        params.push(listId);
-        sql += ` INNER JOIN lead_list_memberships m ON m.lead_id = l.id AND m.list_id = $${params.length} WHERE 1=1`;
-      }
+    if (pageNum && limitNum) {
+      const offset = (pageNum - 1) * limitNum;
+      filterParams.push(limitNum);
+      const limitParamIdx = filterParams.length;
+      filterParams.push(offset);
+      const offsetParamIdx = filterParams.length;
+      sql += ` LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`;
+    }
+
+    const result = await query(sql, filterParams);
+
+    if (pageNum && limitNum) {
+      res.json({
+        success: true,
+        count: result.rows.length,
+        totalCount,
+        page: pageNum,
+        totalPages: Math.ceil(totalCount / limitNum),
+        leads: result.rows,
+      });
     } else {
-      sql += ` WHERE 1=1`;
+      res.json({
+        success: true,
+        count: result.rows.length,
+        totalCount: result.rows.length,
+        leads: result.rows,
+      });
     }
-
-    sql += ` AND l.deleted_at IS NULL`;
-
-    if (batchId && typeof batchId === 'string' && batchId !== 'all') {
-      params.push(batchId);
-      sql += ` AND l.batch_id = $${params.length}`;
-    }
-
-    if (consent && consent !== 'all') {
-      params.push(consent);
-      sql += ` AND l.consent_status = $${params.length}`;
-    }
-
-    if (category && category !== 'all') {
-      params.push(category);
-      sql += ` AND l.category = $${params.length}`;
-    }
-
-    if (search && typeof search === 'string' && search.trim()) {
-      params.push(`%${search.trim().toLowerCase()}%`);
-      sql += ` AND (LOWER(l.business_name) LIKE $${params.length} OR LOWER(l.email) LIKE $${params.length} OR l.phone LIKE $${params.length})`;
-    }
-
-    sql += ` ORDER BY l.created_at DESC`;
-
-    const result = await query(sql, params);
-    res.json({ success: true, count: result.rows.length, leads: result.rows });
   } catch (error) {
     console.error('[leadsRouter.get]', error);
     res.status(500).json({ success: false, error: 'Failed to fetch leads' });
@@ -231,6 +361,22 @@ leadsRouter.post('/bulk-delete', async (req: Request, res: Response) => {
       );
     }
 
+    // Cascading deletion: remove all messages, conversations, send_queue, and list memberships
+    await query(
+      `DELETE FROM messages WHERE conversation_id IN (
+         SELECT id FROM conversations WHERE (entity_type = 'lead' AND lead_id = ANY($1))
+           OR (entity_type = 'client' AND client_id = ANY($1))
+       )`,
+      [ids]
+    );
+    await query(
+      `DELETE FROM conversations WHERE (entity_type = 'lead' AND lead_id = ANY($1))
+         OR (entity_type = 'client' AND client_id = ANY($1))`,
+      [ids]
+    );
+    await query(`DELETE FROM send_queue WHERE lead_id = ANY($1)`, [ids]);
+    await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [ids]);
+
     // 2. Mark soft-deleted in leads table
     const result = await query(
       `UPDATE leads 
@@ -297,13 +443,13 @@ leadsRouter.post('/bulk-restore', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/leads/bulk-status - Bulk mark leads as active/inactive
+// POST /api/leads/bulk-status - Bulk mark leads as active/inactive/manual_review
 leadsRouter.post('/bulk-status', async (req: Request, res: Response) => {
   try {
     const ids = req.body.ids || req.body.leadIds;
     const { status } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0 || !['active', 'inactive', 'paused'].includes(status)) {
+    if (!Array.isArray(ids) || ids.length === 0 || !['active', 'inactive', 'paused', 'manual_review'].includes(status)) {
       return res.status(400).json({ success: false, error: 'ids array and valid status are required' });
     }
 
@@ -316,6 +462,58 @@ leadsRouter.post('/bulk-status', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[leadsRouter.bulkStatus]', error);
     res.status(500).json({ success: false, error: 'Failed to bulk update status' });
+  }
+});
+
+// POST /api/leads/:id/approve-review - Clear manual review and return lead to active
+leadsRouter.post('/:id/approve-review', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const result = await query(
+      `UPDATE leads 
+       SET status = 'active', 
+           manual_review_reason = NULL, 
+           manual_review_at = NULL, 
+           updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    res.json({ success: true, lead: result.rows[0] });
+  } catch (error) {
+    console.error('[leadsRouter.approveReview]', error);
+    res.status(500).json({ success: false, error: 'Failed to approve lead review' });
+  }
+});
+
+// POST /api/leads/bulk-approve-review - Bulk approve leads in manual review
+leadsRouter.post('/bulk-approve-review', async (req: Request, res: Response) => {
+  try {
+    const ids = req.body.ids || req.body.leadIds;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'ids array is required' });
+    }
+
+    const result = await query(
+      `UPDATE leads 
+       SET status = 'active', 
+           manual_review_reason = NULL, 
+           manual_review_at = NULL, 
+           updated_at = NOW() 
+       WHERE id = ANY($1) 
+       RETURNING id`,
+      [ids]
+    );
+
+    res.json({ success: true, approvedCount: result.rows.length });
+  } catch (error) {
+    console.error('[leadsRouter.bulkApproveReview]', error);
+    res.status(500).json({ success: false, error: 'Failed to bulk approve lead reviews' });
   }
 });
 
@@ -389,6 +587,168 @@ leadsRouter.patch('/:id/status', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /api/leads/:id - Comprehensive lead update (name, phone, whatsapp, email, fb, ig, category, status, consent, notes)
+leadsRouter.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const existing = await query<any>(`SELECT * FROM leads WHERE id = $1 AND deleted_at IS NULL`, [id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const current = existing.rows[0];
+    const businessName =
+      req.body.businessName !== undefined
+        ? req.body.businessName
+        : req.body.business_name !== undefined
+        ? req.body.business_name
+        : current.business_name;
+    const category = req.body.category !== undefined ? req.body.category : current.category;
+    const phone = (req.body.phone !== undefined ? req.body.phone : current.phone) || '';
+    const email = (req.body.email !== undefined ? req.body.email : current.email) || '';
+    const whatsapp = (req.body.whatsapp !== undefined ? req.body.whatsapp : current.whatsapp) || '';
+    const facebook = (req.body.facebook !== undefined ? req.body.facebook : current.facebook) || '';
+    const instagram = (req.body.instagram !== undefined ? req.body.instagram : current.instagram) || '';
+    const notes = req.body.notes !== undefined ? req.body.notes : current.notes;
+    const status = req.body.status !== undefined ? req.body.status : current.status;
+    const consentStatus =
+      req.body.consentStatus !== undefined
+        ? req.body.consentStatus
+        : req.body.consent_status !== undefined
+        ? req.body.consent_status
+        : current.consent_status || 'none';
+
+    const trimmedBusinessName = String(businessName || '').trim();
+    if (!trimmedBusinessName) {
+      return res.status(400).json({ success: false, error: 'Business name cannot be empty' });
+    }
+
+    const trimmedPhone = String(phone || '').trim();
+    const trimmedEmail = String(email || '').trim();
+    const trimmedWhatsapp = String(whatsapp || '').trim();
+    const trimmedFacebook = String(facebook || '').trim();
+    const trimmedInstagram = String(instagram || '').trim();
+
+    // Re-evaluate WhatsApp eligibility and standardize international country code
+    const waEval = whatsappValidator.evaluate({ phone: trimmedPhone, whatsapp: trimmedWhatsapp });
+    const standardizedPhone = waEval.formattedInternational || trimmedPhone;
+    const standardizedWhatsapp = waEval.formattedInternational || trimmedWhatsapp;
+
+    // Recompute detected channels
+    const detectedChannels: string[] = [];
+    if (trimmedEmail && trimmedEmail.includes('@')) detectedChannels.push('email');
+    if (waEval.isEligible) detectedChannels.push('whatsapp');
+    if (trimmedFacebook) detectedChannels.push('facebook');
+    if (trimmedInstagram) detectedChannels.push('instagram');
+
+    // Merge updated metadata (including manual or verified google_profile changes)
+    let updatedMetadata = typeof current.metadata === 'object' && current.metadata !== null ? { ...current.metadata } : {};
+    if (req.body.metadata && typeof req.body.metadata === 'object') {
+      updatedMetadata = { ...updatedMetadata, ...req.body.metadata };
+    }
+    if (req.body.googleProfile && typeof req.body.googleProfile === 'object') {
+      updatedMetadata.google_profile = {
+        ...(updatedMetadata.google_profile || {}),
+        ...req.body.googleProfile,
+        userVerified: true,
+        lastEnrichedAt: new Date().toISOString(),
+      };
+    }
+    if (req.body.google_profile && typeof req.body.google_profile === 'object') {
+      updatedMetadata.google_profile = {
+        ...(updatedMetadata.google_profile || {}),
+        ...req.body.google_profile,
+        userVerified: true,
+        lastEnrichedAt: new Date().toISOString(),
+      };
+    }
+
+    const website = req.body.website !== undefined ? String(req.body.website).trim() : current.website || '';
+    const country = req.body.country !== undefined ? String(req.body.country).trim() : current.country || '';
+
+    const updateRes = await query(
+      `UPDATE leads
+       SET business_name = $1,
+           category = $2,
+           phone = $3,
+           email = $4,
+           instagram = $5,
+           facebook = $6,
+           whatsapp = $7,
+           notes = $8,
+           status = $9,
+           consent_status = $10,
+           whatsapp_eligible = $11,
+           whatsapp_decision_reason = $12,
+           detected_channels = $13,
+           metadata = $14,
+           website = $15,
+           country = $16,
+           updated_at = NOW()
+       WHERE id = $17
+       RETURNING *`,
+      [
+        trimmedBusinessName,
+        category || 'Uncategorized',
+        standardizedPhone,
+        trimmedEmail,
+        trimmedInstagram,
+        trimmedFacebook,
+        standardizedWhatsapp,
+        notes || '',
+        status || 'active',
+        consentStatus,
+        waEval.isEligible,
+        waEval.reason,
+        JSON.stringify(detectedChannels),
+        JSON.stringify(updatedMetadata),
+        website,
+        country,
+        id,
+      ]
+    );
+
+    // Sync to matching client if one exists
+    await query(
+      `UPDATE clients
+       SET business_name = $1,
+           category = $2,
+           phone = $3,
+           email = $4,
+           instagram = $5,
+           facebook = $6,
+           whatsapp = $7,
+           notes = $8,
+           status = $9,
+           whatsapp_eligible = $10,
+           whatsapp_decision_reason = $11,
+           detected_channels = $12,
+           updated_at = NOW()
+       WHERE id = $13 OR original_lead_id = $13`,
+      [
+        trimmedBusinessName,
+        category || 'Uncategorized',
+        standardizedPhone,
+        trimmedEmail,
+        trimmedInstagram,
+        trimmedFacebook,
+        standardizedWhatsapp,
+        notes || '',
+        status || 'active',
+        waEval.isEligible,
+        waEval.reason,
+        JSON.stringify(detectedChannels),
+        id,
+      ]
+    );
+
+    res.json({ success: true, lead: updateRes.rows[0], message: 'Lead updated successfully' });
+  } catch (error) {
+    console.error('[leadsRouter.updateLead]', error);
+    res.status(500).json({ success: false, error: 'Failed to update lead' });
+  }
+});
+
 // DELETE /api/leads/:id - Soft-delete single lead (preserved for 28 days, removes from leads & clients)
 leadsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -405,6 +765,25 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
            VALUES ('client', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
           [client.id, client.business_name, client.email, client.phone, JSON.stringify(client)]
         );
+
+        // Cascading deletion: remove all messages, conversations, and queued items
+        await query(
+          `DELETE FROM messages WHERE conversation_id IN (
+             SELECT id FROM conversations WHERE (entity_type = 'client' AND client_id = $1)
+               OR (entity_type = 'lead' AND lead_id = $2)
+           )`,
+          [id, client.original_lead_id || id]
+        );
+        await query(
+          `DELETE FROM conversations WHERE (entity_type = 'client' AND client_id = $1)
+             OR (entity_type = 'lead' AND lead_id = $2)`,
+          [id, client.original_lead_id || id]
+        );
+        await query(
+          `DELETE FROM send_queue WHERE lead_id = $1 OR lead_id = $2`,
+          [id, client.original_lead_id || id]
+        );
+
         await query(
           `UPDATE clients SET deleted_at = NOW(), deleted_expires_at = NOW() + INTERVAL '28 days' WHERE id = $1`,
           [id]
@@ -415,7 +794,7 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
             [client.original_lead_id]
           );
         }
-        return res.json({ success: true, message: 'Client soft-deleted (moved to Trash)' });
+        return res.json({ success: true, message: 'Client soft-deleted (messages and profile cleared from dashboard)' });
       }
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
@@ -428,6 +807,22 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
        VALUES ('lead', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
       [lead.id, lead.business_name, lead.email, lead.phone, JSON.stringify(lead)]
     );
+
+    // Cascading deletion: remove all messages, conversations, send_queue, and memberships
+    await query(
+      `DELETE FROM messages WHERE conversation_id IN (
+         SELECT id FROM conversations WHERE (entity_type = 'lead' AND lead_id = $1)
+           OR (entity_type = 'client' AND client_id IN (SELECT id FROM clients WHERE id = $1 OR original_lead_id = $1))
+       )`,
+      [id]
+    );
+    await query(
+      `DELETE FROM conversations WHERE (entity_type = 'lead' AND lead_id = $1)
+         OR (entity_type = 'client' AND client_id IN (SELECT id FROM clients WHERE id = $1 OR original_lead_id = $1))`,
+      [id]
+    );
+    await query(`DELETE FROM send_queue WHERE lead_id = $1`, [id]);
+    await query(`DELETE FROM lead_list_memberships WHERE lead_id = $1`, [id]);
 
     // Mark soft-deleted in leads
     const updateRes = await query(
@@ -448,7 +843,7 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
       [lead.id, lead.email || '']
     );
 
-    res.json({ success: true, lead: updateRes.rows[0], message: 'Lead soft-deleted (preserved in history for 28 days)' });
+    res.json({ success: true, lead: updateRes.rows[0], message: 'Lead soft-deleted (messages and profile cleared from dashboard)' });
   } catch (error) {
     console.error('[leadsRouter.delete]', error);
     res.status(500).json({ success: false, error: 'Failed to delete lead' });
@@ -486,6 +881,28 @@ leadsRouter.delete('/:id/permanent', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[leadsRouter.permanentDelete]', error);
     res.status(500).json({ success: false, error: 'Failed to permanently delete record' });
+  }
+});
+
+// GET /api/leads/sync-gmb-status - Check status of 12-hour automated GMB sync engine
+leadsRouter.get('/sync-gmb-status', async (_req: Request, res: Response) => {
+  try {
+    const status = googleEnrichmentService.getGmbSyncStatus();
+    res.json({ success: true, ...status });
+  } catch (error: any) {
+    console.error('[leadsRouter.syncGmbStatus]', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch GMB sync status' });
+  }
+});
+
+// POST /api/leads/sync-gmb - Trigger immediate GMB sync across all leads
+leadsRouter.post('/sync-gmb', async (_req: Request, res: Response) => {
+  try {
+    const result = await googleEnrichmentService.syncAllLeadsWithGmb();
+    res.json(result);
+  } catch (error: any) {
+    console.error('[leadsRouter.syncGmb]', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to sync with Google My Business' });
   }
 });
 
@@ -553,21 +970,70 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    const waEval = whatsappValidator.evaluate({ phone: trimmedPhone, whatsapp });
+    const standardizedPhone = waEval.formattedInternational || trimmedPhone;
+    const standardizedWhatsapp = waEval.formattedInternational || (whatsapp ? whatsapp.trim() : '');
+
+    const detectedChannels: string[] = [];
+    if (trimmedEmail) detectedChannels.push('email');
+    if (waEval.isEligible) detectedChannels.push('whatsapp');
+    if (facebook) detectedChannels.push('facebook');
+    if (instagram) detectedChannels.push('instagram');
+    if (req.body.linkedin) detectedChannels.push('linkedin');
+
+    let initialMetadata: Record<string, any> =
+      req.body.metadata && typeof req.body.metadata === 'object' ? { ...req.body.metadata } : {};
+    let finalCategory = category || 'Uncategorized';
+
+    // Auto-enrich Google Business Profile if enabled (default true)
+    if (req.body.enrichGoogle !== false) {
+      try {
+        const googleProfile = await googleEnrichmentService.fetchGoogleProfile({
+          businessName: businessName.trim(),
+          category: category || 'Uncategorized',
+          phone: standardizedPhone,
+          address: req.body.address || '',
+        });
+        initialMetadata.google_profile = googleProfile;
+        if ((!category || category === 'Uncategorized') && googleProfile.category) {
+          finalCategory = googleProfile.category;
+        }
+      } catch (enrichErr) {
+        console.warn('[leadsRouter.post] Google enrichment warning:', enrichErr);
+      }
+    }
+
+    const website = req.body.website ? String(req.body.website).trim() : (initialMetadata.google_profile?.website || '');
+    let country = req.body.country ? String(req.body.country).trim() : '';
+    if (!country) {
+      if (standardizedPhone.startsWith('+91')) country = 'India';
+      else if (standardizedPhone.startsWith('+61')) country = 'Australia';
+      else if (standardizedPhone.startsWith('+44')) country = 'United Kingdom';
+      else country = 'Canada';
+    }
+
     const result = await query(
-      `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, notes, consent_status, status, batch_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'none', $9, $10)
+      `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, notes, consent_status, status, batch_id, whatsapp_eligible, whatsapp_decision_reason, detected_channels, metadata, website, country)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
         businessName.trim(),
-        category || 'Uncategorized',
-        trimmedPhone,
+        finalCategory,
+        standardizedPhone,
         trimmedEmail,
         instagram ? instagram.trim() : '',
         facebook ? facebook.trim() : '',
-        whatsapp ? whatsapp.trim() : '',
+        standardizedWhatsapp,
+        req.body.linkedin ? req.body.linkedin.trim() : '',
         notes ? notes.trim() : '',
         leadStatus,
         batchId || null,
+        waEval.isEligible,
+        waEval.reason,
+        JSON.stringify(detectedChannels),
+        JSON.stringify(initialMetadata),
+        website,
+        country,
       ]
     );
 
@@ -585,6 +1051,56 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[leadsRouter.post]', error);
     res.status(500).json({ success: false, error: 'Failed to create lead' });
+  }
+});
+
+// POST /api/leads/:id/enrich-google - Fetch & update Google Business Profile data for a specific lead
+leadsRouter.post('/:id/enrich-google', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const updatedLead = await googleEnrichmentService.enrichLead(id);
+    res.json({
+      success: true,
+      lead: updatedLead,
+      googleProfile: updatedLead.metadata?.google_profile,
+      message: 'Google Business Profile information updated successfully',
+    });
+  } catch (error: any) {
+    console.error('[leadsRouter.enrichGoogle]', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to enrich lead with Google data' });
+  }
+});
+
+// POST /api/leads/:id/sync-google-maps - Live sync from Google Maps URL or search query to guarantee 100% match
+leadsRouter.post('/:id/sync-google-maps', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { googleMapsUrl } = req.body || {};
+    const updatedLead = await googleEnrichmentService.syncFromGoogleMaps(id, googleMapsUrl);
+    res.json({
+      success: true,
+      lead: updatedLead,
+      googleProfile: updatedLead.metadata?.google_profile,
+      message: 'Lead synchronized with Google Maps data successfully',
+    });
+  } catch (error: any) {
+    console.error('[leadsRouter.syncGoogleMaps]', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to sync lead with Google Maps' });
+  }
+});
+
+// POST /api/leads/batch-enrich-google - Batch update Google data for multiple leads
+leadsRouter.post('/batch-enrich-google', async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'ids array is required' });
+    }
+    const results = await googleEnrichmentService.batchEnrichLeads(ids);
+    res.json({ success: true, count: results.length, leads: results });
+  } catch (error: any) {
+    console.error('[leadsRouter.batchEnrichGoogle]', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to batch enrich leads' });
   }
 });
 
@@ -616,17 +1132,46 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
     const createdBatch = batchRes.rows[0];
     const batchId = createdBatch.id;
 
-    // 2. Fetch existing emails and phones across BOTH leads and clients
-    const existingLeadRes = await query<{ email: string; phone: string }>(
-      `SELECT email, phone FROM leads WHERE deleted_at IS NULL UNION SELECT email, phone FROM clients`
+    // 2. Fetch existing emails, phones, and business names across BOTH leads and clients (excluding soft-deleted)
+    const existingLeadRes = await query<{ business_name: string; email: string; phone: string; whatsapp: string }>(
+      `SELECT business_name, email, phone, whatsapp FROM leads WHERE deleted_at IS NULL 
+       UNION 
+       SELECT business_name, email, phone, whatsapp FROM clients WHERE deleted_at IS NULL`
     );
 
-    const existingEmails = new Set(
-      existingLeadRes.rows.map((r) => r.email?.toLowerCase().trim()).filter(Boolean)
-    );
-    const existingPhones = new Set(
-      existingLeadRes.rows.map((r) => r.phone?.replace(/\D/g, '')).filter(Boolean)
-    );
+    const cleanBizName = (name: string): string =>
+      (name || '')
+        .toLowerCase()
+        .replace(/\b(llc|inc|corp|corporation|ltd|limited|co|company)\b/gi, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+
+    const existingEmails = new Set<string>();
+    const existingPhonesFull = new Set<string>();
+    const existingPhonesLast10 = new Set<string>();
+    const existingBusinessNames = new Set<string>();
+
+    for (const r of existingLeadRes.rows) {
+      const email = (r.email || '').trim().toLowerCase();
+      if (email) existingEmails.add(email);
+
+      const pDigits = (r.phone || '').replace(/\D/g, '');
+      if (pDigits.length >= 7) {
+        existingPhonesFull.add(pDigits);
+        if (pDigits.length >= 10) existingPhonesLast10.add(pDigits.slice(-10));
+      }
+
+      const waDigits = (r.whatsapp || '').replace(/\D/g, '');
+      if (waDigits.length >= 7) {
+        existingPhonesFull.add(waDigits);
+        if (waDigits.length >= 10) existingPhonesLast10.add(waDigits.slice(-10));
+      }
+
+      const cName = cleanBizName(r.business_name || '');
+      if (cName.length >= 3) {
+        existingBusinessNames.add(cName);
+      }
+    }
 
     let insertedCount = 0;
     let duplicateCount = 0;
@@ -634,14 +1179,22 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
     const insertedLeads: unknown[] = [];
 
     for (const item of rawLeads) {
-      const email = (item.email || '').trim();
+      const email = (item.email || '').trim().toLowerCase();
       const phone = (item.phone || '').trim();
-      const normalizedPhone = phone.replace(/\D/g, '');
+      const phoneDigits = phone.replace(/\D/g, '');
+      const phoneLast10 = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : '';
+
+      const whatsapp = (item.whatsapp || '').trim();
+      const waDigits = whatsapp.replace(/\D/g, '');
+      const waLast10 = waDigits.length >= 10 ? waDigits.slice(-10) : '';
+
       const businessName = (item.businessName || item.business_name || '').trim();
+      const cBusinessName = cleanBizName(businessName);
+
       const category = (item.category || 'Uncategorized').trim();
       const instagram = (item.instagram || '').trim();
       const facebook = (item.facebook || '').trim();
-      const whatsapp = (item.whatsapp || '').trim();
+      const notes = (item.notes || '').trim();
 
       const hasContact = !!email || !!phone || !!instagram || !!facebook || !!whatsapp;
       if (!hasContact) {
@@ -649,28 +1202,97 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
         continue;
       }
 
-      const isDupe =
-        (email && existingEmails.has(email.toLowerCase())) ||
-        (normalizedPhone && existingPhones.has(normalizedPhone));
+      // Check if lead already exists by email, phone (with country code tolerance), or business name
+      let isDupe = false;
+      if (email && existingEmails.has(email)) {
+        isDupe = true;
+      } else if (phoneDigits.length >= 7 && existingPhonesFull.has(phoneDigits)) {
+        isDupe = true;
+      } else if (phoneLast10 && existingPhonesLast10.has(phoneLast10)) {
+        isDupe = true;
+      } else if (waDigits.length >= 7 && existingPhonesFull.has(waDigits)) {
+        isDupe = true;
+      } else if (waLast10 && existingPhonesLast10.has(waLast10)) {
+        isDupe = true;
+      } else if (cBusinessName.length >= 3 && existingBusinessNames.has(cBusinessName)) {
+        isDupe = true;
+      }
 
+      // If existing lead or duplicate within batch, ignore it (do not add again)
       if (isDupe) {
         duplicateCount++;
         continue;
       }
 
-      // Insert valid lead with batch_id
+      // Evaluate WhatsApp eligibility and channels with international country code
+      const waEval = whatsappValidator.evaluate({ phone, whatsapp });
+      const standardizedPhone = waEval.formattedInternational || phone;
+      const standardizedWhatsapp = waEval.formattedInternational || whatsapp;
+
+      const linkedin = (item.linkedin || item.linkedin_url || '').trim();
+      const detectedChannels: string[] = [];
+      if (email) detectedChannels.push('email');
+      if (waEval.isEligible) detectedChannels.push('whatsapp');
+      if (facebook) detectedChannels.push('facebook');
+      if (instagram) detectedChannels.push('instagram');
+      if (linkedin) detectedChannels.push('linkedin');
+
+      let website = (item.website || item.website_url || item.url || '').trim();
+      let country = (item.country || '').trim();
+      if (!website) {
+        const m = notes.match(/Website:\s*([^|\s]+)/i);
+        if (m) website = m[1].trim();
+      }
+      if (website && !website.startsWith('http://') && !website.startsWith('https://')) {
+        website = `https://${website}`;
+      }
+      if (!country) {
+        if (standardizedPhone.startsWith('+91')) country = 'India';
+        else if (standardizedPhone.startsWith('+61')) country = 'Australia';
+        else if (standardizedPhone.startsWith('+44')) country = 'United Kingdom';
+        else country = 'Canada';
+      }
+
+      // Insert valid new lead with batch_id and channel flags
       const insertRes = await query(
-        `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, consent_status, batch_id, outreach_stage)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'none', $8, 'initial')
+        `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, consent_status, batch_id, outreach_stage, whatsapp_eligible, whatsapp_decision_reason, detected_channels, notes, website, country)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'none', $9, 'initial', $10, $11, $12, $13, $14, $15)
          RETURNING *`,
-        [businessName || 'Unnamed Business', category, phone, email, instagram, facebook, whatsapp, batchId]
+        [
+          businessName || 'Unnamed Business',
+          category,
+          standardizedPhone,
+          email,
+          instagram,
+          facebook,
+          standardizedWhatsapp,
+          linkedin,
+          batchId,
+          waEval.isEligible,
+          waEval.reason,
+          JSON.stringify(detectedChannels),
+          notes,
+          website,
+          country,
+        ]
       );
 
       insertedCount++;
       insertedLeads.push(insertRes.rows[0]);
 
-      if (email) existingEmails.add(email.toLowerCase());
-      if (normalizedPhone) existingPhones.add(normalizedPhone);
+      // Register newly inserted lead so intra-batch duplicates are also caught and ignored
+      if (email) existingEmails.add(email);
+      if (phoneDigits.length >= 7) {
+        existingPhonesFull.add(phoneDigits);
+        if (phoneLast10) existingPhonesLast10.add(phoneLast10);
+      }
+      if (waDigits.length >= 7) {
+        existingPhonesFull.add(waDigits);
+        if (waLast10) existingPhonesLast10.add(waLast10);
+      }
+      if (cBusinessName.length >= 3) {
+        existingBusinessNames.add(cBusinessName);
+      }
     }
 
     // 3. Update upload_batches counts
@@ -694,7 +1316,10 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('[leadsRouter.import]', error);
-    res.status(500).json({ success: false, error: 'Failed to import leads' });
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? `Import failed: ${error.message}` : 'Failed to import leads',
+    });
   }
 });
 

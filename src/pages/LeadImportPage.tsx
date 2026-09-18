@@ -22,6 +22,12 @@ import {
   ShieldCheck,
   ArrowRight,
   Clock,
+  Search,
+  Filter,
+  Linkedin,
+  Star,
+  ExternalLink,
+  MapPin,
 } from 'lucide-react';
 import { PageHeader, type PageId } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -30,12 +36,12 @@ import { parseImport, markDuplicates, markIncomplete, parsedRowToLead, type Pars
 import type { Store } from '@/store';
 import type { Lead } from '@/types';
 
-const sampleCsv = `business_name,category,phone,email,instagram,facebook,whatsapp
-Harbor Light Books,Retail,+1 415-555-0190,orders@harborlightbooks.com,@harborlightbooks,HarborLightBooks,
-Summit Auto Repair,Auto Services,+1 650-555-0145,service@summitauto.com,,,+1 650-555-0145
-Zenith Yoga Studio,Fitness & Wellness,+1 510-555-0162,info@zenithyoga.com,@zenithyoga,ZenithYogaStudio,
-Blue Wave Surf Shop,Retail,+1 415-555-0188,,@bluewavesurf,BlueWaveSurfShop,
-Unknown Vendor,Misc,,,,,`;
+const sampleCsv = `business_name,category,phone,email,instagram,facebook,whatsapp,linkedin
+Harbor Light Books,Retail,+1 415-555-0190,orders@harborlightbooks.com,@harborlightbooks,HarborLightBooks,,https://linkedin.com/company/harborlight
+Summit Auto Repair,Auto Services,+1 650-555-0145,service@summitauto.com,,,+1 650-555-0145,
+Zenith Yoga Studio,Fitness & Wellness,+1 510-555-0162,info@zenithyoga.com,@zenithyoga,ZenithYogaStudio,,https://linkedin.com/company/zenithyoga
+Blue Wave Surf Shop,Retail,+1 415-555-0188,,@bluewavesurf,BlueWaveSurfShop,,
+Unknown Vendor,Misc,,,,,,`;
 
 const categorySuggestions = [
   'Software & SaaS',
@@ -58,10 +64,12 @@ interface SingleLeadFormData {
   whatsapp: string;
   instagram: string;
   facebook: string;
+  linkedin: string;
   status: 'active' | 'inactive';
   listId: string;
   batchTag: string;
   notes: string;
+  enrichGoogle?: boolean;
 }
 
 const emptySingleLead: SingleLeadFormData = {
@@ -72,10 +80,12 @@ const emptySingleLead: SingleLeadFormData = {
   whatsapp: '',
   instagram: '',
   facebook: '',
+  linkedin: '',
   status: 'active',
   listId: 'none',
   batchTag: '',
   notes: '',
+  enrichGoogle: true,
 };
 
 const sampleLeadTemplates: SingleLeadFormData[] = [
@@ -87,6 +97,7 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     whatsapp: '+1 (415) 555-0199',
     instagram: '@apexcloud',
     facebook: 'ApexCloudSystems',
+    linkedin: 'https://linkedin.com/company/apex-cloud',
     status: 'active',
     listId: 'none',
     batchTag: 'Inbound Inquiries',
@@ -100,6 +111,7 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     whatsapp: '+1 (650) 555-0148',
     instagram: '@luminadental',
     facebook: 'LuminaDentalStudio',
+    linkedin: 'https://linkedin.com/company/lumina-dental',
     status: 'active',
     listId: 'none',
     batchTag: 'Local Clinic Outreach',
@@ -113,6 +125,7 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     whatsapp: '+1 (510) 555-0174',
     instagram: '@vanguardgrowth',
     facebook: 'VanguardMarketingLab',
+    linkedin: 'https://linkedin.com/company/vanguard-marketing-lab',
     status: 'inactive',
     listId: 'none',
     batchTag: 'Q3 Agency Prospects',
@@ -198,9 +211,11 @@ export function LeadImportPage({ store, onNavigate }: Props) {
         whatsapp: singleLead.whatsapp.trim() || undefined,
         instagram: formattedInstagram || undefined,
         facebook: singleLead.facebook.trim() || undefined,
+        linkedin: singleLead.linkedin.trim() || undefined,
         status: singleLead.status,
         notes: singleLead.notes.trim() || undefined,
         listId: singleLead.listId !== 'none' ? singleLead.listId : undefined,
+        enrichGoogle: singleLead.enrichGoogle !== false,
       });
 
       const assignedList = store.lists.find((l) => l.id === singleLead.listId)?.name;
@@ -308,6 +323,28 @@ export function LeadImportPage({ store, onNavigate }: Props) {
     const valid = rows.filter((r) => !r.isDuplicate && !r.isIncomplete).length;
     return { total, duplicates, incomplete, valid };
   }, [rows]);
+
+  // Preview Filtering States & Computed Rows
+  const [previewFilter, setPreviewFilter] = useState<'all' | 'valid' | 'duplicates' | 'incomplete'>('all');
+  const [previewSearch, setPreviewSearch] = useState('');
+
+  const displayedRows = useMemo(() => {
+    return rows.filter((r) => {
+      if (previewFilter === 'valid' && (r.isDuplicate || r.isIncomplete)) return false;
+      if (previewFilter === 'duplicates' && !r.isDuplicate) return false;
+      if (previewFilter === 'incomplete' && !r.isIncomplete) return false;
+      if (previewSearch.trim()) {
+        const q = previewSearch.toLowerCase();
+        return (
+          r.businessName.toLowerCase().includes(q) ||
+          r.category.toLowerCase().includes(q) ||
+          r.email.toLowerCase().includes(q) ||
+          r.phone.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [rows, previewFilter, previewSearch]);
 
   // Overall lead counts for stats card
   const leadStats = useMemo(() => {
@@ -448,6 +485,21 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                           <span className="inline-flex items-center gap-1 rounded bg-emerald-100/80 px-2 py-0.5 text-xs text-emerald-800 font-mono">
                             <Phone size={12} /> {singleSuccess.lead.phone}
                           </span>
+                        )}
+                        {singleSuccess.lead.googleProfile && (
+                          <div className="flex items-center gap-2 rounded bg-amber-100/90 border border-amber-300 px-2.5 py-0.5 text-xs text-amber-900 font-medium">
+                            <Star size={12} className="text-amber-600 fill-amber-600" />
+                            <span className="font-bold">{singleSuccess.lead.googleProfile.rating}★</span>
+                            <span className="text-[11px] text-amber-800">({singleSuccess.lead.googleProfile.reviewsCount} Google reviews)</span>
+                            <a
+                              href={singleSuccess.lead.googleProfile.googleMapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-bold text-blue-700 hover:underline inline-flex items-center gap-0.5 text-[11px]"
+                            >
+                              <span>Maps ↗</span>
+                            </a>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -629,7 +681,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                     />
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="label flex items-center gap-1.5" htmlFor="facebook">
                       <Globe size={13} className="text-blue-500" /> Facebook Page or Profile
                     </label>
@@ -638,7 +690,21 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       type="text"
                       value={singleLead.facebook}
                       onChange={(e) => setSingleLead({ ...singleLead, facebook: e.target.value })}
-                      placeholder="FacebookPageName or full profile URL"
+                      placeholder="FacebookPageName or profile URL"
+                      className="input"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="label flex items-center gap-1.5" htmlFor="linkedin">
+                      <Linkedin size={13} className="text-sky-600" /> LinkedIn Profile / Company URL
+                    </label>
+                    <input
+                      id="linkedin"
+                      type="text"
+                      value={singleLead.linkedin}
+                      onChange={(e) => setSingleLead({ ...singleLead, linkedin: e.target.value })}
+                      placeholder="https://linkedin.com/in/prospect or /company/name"
                       className="input"
                     />
                   </div>
@@ -734,6 +800,28 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                   placeholder="Add background information, meeting summary, target pain points, or specific instructions for sequence templates..."
                   className="textarea text-xs"
                 />
+              </div>
+
+              {/* Google Business Profile Auto-Enrichment Option */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500 text-white font-bold text-xs shadow-2xs">
+                    G
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-amber-900">Auto-Enrich Google Business Profile</p>
+                    <p className="text-[11px] text-amber-700">Fetches live Google rating, reviews count, address, and Google Maps link</p>
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-amber-900 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={singleLead.enrichGoogle !== false}
+                    onChange={(e) => setSingleLead({ ...singleLead, enrichGoogle: e.target.checked })}
+                    className="rounded text-brand-600 focus:ring-brand-500 h-4 w-4"
+                  />
+                  <span>Active</span>
+                </label>
               </div>
 
               {/* Form Submission Actions */}
@@ -948,17 +1036,17 @@ export function LeadImportPage({ store, onNavigate }: Props) {
           </div>
 
           {importResult && (
-            <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 animate-fade-in">
-              <CheckCircle2 size={20} className="text-emerald-600 flex-shrink-0" />
+            <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 animate-fade-in">
+              <CheckCircle2 size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-emerald-800">
                 <span className="font-semibold">
                   Successfully imported {importResult.imported}{' '}
-                  {importResult.imported === 1 ? 'lead' : 'leads'} into PostgreSQL.
+                  {importResult.imported === 1 ? 'new lead' : 'new leads'} into CRM.
                 </span>
                 {importResult.duplicates > 0 && (
-                  <span className="ml-2 text-xs text-amber-700">
-                    ({importResult.duplicates} duplicate{' '}
-                    {importResult.duplicates === 1 ? 'record' : 'records'} skipped by database)
+                  <span className="ml-2 text-xs text-amber-800 font-medium">
+                    ({importResult.duplicates} existing/duplicate{' '}
+                    {importResult.duplicates === 1 ? 'lead was' : 'leads were'} ignored and not added again)
                   </span>
                 )}
               </div>
@@ -989,19 +1077,68 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                   Preview ({bulkStats.total} rows parsed)
                 </h3>
                 <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className="flex items-center gap-1.5 text-ink-700 font-medium">
-                      <CheckCircle2 size={14} className="text-emerald-600" />
-                      {bulkStats.valid} valid
-                    </span>
-                    <span className="flex items-center gap-1.5 text-ink-500">
-                      <Copy size={14} className="text-amber-600" />
-                      {bulkStats.duplicates} duplicates
-                    </span>
-                    <span className="flex items-center gap-1.5 text-ink-500">
-                      <AlertTriangle size={14} className="text-red-600" />
-                      {bulkStats.incomplete} incomplete
-                    </span>
+                  <div className="flex items-center gap-2 text-xs flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFilter('all')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                        previewFilter === 'all'
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      All ({bulkStats.total})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFilter('valid')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                        previewFilter === 'valid'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <CheckCircle2 size={13} />
+                      Ready to Import ({bulkStats.valid})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewFilter('duplicates')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                        previewFilter === 'duplicates'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                      }`}
+                      title="Existing leads from CSV will be ignored and not added again"
+                    >
+                      <Copy size={13} />
+                      Duplicates ({bulkStats.duplicates})
+                    </button>
+                    {bulkStats.incomplete > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilter('incomplete')}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border font-semibold transition-all ${
+                          previewFilter === 'incomplete'
+                            ? 'bg-red-600 text-white border-red-600 shadow-2xs'
+                            : 'bg-red-50 text-red-800 border-red-200 hover:bg-red-100'
+                        }`}
+                      >
+                        <AlertTriangle size={13} />
+                        Incomplete ({bulkStats.incomplete})
+                      </button>
+                    )}
+
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search parsed rows..."
+                        value={previewSearch}
+                        onChange={(e) => setPreviewSearch(e.target.value)}
+                        className="input pl-7 pr-2 py-1 text-xs w-36 bg-white border-slate-200"
+                      />
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
@@ -1023,8 +1160,8 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                         </>
                       ) : (
                         <>
-                          <Upload size={16} /> Import {bulkStats.valid} Lead
-                          {bulkStats.valid !== 1 ? 's' : ''}
+                          <Upload size={16} /> Import {bulkStats.valid} New Lead{bulkStats.valid !== 1 ? 's' : ''}
+                          {bulkStats.duplicates > 0 ? ` (${bulkStats.duplicates} ignored)` : ''}
                         </>
                       )}
                     </button>
@@ -1058,7 +1195,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {rows.map((row) => (
+                      {displayedRows.map((row) => (
                         <tr
                           key={row.tempId}
                           className={`transition-colors hover:bg-slate-50 ${
@@ -1066,7 +1203,18 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                           }`}
                         >
                           <td className="px-4 py-3 font-medium text-ink-900">
-                            {row.businessName || <span className="text-ink-300 italic">Missing</span>}
+                            <div>{row.businessName || <span className="text-ink-300 italic">Missing</span>}</div>
+                            {row.isDuplicate && row.duplicateReason && (
+                              <div className="text-[11px] text-amber-800 font-medium mt-0.5 flex items-center gap-1">
+                                <AlertTriangle size={11} className="text-amber-600 flex-shrink-0" />
+                                <span>Ignored: {row.duplicateReason}</span>
+                              </div>
+                            )}
+                            {row.notes && (
+                              <div className="text-[11px] text-ink-400 font-normal mt-0.5 line-clamp-1" title={row.notes}>
+                                {row.notes}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-ink-500">
                             {row.category || <span className="text-ink-300">—</span>}
@@ -1078,7 +1226,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                             {row.email || <span className="text-ink-300">—</span>}
                           </td>
                           <td className="px-4 py-3 text-ink-500">
-                            {row.instagram || row.facebook || row.whatsapp ? (
+                            {row.instagram || row.facebook || row.whatsapp || row.linkedin ? (
                               <span className="flex flex-wrap gap-1">
                                 {row.instagram && (
                                   <span className="text-xs text-violet-600">{row.instagram}</span>
@@ -1089,6 +1237,11 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                                 {row.whatsapp && (
                                   <span className="text-xs text-emerald-600">{row.whatsapp}</span>
                                 )}
+                                {row.linkedin && (
+                                  <span className="text-xs text-sky-600 truncate max-w-[150px] inline-block" title={row.linkedin}>
+                                    {row.linkedin.replace(/^https?:\/\/(www\.)?linkedin\.com\/(in|company)\//, '') || 'LinkedIn'}
+                                  </span>
+                                )}
                               </span>
                             ) : (
                               <span className="text-ink-300">—</span>
@@ -1096,8 +1249,8 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                           </td>
                           <td className="px-4 py-3">
                             {row.isDuplicate ? (
-                              <Badge variant="yellow" title={row.duplicateReason}>
-                                <Copy size={12} /> Duplicate
+                              <Badge variant="yellow" title={row.duplicateReason || 'Existing lead — will be ignored'}>
+                                <Copy size={12} /> Ignored (Duplicate)
                               </Badge>
                             ) : row.isIncomplete ? (
                               <Badge variant="red">

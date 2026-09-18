@@ -84,3 +84,20 @@ campaignsRouter.post('/', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to create campaign' });
   }
 });
+
+// DELETE /api/campaigns/:id
+campaignsRouter.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    await query(`DELETE FROM campaign_steps WHERE campaign_id = $1`, [id]);
+    const delRes = await query(`DELETE FROM campaigns WHERE id = $1 RETURNING id`, [id]);
+    if (delRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Campaign not found' });
+    }
+    res.json({ success: true, message: 'Campaign deleted successfully' });
+  } catch (error) {
+    console.error('[campaignsRouter.delete]', error);
+    res.status(500).json({ success: false, error: 'Failed to delete campaign' });
+  }
+});
+

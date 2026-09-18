@@ -74,9 +74,16 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     }
   }, [open, defaultListId, store.lists]);
 
-  // Count eligible leads with email in selected list
+  // Count eligible leads with email or contact form in selected list or entire database
   const eligibleLeadsCount = useMemo(() => {
     if (!selectedListId) return 0;
+    if (selectedListId === 'all') {
+      return store.leads.filter(
+        (l) =>
+          l.consentStatus !== 'opted_out' &&
+          ((l.email && l.email.trim() !== '') || Boolean(l.metadata?.website_form?.hasForm))
+      ).length;
+    }
     const targetList = store.lists.find((l) => l.id === selectedListId);
     if (!targetList) return 0;
     // Count from store.leads matching this list that have non-empty email
@@ -95,7 +102,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     setIsPreviewLoading(true);
     try {
       const res = await api.previewHumanizedEmail({
-        listId: selectedListId || undefined,
+        listId: selectedListId === 'all' ? undefined : selectedListId || undefined,
         style,
         stage: stage === 'auto' ? undefined : stage,
         customInstructions: customInstructions.trim() || undefined,
@@ -118,7 +125,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
   // Handle Dispatch / Scheduling Submit
   const handleScheduleSubmit = async () => {
     if (!selectedListId) {
-      setSubmitFeedback({ type: 'error', message: 'Please select a custom list to schedule.' });
+      setSubmitFeedback({ type: 'error', message: 'Please select a contact list to schedule.' });
       return;
     }
 
@@ -126,11 +133,26 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
       setIsSubmitting(true);
       setSubmitFeedback(null);
 
+      // Mass outreach to entire database
+      if (selectedListId === 'all' && sendMode === 'now') {
+        const result = await api.executeAiCommand({
+          commandText: 'shoot msg to all',
+          actionType: 'shoot_all_outreach',
+        });
+        setSubmitFeedback({
+          type: 'success',
+          message: `${result.summary} All messages dispatched live.`,
+        });
+        await store.fetchLeads();
+        await store.refreshAll();
+        return;
+      }
+
       const targetScheduleTime =
         sendMode === 'now' ? 'now' : new Date(scheduledDateTime).toISOString();
 
       const result = await store.scheduleListDispatch({
-        listId: selectedListId,
+        listId: selectedListId === 'all' && store.lists.length > 0 ? store.lists[0].id : selectedListId,
         scheduledFor: targetScheduleTime,
         style,
         stage,
@@ -232,7 +254,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
             <Clock size={14} className={activeTab === 'dispatches' ? 'text-brand-600' : 'text-slate-400'} />
             <span>Scheduled Dispatches Queue</span>
             {store.dispatches.length > 0 && (
-              <span className="rounded-full bg-slate-200 text-slate-800 px-1.5 py-0.2 text-[10px] font-bold">
+              <span className="rounded-full bg-slate-200 text-slate-800 px-1.5 py-0.5 text-[10px] font-bold">
                 {store.dispatches.length}
               </span>
             )}
@@ -266,35 +288,30 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   1. Target Contact List
                 </label>
-                {store.lists.length === 0 ? (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                    No custom lists found. Create a list or use "Add Filtered to List" on the CRM page first.
-                  </div>
-                ) : (
                   <div className="space-y-1.5">
                     <select
                       value={selectedListId}
                       onChange={(e) => setSelectedListId(e.target.value)}
                       className="input w-full text-xs font-semibold py-2"
                     >
+                      <option value="all">
+                        🌐 All Leads in Database ({store.leads.length} total leads)
+                      </option>
                       {store.lists.map((l) => (
                         <option key={l.id} value={l.id}>
                           🏷️ {l.name} ({l.lead_count} total members)
                         </option>
                       ))}
                     </select>
-                    {selectedListObj && (
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
-                        <span className="flex items-center gap-1.5">
-                          <Users size={12} className="text-brand-600" />
-                          <span>Eligible for Email Outreach:</span>
-                          <strong className="text-slate-800">{eligibleLeadsCount} leads</strong>
-                        </span>
-                        <span>List ID: {selectedListId.slice(0, 8)}...</span>
-                      </div>
-                    )}
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
+                      <span className="flex items-center gap-1.5">
+                        <Users size={12} className="text-brand-600" />
+                        <span>Eligible for Dual-Trigger Outreach:</span>
+                        <strong className="text-slate-800">{eligibleLeadsCount} leads</strong>
+                      </span>
+                      <span>{selectedListId === 'all' ? 'Entire Database' : `List: ${selectedListId.slice(0, 8)}...`}</span>
+                    </div>
                   </div>
-                )}
               </div>
 
               {/* 2. Dispatch Timing Mode */}
@@ -508,7 +525,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                     <div className="bg-white rounded-lg p-2.5 border border-slate-200 text-xs shadow-2xs space-y-1">
                       <div className="flex items-center justify-between text-slate-400 text-[10px]">
                         <span>RECIPIENT SAMPLE</span>
-                        <span className="capitalize px-1.5 py-0.2 rounded bg-brand-50 text-brand-700 font-bold text-[9px]">
+                        <span className="capitalize px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 font-bold text-[9px]">
                           {previewData.preview.stage.replace('_', ' ')}
                         </span>
                       </div>

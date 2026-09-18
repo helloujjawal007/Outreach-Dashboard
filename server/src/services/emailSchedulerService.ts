@@ -1,10 +1,34 @@
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
-import { humanizerService, type HumanizerOptions } from './humanizerService';
+import { humanizerService } from './humanizerService';
+import { aiResearchWriterService } from './aiResearchWriterService';
 
 export interface ScheduleListParams {
   listId: string;
+  channel?: 'email' | 'whatsapp' | 'facebook' | 'instagram';
   scheduledFor?: string | Date; // If 'now' or undefined, shoots immediately
+  intervalSeconds?: number; // Anti-ban pacing between dispatches
+  style?: 'conversational' | 'direct' | 'curious';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  customInstructions?: string;
+}
+
+export interface ScheduleSingleDispatchParams {
+  leadId: string;
+  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram';
+  scheduledFor?: string | Date;
+  subject?: string;
+  body?: string;
+  style?: 'conversational' | 'direct' | 'curious';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  customInstructions?: string;
+}
+
+export interface ScheduleBatchDispatchParams {
+  leadIds: string[];
+  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram';
+  scheduledFor?: string | Date;
+  intervalSeconds?: number; // Pacing delay in seconds between messages (defaults: wa=45s, email=25s, fb=30s, ig=30s)
   style?: 'conversational' | 'direct' | 'curious';
   stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
   customInstructions?: string;
@@ -12,12 +36,15 @@ export interface ScheduleListParams {
 
 export interface ScheduledDispatchRecord {
   id: string;
+  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram';
   list_id?: string;
   list_name: string;
   entity_type: 'lead' | 'client';
   lead_id?: string;
   client_id?: string;
-  recipient_email: string;
+  recipient_email?: string;
+  recipient_phone?: string;
+  recipient_handle?: string;
   recipient_name: string;
   subject: string;
   body: string;
@@ -27,6 +54,8 @@ export interface ScheduledDispatchRecord {
   scheduled_for: string;
   sent_at?: string;
   error_message?: string;
+  inbox_id?: string;
+  inbox_email?: string;
   created_at: string;
   updated_at: string;
 }
@@ -36,10 +65,277 @@ export class EmailSchedulerService {
   private isProcessing = false;
 
   /**
-   * Helper sleep for anti-spam pacing jitter (2-3.5 seconds)
+   * Helper sleep for anti-spam pacing jitter
    */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Schedule a single dispatch for a specific lead on any channel (Email, WhatsApp, FB, IG)
+   */
+  async scheduleSingleDispatch(params: ScheduleSingleDispatchParams): Promise<{
+    success: boolean;
+    dispatchId?: string;
+    recipient: string;
+    scheduledFor: Date;
+    channel: string;
+  }> {
+    const channel = params.channel || 'email';
+    const scheduledDate = params.scheduledFor ? new Date(params.scheduledFor) : new Date();
+
+    // Fetch lead details
+    const leadRes = await query<{
+      id: string;
+      business_name: string;
+      email: string;
+      phone: string;
+      whatsapp: string;
+      facebook: string;
+      instagram: string;
+      category: string;
+      notes: string;
+    }>(`SELECT * FROM leads WHERE id = $1`, [params.leadId]);
+
+    if (leadRes.rows.length === 0) {
+      throw new Error(`Lead with ID ${params.leadId} not found`);
+    }
+
+    const lead = leadRes.rows[0];
+    let recipientEmail = (lead.email || '').trim();
+    let recipientPhone = (lead.whatsapp || lead.phone || '').trim();
+    let recipientHandle = (lead.facebook || lead.instagram || '').trim();
+    let subject = params.subject?.trim() || '';
+    let body = params.body?.trim() || '';
+
+    // If body not provided, generate personalized message via AI copywriter
+    if (!body) {
+      const generated = aiResearchWriterService.generateTailoredMessage(
+        {
+          businessName: lead.business_name,
+          category: lead.category,
+          phone: lead.phone,
+          email: lead.email,
+          instagram: lead.instagram,
+          facebook: lead.facebook,
+          notes: lead.notes,
+        },
+        channel
+      );
+      body = generated.body;
+      if (channel === 'email' && !subject) {
+        subject = generated.subject || `Quick question regarding ${lead.business_name}`;
+      }
+    }
+
+    if (channel === 'email' && !subject) {
+      subject = `Follow up regarding ${lead.business_name}`;
+    }
+
+    const insertRes = await query<{ id: string }>(
+      `INSERT INTO scheduled_dispatches (
+        entity_type, lead_id, channel, recipient_email, recipient_phone, recipient_handle,
+        recipient_name, subject, body, stage, style, status, scheduled_for
+      ) VALUES (
+        'lead', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'scheduled', $11
+      ) RETURNING id`,
+      [
+        lead.id,
+        channel,
+        recipientEmail,
+        recipientPhone,
+        recipientHandle,
+        lead.business_name,
+        subject,
+        body,
+        params.stage || 'initial',
+        params.style || 'conversational',
+        scheduledDate,
+      ]
+    );
+
+    const dispatchId = insertRes.rows[0].id;
+    const recipient =
+      channel === 'whatsapp'
+        ? recipientPhone
+        : channel === 'email'
+        ? recipientEmail
+        : recipientHandle || lead.business_name;
+
+    console.log(`[Scheduler] Single [${channel}] dispatch scheduled for ${lead.business_name} (${recipient}) at ${scheduledDate.toISOString()}`);
+
+    // If scheduled for now, trigger worker loop asynchronously
+    if (scheduledDate <= new Date()) {
+      setTimeout(() => this.processPendingDispatches().catch(console.error), 200);
+    }
+
+    return {
+      success: true,
+      dispatchId,
+      recipient,
+      scheduledFor: scheduledDate,
+      channel,
+    };
+  }
+
+  /**
+   * Schedule batch dispatches for multiple selected leads with automated anti-ban pacing intervals
+   */
+  async scheduleBatchDispatch(params: ScheduleBatchDispatchParams): Promise<{
+    success: boolean;
+    scheduledCount: number;
+    channel: string;
+    firstScheduledAt: Date;
+    lastScheduledAt: Date;
+    message: string;
+  }> {
+    const {
+      leadIds,
+      channel,
+      intervalSeconds = channel === 'whatsapp' ? 45 : channel === 'email' ? 25 : 30,
+      style = 'conversational',
+      stage = 'initial',
+      customInstructions,
+    } = params;
+
+    if (!Array.isArray(leadIds) || leadIds.length === 0) {
+      throw new Error('At least one lead must be selected for scheduling');
+    }
+
+    // Fetch leads
+    const leadsRes = await query<{
+      id: string;
+      business_name: string;
+      primary_contact_name: string;
+      email: string;
+      phone: string;
+      whatsapp: string;
+      facebook: string;
+      instagram: string;
+      category: string;
+      notes: string;
+      outreach_stage: string;
+    }>(
+      `SELECT id,
+              business_name,
+              COALESCE(metadata->>'primary_contact_name', metadata->>'contact_name', '') AS primary_contact_name,
+              email,
+              phone,
+              whatsapp,
+              facebook,
+              instagram,
+              category,
+              notes,
+              outreach_stage
+       FROM leads
+       WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+       ORDER BY created_at ASC`,
+      [leadIds]
+    );
+
+    // Filter leads eligible for this channel
+    const eligibleLeads = leadsRes.rows.filter((lead) => {
+      if (channel === 'email') return !!(lead.email && lead.email.trim());
+      if (channel === 'whatsapp') return !!((lead.whatsapp && lead.whatsapp.trim()) || (lead.phone && lead.phone.trim()));
+      if (channel === 'facebook') return !!(lead.facebook && lead.facebook.trim());
+      if (channel === 'instagram') return !!(lead.instagram && lead.instagram.trim());
+      return false;
+    });
+
+    if (eligibleLeads.length === 0) {
+      return {
+        success: false,
+        scheduledCount: 0,
+        channel,
+        firstScheduledAt: new Date(),
+        lastScheduledAt: new Date(),
+        message: `None of the selected leads have valid contact details for ${channel.toUpperCase()}.`,
+      };
+    }
+
+    // Base start time
+    let baseTime = new Date();
+    if (params.scheduledFor && params.scheduledFor !== 'now') {
+      const parsed = new Date(params.scheduledFor);
+      if (!isNaN(parsed.getTime())) {
+        baseTime = parsed;
+      }
+    }
+
+    let insertedCount = 0;
+    let lastScheduledAt = baseTime;
+
+    console.log(
+      `[Scheduler] Batch scheduling ${eligibleLeads.length} leads on ${channel.toUpperCase()} starting ${baseTime.toISOString()} with ${intervalSeconds}s pacing interval...`
+    );
+
+    for (let i = 0; i < eligibleLeads.length; i++) {
+      const lead = eligibleLeads[i];
+      const staggerMs = i * intervalSeconds * 1000;
+      const leadTargetTime = new Date(baseTime.getTime() + staggerMs);
+      lastScheduledAt = leadTargetTime;
+
+      const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
+      const recipientEmail = channel === 'email' ? lead.email.trim() : null;
+      const recipientPhone = channel === 'whatsapp' ? (lead.whatsapp || lead.phone || '').trim() : null;
+      const recipientHandle =
+        channel === 'facebook' ? lead.facebook.trim() : channel === 'instagram' ? lead.instagram.trim() : null;
+
+      try {
+        // Generate tailored copy per lead
+        const contact = {
+          id: lead.id,
+          businessName: lead.business_name,
+          category: lead.category,
+          phone: lead.phone,
+          email: lead.email,
+          instagram: lead.instagram,
+          facebook: lead.facebook,
+          whatsapp: lead.whatsapp,
+          notes: lead.notes,
+        };
+
+        const aiOutreach = await aiResearchWriterService.researchAndWrite(contact, channel, customInstructions);
+
+        await query(
+          `INSERT INTO scheduled_dispatches (
+            channel, list_id, list_name, entity_type, lead_id,
+            recipient_email, recipient_phone, recipient_handle, recipient_name,
+            subject, body, stage, style, status, scheduled_for, created_at, updated_at
+          ) VALUES ($1, NULL, 'Selected Leads Batch', 'lead', $2, $3, $4, $5, $6, $7, $8, $9, $10, 'scheduled', $11, NOW(), NOW())`,
+          [
+            channel,
+            lead.id,
+            recipientEmail,
+            recipientPhone,
+            recipientHandle,
+            recipientName,
+            aiOutreach.subject || '',
+            aiOutreach.body,
+            stage,
+            style,
+            leadTargetTime,
+          ]
+        );
+
+        insertedCount++;
+      } catch (err) {
+        console.error(`[Scheduler] Error scheduling lead ${lead.id}:`, err);
+      }
+    }
+
+    if (baseTime.getTime() <= Date.now() + 5000) {
+      setTimeout(() => this.processPendingDispatches().catch(console.error), 200);
+    }
+
+    return {
+      success: true,
+      scheduledCount: insertedCount,
+      channel,
+      firstScheduledAt: baseTime,
+      lastScheduledAt,
+      message: `Successfully scheduled ${insertedCount} ${channel.toUpperCase()} message(s) staggered across ${intervalSeconds}s intervals.`,
+    };
   }
 
   /**
@@ -49,16 +345,21 @@ export class EmailSchedulerService {
     success: boolean;
     scheduledCount: number;
     listName: string;
+    channel: string;
     scheduledFor: Date;
     message: string;
   }> {
-    const { listId, style = 'conversational', stage = 'auto', customInstructions } = params;
+    const {
+      listId,
+      channel = 'email',
+      style = 'conversational',
+      stage = 'auto',
+      intervalSeconds = channel === 'whatsapp' ? 45 : 25,
+      customInstructions,
+    } = params;
 
     // 1. Fetch list metadata
-    const listRes = await query<{ id: string; name: string }>(
-      `SELECT id, name FROM lists WHERE id = $1`,
-      [listId]
-    );
+    const listRes = await query<{ id: string; name: string }>(`SELECT id, name FROM lists WHERE id = $1`, [listId]);
 
     if (listRes.rows.length === 0) {
       throw new Error(`List with ID "${listId}" not found`);
@@ -66,12 +367,16 @@ export class EmailSchedulerService {
 
     const list = listRes.rows[0];
 
-    // 2. Fetch all leads associated with this list that have valid emails
+    // 2. Fetch all leads associated with this list
     const leadsRes = await query<{
       id: string;
       business_name: string;
       primary_contact_name: string;
       email: string;
+      phone: string;
+      whatsapp: string;
+      facebook: string;
+      instagram: string;
       category: string;
       notes: string;
       outreach_stage: string;
@@ -80,6 +385,10 @@ export class EmailSchedulerService {
               l.business_name,
               COALESCE(l.metadata->>'primary_contact_name', l.metadata->>'contact_name', '') AS primary_contact_name,
               l.email,
+              l.phone,
+              l.whatsapp,
+              l.facebook,
+              l.instagram,
               l.category,
               l.notes,
               l.outreach_stage
@@ -87,89 +396,128 @@ export class EmailSchedulerService {
        JOIN leads l ON l.id = m.lead_id
        WHERE m.list_id = $1
          AND l.deleted_at IS NULL
-         AND l.email IS NOT NULL
-         AND TRIM(l.email) != ''
        ORDER BY l.created_at ASC`,
       [listId]
     );
 
-    if (leadsRes.rows.length === 0) {
+    // Filter by channel validity
+    const eligibleLeads = leadsRes.rows.filter((lead) => {
+      if (channel === 'email') return !!(lead.email && lead.email.trim());
+      if (channel === 'whatsapp') return !!((lead.whatsapp && lead.whatsapp.trim()) || (lead.phone && lead.phone.trim()));
+      if (channel === 'facebook') return !!(lead.facebook && lead.facebook.trim());
+      if (channel === 'instagram') return !!(lead.instagram && lead.instagram.trim());
+      return false;
+    });
+
+    if (eligibleLeads.length === 0) {
       return {
         success: false,
         scheduledCount: 0,
         listName: list.name,
+        channel,
         scheduledFor: new Date(),
-        message: `No active leads with valid email addresses were found in "${list.name}".`,
+        message: `No active leads with valid contact information for ${channel.toUpperCase()} were found in "${list.name}".`,
       };
     }
 
     // Determine target schedule time
-    let targetTime = new Date();
+    let baseTime = new Date();
     if (params.scheduledFor && params.scheduledFor !== 'now') {
       const parsed = new Date(params.scheduledFor);
       if (!isNaN(parsed.getTime())) {
-        targetTime = parsed;
+        baseTime = parsed;
       }
     }
 
     console.log(
-      `[EmailScheduler] Generating humanized emails for ${leadsRes.rows.length} leads in "${list.name}" (Scheduled for: ${targetTime.toISOString()})...`
+      `[Scheduler] Generating outreach copy for ${eligibleLeads.length} leads in "${list.name}" (${channel.toUpperCase()}, Scheduled for: ${baseTime.toISOString()})...`
     );
 
     let insertedCount = 0;
 
-    for (const lead of leadsRes.rows) {
-      try {
-        // Auto-write personalized, humanized email for this lead
-        const generated = await humanizerService.generateEmail(
-          {
-            id: lead.id,
-            business_name: lead.business_name,
-            primary_contact_name: lead.primary_contact_name,
-            category: lead.category,
-            notes: lead.notes,
-            entity_type: 'lead',
-          },
-          {
-            stage: stage === 'auto' ? undefined : stage,
-            style,
-            customInstructions,
-          }
-        );
+    for (let i = 0; i < eligibleLeads.length; i++) {
+      const lead = eligibleLeads[i];
+      const leadTargetTime = new Date(baseTime.getTime() + i * intervalSeconds * 1000);
+      const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
 
-        const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
+      const recipientEmail = channel === 'email' ? lead.email.trim() : null;
+      const recipientPhone = channel === 'whatsapp' ? (lead.whatsapp || lead.phone || '').trim() : null;
+      const recipientHandle =
+        channel === 'facebook' ? lead.facebook.trim() : channel === 'instagram' ? lead.instagram.trim() : null;
+
+      try {
+        let subject = '';
+        let body = '';
+
+        if (channel === 'email') {
+          const generated = await humanizerService.generateEmail(
+            {
+              id: lead.id,
+              business_name: lead.business_name,
+              primary_contact_name: lead.primary_contact_name,
+              category: lead.category,
+              notes: lead.notes,
+              entity_type: 'lead',
+            },
+            {
+              stage: stage === 'auto' ? undefined : stage,
+              style,
+              customInstructions,
+            }
+          );
+          subject = generated.subject;
+          body = generated.body;
+        } else {
+          const aiOutreach = await aiResearchWriterService.researchAndWrite(
+            {
+              businessName: lead.business_name,
+              category: lead.category,
+              phone: lead.phone,
+              email: lead.email,
+              instagram: lead.instagram,
+              facebook: lead.facebook,
+              whatsapp: lead.whatsapp,
+              notes: lead.notes,
+            },
+            channel,
+            customInstructions
+          );
+          subject = aiOutreach.subject || '';
+          body = aiOutreach.body;
+        }
 
         await query(
           `INSERT INTO scheduled_dispatches (
-            list_id, list_name, entity_type, lead_id, recipient_email, recipient_name,
+            channel, list_id, list_name, entity_type, lead_id,
+            recipient_email, recipient_phone, recipient_handle, recipient_name,
             subject, body, stage, style, status, scheduled_for, created_at, updated_at
-          ) VALUES ($1, $2, 'lead', $3, $4, $5, $6, $7, $8, $9, 'scheduled', $10, NOW(), NOW())`,
+          ) VALUES ($1, $2, $3, 'lead', $4, $5, $6, $7, $8, $9, $10, $11, $12, 'scheduled', $13, NOW(), NOW())`,
           [
+            channel,
             list.id,
             list.name,
             lead.id,
-            lead.email.trim(),
+            recipientEmail,
+            recipientPhone,
+            recipientHandle,
             recipientName,
-            generated.subject,
-            generated.body,
-            generated.stage,
+            subject,
+            body,
+            stage,
             style,
-            targetTime,
+            leadTargetTime,
           ]
         );
 
         insertedCount++;
       } catch (genErr) {
-        console.error(`[EmailScheduler] Error generating email for lead ${lead.id}:`, genErr);
+        console.error(`[Scheduler] Error generating copy for lead ${lead.id}:`, genErr);
       }
     }
 
-    console.log(
-      `[EmailScheduler] Successfully scheduled ${insertedCount} personalized emails for list "${list.name}".`
-    );
+    console.log(`[Scheduler] Successfully scheduled ${insertedCount} ${channel.toUpperCase()} messages for list "${list.name}".`);
 
-    // If target time is in the past or now, immediately trigger a cycle
-    if (targetTime.getTime() <= Date.now() + 5000) {
+    if (baseTime.getTime() <= Date.now() + 5000) {
       setTimeout(() => this.processPendingDispatches().catch(console.error), 200);
     }
 
@@ -177,8 +525,9 @@ export class EmailSchedulerService {
       success: true,
       scheduledCount: insertedCount,
       listName: list.name,
-      scheduledFor: targetTime,
-      message: `Successfully scheduled ${insertedCount} humanized email(s) for "${list.name}".`,
+      channel,
+      scheduledFor: baseTime,
+      message: `Successfully scheduled ${insertedCount} ${channel.toUpperCase()} message(s) for list "${list.name}".`,
     };
   }
 
@@ -250,7 +599,7 @@ export class EmailSchedulerService {
   }
 
   /**
-   * Background processor: dispatches emails due for delivery with anti-burst pacing
+   * Background processor: dispatches scheduled messages due for delivery across all channels (Email, WhatsApp, FB, IG)
    */
   async processPendingDispatches(): Promise<void> {
     if (this.isProcessing) {
@@ -260,96 +609,45 @@ export class EmailSchedulerService {
     this.isProcessing = true;
 
     try {
-      // Find dispatches that are due
+      // Atomically claim due dispatches using SKIP LOCKED
       const pendingRes = await query<ScheduledDispatchRecord>(
-        `SELECT * FROM scheduled_dispatches
-         WHERE status = 'scheduled' AND scheduled_for <= NOW()
-         ORDER BY scheduled_for ASC
-         LIMIT 15`
+        `UPDATE scheduled_dispatches
+         SET status = 'processing', updated_at = NOW()
+         WHERE id IN (
+           SELECT id FROM scheduled_dispatches
+           WHERE status = 'scheduled' AND scheduled_for <= NOW()
+           ORDER BY scheduled_for ASC
+           LIMIT 20
+           FOR UPDATE SKIP LOCKED
+         )
+         RETURNING *;`
       );
 
       if (pendingRes.rows.length === 0) {
         return;
       }
 
-      console.log(`[EmailScheduler] Processing ${pendingRes.rows.length} due email dispatches...`);
+      console.log(`[Scheduler] Atomically claimed ${pendingRes.rows.length} due outreach dispatches with SKIP LOCKED...`);
 
       for (const dispatch of pendingRes.rows) {
-        // Mark as processing
-        await query(`UPDATE scheduled_dispatches SET status = 'processing', updated_at = NOW() WHERE id = $1`, [
-          dispatch.id,
-        ]);
-
-        // Anti-spam jitter: Google SMTP algorithms penalize machine bursts.
-        // Wait 2000ms - 3200ms between sends to simulate natural human transmission.
-        const jitterMs = 2000 + Math.floor(Math.random() * 1200);
-        await this.sleep(jitterMs);
+        const channel = dispatch.channel || 'email';
 
         try {
-          const sendRes = await emailAdapter.sendEmail({
-            to: dispatch.recipient_email,
-            subject: dispatch.subject,
-            body: dispatch.body,
-            leadId: dispatch.lead_id || undefined,
-            clientId: dispatch.client_id || undefined,
-          });
-
-          if (sendRes.throttled) {
-            console.warn(`[EmailScheduler] Daily sending capacity reached. Pausing remaining dispatches: ${sendRes.reason}`);
-            // Return item to scheduled status for next window
-            await query(
-              `UPDATE scheduled_dispatches
-               SET status = 'scheduled',
-                   scheduled_for = NOW() + INTERVAL '4 hours',
-                   updated_at = NOW()
-               WHERE id = $1`,
-              [dispatch.id]
-            );
-            // Break loop to honor Google SMTP limits
-            break;
-          }
-
-          if (sendRes.success) {
-            await query(
-              `UPDATE scheduled_dispatches
-               SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW()
-               WHERE id = $1`,
-              [dispatch.id]
-            );
-
-            // Advance lead outreach stage
-            if (dispatch.lead_id) {
-              const nextStage =
-                dispatch.stage === 'initial'
-                  ? 'followup_1'
-                  : dispatch.stage === 'followup_1'
-                  ? 'followup_2'
-                  : 'completed';
-
-              await query(
-                `UPDATE leads
-                 SET last_contacted_at = NOW(),
-                     outreach_stage = $1,
-                     updated_at = NOW()
-                 WHERE id = $2`,
-                [nextStage, dispatch.lead_id]
-              );
-            }
-
-            console.log(
-              `[EmailScheduler] Dispatched email to ${dispatch.recipient_email} (${sendRes.liveDelivery})`
-            );
+          if (channel === 'whatsapp') {
+            await this.executeWhatsAppDispatch(dispatch);
+          } else if (channel === 'email') {
+            const shouldBreak = await this.executeEmailDispatch(dispatch);
+            if (shouldBreak) break;
+          } else if (channel === 'facebook') {
+            await this.executeFacebookDispatch(dispatch);
+          } else if (channel === 'instagram') {
+            await this.executeInstagramDispatch(dispatch);
           } else {
-            await query(
-              `UPDATE scheduled_dispatches
-               SET status = 'failed', error_message = $1, updated_at = NOW()
-               WHERE id = $2`,
-              [sendRes.reason || 'Send failed', dispatch.id]
-            );
+            throw new Error(`Unsupported channel: ${channel}`);
           }
         } catch (dispatchErr: unknown) {
           const errStr = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
-          console.error(`[EmailScheduler] Failed sending to ${dispatch.recipient_email}:`, errStr);
+          console.error(`[Scheduler] Failed dispatch [${channel}] to ${dispatch.recipient_name}:`, errStr);
           await query(
             `UPDATE scheduled_dispatches
              SET status = 'failed', error_message = $1, updated_at = NOW()
@@ -359,16 +657,276 @@ export class EmailSchedulerService {
         }
       }
     } catch (loopErr) {
-      console.error('[EmailScheduler] Error in processPendingDispatches loop:', loopErr);
+      console.error('[Scheduler] Error in processPendingDispatches loop:', loopErr);
     } finally {
       this.isProcessing = false;
     }
   }
 
   /**
+   * Dispatches a scheduled WhatsApp message via active Baileys socket
+   */
+  private async executeWhatsAppDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    const rawPhone = (dispatch.recipient_phone || '').trim();
+    if (!rawPhone) {
+      await query(
+        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No phone number available', updated_at = NOW() WHERE id = $1`,
+        [dispatch.id]
+      );
+      return;
+    }
+
+    const { whatsappValidator } = await import('./whatsappValidator');
+    const waEval = whatsappValidator.evaluate({ phone: rawPhone, whatsapp: rawPhone });
+    if (!waEval.isEligible || !waEval.cleanNumber) {
+      await query(
+        `UPDATE scheduled_dispatches SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
+        [waEval.reason || 'Invalid WhatsApp phone format', dispatch.id]
+      );
+      return;
+    }
+
+    const { whatsappSessionService } = await import('./whatsappSessionService');
+    const sessionState = whatsappSessionService.getState();
+
+    if (sessionState.status !== 'connected') {
+      await query(
+        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'WhatsApp session not connected in dashboard. Please link QR code.', updated_at = NOW() WHERE id = $1`,
+        [dispatch.id]
+      );
+      return;
+    }
+
+    // Natural jitter: wait 1.8s - 3.2s
+    const jitterMs = 1800 + Math.floor(Math.random() * 1400);
+    await this.sleep(jitterMs);
+
+    const sendResult = await whatsappSessionService.sendMessage(waEval.cleanNumber, dispatch.body);
+
+    if (sendResult.success) {
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW()
+         WHERE id = $1`,
+        [dispatch.id]
+      );
+
+      // Record in conversation thread
+      let convId: string;
+      const convRes = await query<{ id: string }>(
+        `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'whatsapp' LIMIT 1`,
+        [dispatch.lead_id]
+      );
+      if (convRes.rows.length === 0) {
+        const newConv = await query<{ id: string }>(
+          `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
+           VALUES ('lead', $1, 'whatsapp', 'open', NOW()) RETURNING id`,
+          [dispatch.lead_id]
+        );
+        convId = newConv.rows[0].id;
+      } else {
+        convId = convRes.rows[0].id;
+      }
+
+      await query(
+        `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
+         VALUES ($1, 'whatsapp', 'outbound', $2, 'delivered', $3, NOW())`,
+        [convId, dispatch.body, sendResult.messageId || '']
+      );
+
+      await query(`UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`, [convId]);
+
+      if (dispatch.lead_id) {
+        await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [dispatch.lead_id]);
+      }
+
+      await query(
+        `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
+         VALUES (CURRENT_DATE, 'whatsapp', 1, NOW())
+         ON CONFLICT (metric_date, channel)
+         DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
+      );
+
+      console.log(`[Scheduler] Delivered scheduled WhatsApp message to ${waEval.cleanNumber} (${sendResult.messageId})`);
+    } else {
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'failed', error_message = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [sendResult.error || 'WhatsApp send failed', dispatch.id]
+      );
+    }
+  }
+
+  /**
+   * Dispatches a scheduled Email via SMTP adapter
+   */
+  private async executeEmailDispatch(dispatch: ScheduledDispatchRecord): Promise<boolean> {
+    const toEmail = (dispatch.recipient_email || '').trim();
+    if (!toEmail) {
+      await query(
+        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No email address available', updated_at = NOW() WHERE id = $1`,
+        [dispatch.id]
+      );
+      return false;
+    }
+
+    const jitterMs = 2000 + Math.floor(Math.random() * 1200);
+    await this.sleep(jitterMs);
+
+    const sendRes = await emailAdapter.sendEmail({
+      to: toEmail,
+      subject: dispatch.subject,
+      body: dispatch.body,
+      leadId: dispatch.lead_id || undefined,
+      clientId: dispatch.client_id || undefined,
+      inboxId: dispatch.inbox_id || undefined,
+    });
+
+    if (sendRes.throttled) {
+      console.warn(`[Scheduler] Daily sending capacity reached. Pausing remaining dispatches: ${sendRes.reason}`);
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'scheduled',
+             scheduled_for = NOW() + INTERVAL '4 hours',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [dispatch.id]
+      );
+      return true; // Stop loop
+    }
+
+    if (sendRes.success) {
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'sent', sent_at = NOW(), error_message = NULL,
+             inbox_id = $1, inbox_email = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [sendRes.inboxUsed?.id || dispatch.inbox_id || null, sendRes.inboxUsed?.email || dispatch.inbox_email || '', dispatch.id]
+      );
+
+      if (dispatch.lead_id) {
+        const nextStage =
+          dispatch.stage === 'initial' ? 'followup_1' : dispatch.stage === 'followup_1' ? 'followup_2' : 'completed';
+
+        await query(
+          `UPDATE leads
+           SET last_contacted_at = NOW(),
+               outreach_stage = $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [nextStage, dispatch.lead_id]
+        );
+
+        // Also trigger website contact form submission if available
+        try {
+          const { websiteFormService } = await import('./websiteFormService');
+          await websiteFormService.submitContactForm(dispatch.lead_id, {
+            senderName: 'Online Digital Solution',
+            senderEmail: dispatch.inbox_email || 'team.onlinedigitalsolution@gmail.com',
+            subject: dispatch.subject,
+            message: dispatch.body,
+          });
+        } catch (fErr: any) {
+          console.warn(`[Scheduler] Form submission skipped for lead ${dispatch.lead_id}:`, fErr?.message);
+        }
+      }
+
+      console.log(`[Scheduler] Dispatched scheduled email to ${dispatch.recipient_email} (${sendRes.liveDelivery})`);
+    } else {
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'failed', error_message = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [sendRes.reason || 'Send failed', dispatch.id]
+      );
+    }
+
+    return false;
+  }
+
+  /**
+   * Dispatches a scheduled Facebook message
+   */
+  private async executeFacebookDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    const handle = (dispatch.recipient_handle || '').trim();
+    if (!handle) {
+      await query(
+        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No Facebook profile/page configured', updated_at = NOW() WHERE id = $1`,
+        [dispatch.id]
+      );
+      return;
+    }
+
+    const { facebookAdapter } = await import('../adapters/facebookAdapter');
+    await facebookAdapter.enqueueDraft({
+      leadId: dispatch.lead_id || '',
+      profileOrPage: handle,
+      text: dispatch.body,
+    });
+
+    await query(
+      `UPDATE scheduled_dispatches SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1`,
+      [dispatch.id]
+    );
+
+    if (dispatch.lead_id) {
+      await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [dispatch.lead_id]);
+    }
+
+    await query(
+      `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
+       VALUES (CURRENT_DATE, 'facebook', 1, NOW())
+       ON CONFLICT (metric_date, channel)
+       DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
+    );
+
+    console.log(`[Scheduler] Queued Facebook dispatch for ${handle}`);
+  }
+
+  /**
+   * Dispatches a scheduled Instagram message
+   */
+  private async executeInstagramDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    const handle = (dispatch.recipient_handle || '').trim();
+    if (!handle) {
+      await query(
+        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No Instagram handle configured', updated_at = NOW() WHERE id = $1`,
+        [dispatch.id]
+      );
+      return;
+    }
+
+    const { instagramAdapter } = await import('../adapters/instagramAdapter');
+    await instagramAdapter.enqueueDraft({
+      leadId: dispatch.lead_id || '',
+      handle,
+      text: dispatch.body,
+    });
+
+    await query(
+      `UPDATE scheduled_dispatches SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1`,
+      [dispatch.id]
+    );
+
+    if (dispatch.lead_id) {
+      await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [dispatch.lead_id]);
+    }
+
+    await query(
+      `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
+       VALUES (CURRENT_DATE, 'instagram', 1, NOW())
+       ON CONFLICT (metric_date, channel)
+       DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
+    );
+
+    console.log(`[Scheduler] Queued Instagram dispatch for ${handle}`);
+  }
+
+  /**
    * Retrieves recent scheduled dispatches with optional filtering
    */
-  async getDispatches(filter?: { status?: string; listId?: string; limit?: number }) {
+  async getDispatches(filter?: { status?: string; channel?: string; listId?: string; limit?: number }) {
     let sql = `SELECT * FROM scheduled_dispatches WHERE 1=1`;
     const params: unknown[] = [];
 
@@ -377,12 +935,17 @@ export class EmailSchedulerService {
       sql += ` AND status = $${params.length}`;
     }
 
+    if (filter?.channel && filter.channel !== 'all') {
+      params.push(filter.channel);
+      sql += ` AND channel = $${params.length}`;
+    }
+
     if (filter?.listId && filter.listId !== 'all') {
       params.push(filter.listId);
       sql += ` AND list_id = $${params.length}`;
     }
 
-    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+    sql += ` ORDER BY scheduled_for DESC LIMIT $${params.length + 1}`;
     params.push(filter?.limit || 100);
 
     const res = await query(sql, params);
@@ -429,7 +992,7 @@ export class EmailSchedulerService {
       clearInterval(this.timer);
     }
 
-    console.log(`[EmailScheduler] Background scheduler loop started (interval: ${pollIntervalMs / 1000}s).`);
+    console.log(`[Scheduler] Multi-channel background scheduler loop active (interval: ${pollIntervalMs / 1000}s).`);
     // Run immediately once
     this.processPendingDispatches().catch(console.error);
 

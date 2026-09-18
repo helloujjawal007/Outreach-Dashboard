@@ -167,6 +167,57 @@ An omni-channel cold outreach and lead relationship management (CRM) platform de
 * **Detail Modal Status Management**: The lead and client detail modal displays the current status and features a toggle button to switch between Active and Inactive.
 * **CRM Status Filtering**: Filter CRM records by status (`All Status`, `Active Only`, `Inactive Only`) in the filter strip.
 
+### 2.13 Google Business Profile & Local Reputation Intelligence (Phase 11)
+* **Automatic Google Enrichment**: When registering a single lead or importing lists, contacts can be automatically enriched with live Google Business Profile metadata, including star rating (e.g. `4.8★`), total review count, verified address, operational status, and a direct Google Maps search link.
+* **Persistent PostgreSQL Storage**: Google data is stored in `leads.metadata.google_profile` and loaded seamlessly with all CRM queries.
+* **On-Demand Google Sync**: Dedicated **"🔄 Update Info from Google"** action available both in the CRM Contact Details Modal and via `POST /api/leads/:id/enrich-google` and `POST /api/leads/batch-enrich-google`.
+* **Reputation Overview Card**: Displays star rating, review volume, operational badge, address, and an external Google Maps link directly inside the contact modal.
+
+### 2.14 Live Google Profile Context While Emailing & Pitching (Phase 11)
+* **Live In-Context Info Bar**: Positioned directly above the reply textarea and channel selector in the CRM modal, senders see:
+  * ⭐ Google Rating & Total Reviews
+  * 📍 Verified Physical Address
+  * 🟢 Operational Status (`OPERATIONAL` / `VERIFIED`)
+  * 🔗 Direct **"Google Maps ↗"** quick-link
+  * 🔄 **"Update Info from Google"** refresh trigger
+* **Informed Pitching**: Enables the sender to tailor local SEO, Google Maps audit points, or review acceleration hooks with zero tab-switching while drafting or improvising emails.
+
+### 2.15 1-Click Profile Navigation from Multi-Channel Messages & Inbox (Phase 11)
+* **Clickable Business Names**: Clicking any contact name within message cards in `InboundRepliesModal.tsx` immediately opens their full profile details modal.
+* **Dedicated "👤 View Profile" Button**: An explicit action button next to "Open Thread & Reply" lets users jump straight to the contact's complete profile with all history and Google details.
+
+### 2.16 Complete Cascading Lead Deletion (Zero Orphan Messages Invariant) (Phase 11)
+* **Full Database & UI Cleanup**: When a lead or client is deleted (`DELETE /api/leads/:id` or `POST /api/leads/bulk-delete`), the backend automatically cascades and purges:
+  * All associated `messages` across all channels
+  * All associated `conversations`
+  * All pending drafts in `send_queue`
+  * All memberships in `lead_list_memberships`
+* **Clean Inbox Invariant**: `recent-messages` and `inbound-replies` queries enforce strict `deleted_at IS NULL` checks, ensuring deleted contacts never leak into inbox modals or conversation timelines.
+* **Instant State Purge**: Frontend store immediately removes all matching messages from `inboundReplies` state upon single, bulk, or permanent delete.
+
+### 2.17 Human-in-the-Loop AI Copy Improvisation Engine (Phase 12)
+* **"Your Words → Ask AI to Improvise" Engine**: Senders type rough notes or bullet points (e.g. *"free audit of website, checking local ranking, quick chat"*), and click **"✨ Improvise with AI"** (`POST /api/ai/improvise`).
+* **Anti-Hype Mandate**: Eliminates all hyperbolic, unrealistic promises (*"double bookings"*, *"cut no-shows by 40%"*) in favor of consultative, grounded digital solutions (free Google Map pack review, mobile speed checks, inquiry response streamlining).
+* **5-Channel Specific Copy**: Tailored word counts and formats for Email (< 85 words), WhatsApp (< 45 words), LinkedIn (< 70 words), Instagram (< 45 words), and Facebook (< 55 words).
+
+### 2.18 WhatsApp Country Code Standardization & 12-Hour Automated GMB Sync Engine (Phase 14)
+* **International Country Code Enforcement**:
+  * All phone numbers in PostgreSQL, CSV/Maps imports (`POST /api/leads/import`), single lead creations (`POST /api/leads`), and updates (`PUT /api/leads/:id`) are strictly formatted with their full international country code:
+    * **India**: `+91 XXXXX XXXXX` (10-digit mobile detection with 6-9 leading prefix)
+    * **North America**: `+1 XXX-XXX-XXXX` (US/Canada with NANP pattern & toll-free discrimination)
+    * **Australia**: `+61 XXX XXX XXX` (mobile detection with 04xx prefix)
+    * **United Kingdom**: `+44 XXXX XXXXXX` (mobile detection with 07xx prefix)
+  * Eliminates WhatsApp failed dispatch errors caused by missing country code prefixes.
+  * Dedicated **"💬 Chat (+Code) ↗"** deep-link button in the contact details modal opens WhatsApp directly with the verified country code.
+* **12-Hour Automated Google Business Profile (GMB) Sync Engine**:
+  * Background daemon runs on startup and recurs every 12 hours (`12 * 60 * 60 * 1000`) via `googleEnrichmentService.start12HourGmbSync()`.
+  * Matches each active lead with Google Maps/Places data, refreshing star ratings (e.g. `4.8★`), reviews volume, verified physical address, and operational business presence.
+  * **Intelligent Industry Category Inference**: Automatically maps raw or noisy categories (e.g. *"No public email found"*, placeholder text) to verified business verticals (`Fitness & Gym`, `Dental & Healthcare`, `Beauty & Wellness`, `Restaurants & Hospitality`, `Plumbing Services`, etc.).
+  * **On-Demand GMB Sync Trigger**: **"Sync GMB Now 🔄"** button with a live **"12h Auto"** pulse badge in the CRM header allows senders to trigger immediate synchronization across all active leads on demand (`POST /api/leads/sync-gmb` and `GET /api/leads/sync-gmb-status`).
+* **Real-Time Profile Auto-Updates (Zero Manual Refresh Invariant)**:
+  * **Silent Background Polling**: CRM runs a silent 20-second polling cycle (`store.fetchLeads()`), streaming backend GMB sync updates directly into the UI.
+  * **Deep Reactive Modal Synchronization**: The contact details modal tracks `store.leads` with deep object comparison—any background enrichment, rating shift, category correction, or phone edit immediately reflects on screen without requiring the user to refresh the page.
+
 ---
 
 ## 3. Database Schema (PostgreSQL 16)
@@ -278,6 +329,8 @@ erDiagram
 | `DELETE`| `/api/leads/:id` | Soft-delete lead & matching client (moves to Trash for 28 days) |
 | `POST` | `/api/leads/bulk-delete` | Bulk soft-delete leads & matching clients (28-day retention) |
 | `GET` | `/api/leads/trash` | List soft-deleted leads & clients preserved within 28-day window |
+| `POST` | `/api/leads/:id/enrich-google` | Fetch & update Google Business Profile & Maps data for a lead |
+| `POST` | `/api/leads/batch-enrich-google` | Batch update Google data for multiple leads |
 | `POST` | `/api/leads/:id/restore` | Restore soft-deleted lead & matching client to active CRM |
 | `POST` | `/api/leads/bulk-restore` | Bulk restore soft-deleted leads & clients to active CRM |
 | `DELETE`| `/api/leads/:id/permanent` | Permanently purge lead & matching client from database |
@@ -293,6 +346,8 @@ erDiagram
 | `POST` | `/api/batches/:id/shoot-emails` | 1-click batch sequence email dispatch via Gmail SMTP |
 | `GET` | `/api/conversations/by-lead/:leadId` | Get message history for a lead |
 | `GET` | `/api/conversations/by-client/:clientId` | Get message history for a client |
+| `GET` | `/api/conversations/recent-messages` | Fetch recent omni-channel messages across all channels |
+| `GET` | `/api/conversations/inbound-replies` | Fetch inbound replies center messages (pending / unread / handled) |
 | `POST` | `/api/conversations/reply` | Send message (enforces Channel Router for cold leads) |
 | `POST` | `/api/conversations/inbound` | Inbound reply receiver, opt-out suppression & client auto-conversion |
 | `POST` | `/api/conversations/auto-send-next` | Condition-based automated sequence message dispatcher |
@@ -312,6 +367,7 @@ erDiagram
 | `POST` | `/api/adapters/whatsapp/webhook` | WhatsApp webhook simulator & receiver |
 | `GET` | `/api/ai/status` | Check local Ollama daemon & model availability |
 | `POST` | `/api/ai/draft` | Generate AI cold outreach draft via Ollama |
+| `POST` | `/api/ai/improvise` | Improvise rough user words into polished, realistic copy |
 
 ---
 
@@ -396,10 +452,14 @@ Outreach-Dashboard/
 │   │   │   ├── ai.ts               # /api/ai Ollama draft generator
 │   │   │   └── adapters.ts         # /api/adapters email warmup & WhatsApp window endpoints
 │   │   ├── services/
-│   │   │   ├── outreachService.ts  # Outreach Engine (cold leads & consent gate router)
-│   │   │   ├── orchestratorService.ts # Conversation Orchestrator (clients)
-│   │   │   └── ollamaService.ts    # Local Ollama LLM integration
-│   │   └── index.ts                # Express server entrypoint
+│   │   │   ├── outreachService.ts        # Outreach Engine (cold leads & consent gate router)
+│   │   │   ├── orchestratorService.ts    # Conversation Orchestrator (clients)
+│   │   │   ├── ollamaService.ts          # Local Ollama LLM integration
+│   │   │   ├── googleEnrichmentService.ts # Google Business Profile & Maps enrichment
+│   │   │   ├── aiResearchWriterService.ts # Anti-hype AI improvisation & copy generator
+│   │   │   ├── emailInboundService.ts    # Gmail IMAP listener & reply ingestor
+│   │   │   └── whatsappValidator.ts      # WhatsApp number format & eligibility validator
+│   │   └── index.ts                      # Express server entrypoint
 │   └── tsconfig.json
 ├── src/
 │   ├── components/                 # Sidebar, Modal, Badge, ChannelIcon
@@ -479,5 +539,15 @@ Outreach-Dashboard/
   - Global Floating Inbound Email Popup (`InboundEmailPopup.tsx`): whenever a new email reply is received, an eye-catching floating alert card displays on the top right across the entire dashboard with sender name, email, message snippet, auto-dismiss progress timer, and an instant "Open Conversation" button.
   - Dedicated Inbound Email Replies Center Modal (`InboundRepliesModal.tsx`): accessible directly via the `[📥 Inbound Inbox]` button in the CRM header. Features full-text search, live Gmail sync button, detailed cards for every reply received, and 1-click "Open Conversation & Reply" navigation.
   - Dedicated CRM "Email Replies" Filter Tab: interactive `[📩 Email Replies ({count})]` filter in the entity bar that isolates all contacts who have sent email replies, accompanied by an informative action banner.
+- [x] **Phase 11: Google Business Profile Auto-Enrichment, Live Email Display & Cascading Deletion**
+  - Google Business Profile enrichment service (`googleEnrichmentService.ts`): queries/synthesizes verified ratings, reviews count, address, and Google Maps URL, persisting to `leads.metadata.google_profile`.
+  - On-demand Google refresh: `POST /api/leads/:id/enrich-google` and batch update `POST /api/leads/batch-enrich-google`.
+  - Live Google Info Bar while emailing: displays rating, review count, address, and direct Google Maps link right above the reply textarea.
+  - 1-Click Profile navigation: clickable contact names and dedicated "👤 View Profile" buttons in message cards.
+  - Cascading deletion: deleting any lead or client immediately purges all associated messages, conversations, send queue drafts, and memberships, leaving zero orphan messages in inbox or dashboard.
+- [x] **Phase 12: Human-in-the-Loop AI Improvisation Engine & Multi-Channel Anti-Hype Copy**
+  - "Your words → Improvise with AI" feature (`POST /api/ai/improvise`): transforms rough bullet points into polished, realistic pitches.
+  - Elimination of unrealistic hype: grounds all copy in consultative digital solutions for Online Digital Solution.
+  - 5-Channel support: Email, WhatsApp, LinkedIn, Facebook, and Instagram with channel-appropriate word count limits.
 
 

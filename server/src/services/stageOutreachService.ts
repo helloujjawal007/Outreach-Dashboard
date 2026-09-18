@@ -13,6 +13,14 @@ export interface StageDispatchResult {
   liveDelivery?: string;
   skipped?: boolean;
   reason?: string;
+  websiteFormSubmission?: {
+    success: boolean;
+    skipped: boolean;
+    status?: string;
+    formUrl?: string;
+    reason?: string;
+    directLauncherUrl?: string;
+  };
 }
 
 export class StageOutreachService {
@@ -228,7 +236,24 @@ export class StageOutreachService {
       };
     }
 
-    // 2. Update lead last_contacted_at and outreach_stage
+    // 2. Dual-Trigger: Also submit via Website Contact Form if available
+    let websiteFormResult: any = { skipped: true, reason: 'No website form available (ignored)' };
+    try {
+      const { websiteFormService } = await import('./websiteFormService');
+      const formSubmission = await websiteFormService.submitContactForm(leadId, {
+        senderName: 'Online Digital Solution',
+        senderEmail: 'team.onlinedigitalsolution@gmail.com',
+        senderPhone: '+1 306-205-1817',
+        subject: stageInfo.subject,
+        message: stageInfo.body,
+      });
+      websiteFormResult = formSubmission;
+    } catch (formErr: any) {
+      console.warn(`[StageOutreachService] Website form submission skipped for lead ${leadId}:`, formErr?.message);
+      websiteFormResult = { skipped: true, reason: formErr?.message || 'Form skipped' };
+    }
+
+    // 3. Update lead last_contacted_at and outreach_stage
     const nextStageName =
       stageInfo.stage === 'initial'
         ? 'followup_1'
@@ -254,6 +279,7 @@ export class StageOutreachService {
       subject: stageInfo.subject,
       success: true,
       liveDelivery: sendRes.liveDelivery,
+      websiteFormSubmission: websiteFormResult,
     };
   }
 

@@ -17,12 +17,24 @@ import {
   ShieldCheck,
   Sliders,
   AlertTriangle,
+  Plus,
+  Server,
+  Check,
+  RotateCcw,
+  Key,
+  Globe,
+  Settings,
+  ShieldAlert,
+  Power,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
+import { Modal } from '@/components/Modal';
 import type { Store } from '@/store';
 import { mockSendHealth } from '@/mockData';
-import { channelLabels } from '@/types';
+import { channelLabels, type ConnectedInbox, type InboxPoolSummary } from '@/types';
 import { api, type WarmupStatus } from '@/services/api';
 
 interface Props {
@@ -37,6 +49,56 @@ export function SendingHealthPage({ store }: Props) {
   const [waText, setWaText] = useState('Hi, I got your email. How much does the system cost?');
   const [waSimResult, setWaSimResult] = useState<string | null>(null);
 
+  // Multi-Inbox Rotation State
+  const [inboxes, setInboxes] = useState<ConnectedInbox[]>([]);
+  const [poolSummary, setPoolSummary] = useState<InboxPoolSummary | null>(null);
+  const [isLoadingInboxes, setIsLoadingInboxes] = useState(false);
+  const [isAddInboxModalOpen, setIsAddInboxModalOpen] = useState(false);
+  const [isTestingInbox, setIsTestingInbox] = useState(false);
+  const [inboxTestResult, setInboxTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSubmittingInbox, setIsSubmittingInbox] = useState(false);
+  const [inboxFormError, setInboxFormError] = useState<string | null>(null);
+
+  // Test Send State
+  const [testSendInbox, setTestSendInbox] = useState<ConnectedInbox | null>(null);
+  const [testEmailTarget, setTestEmailTarget] = useState('team.onlinedigitalsolution@gmail.com');
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
+  const [testSendFeedback, setTestSendFeedback] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Edit Daily Limit State
+  const [editingLimitInbox, setEditingLimitInbox] = useState<ConnectedInbox | null>(null);
+  const [newLimitValue, setNewLimitValue] = useState<number>(40);
+  const [isUpdatingLimit, setIsUpdatingLimit] = useState(false);
+
+  // Row action spinners
+  const [togglingInboxId, setTogglingInboxId] = useState<string | null>(null);
+  const [deletingInboxId, setDeletingInboxId] = useState<string | null>(null);
+
+  // New Inbox Form
+  const [newInboxForm, setNewInboxForm] = useState<{
+    name: string;
+    sender_name: string;
+    email: string;
+    provider: 'google_workspace' | 'office_365' | 'smtp';
+    smtp_host: string;
+    smtp_port: number;
+    smtp_secure: boolean;
+    smtp_user: string;
+    smtp_pass: string;
+    daily_limit: number;
+  }>({
+    name: '',
+    sender_name: 'Online Digital Solution Team',
+    email: '',
+    provider: 'google_workspace',
+    smtp_host: 'smtp.gmail.com',
+    smtp_port: 465,
+    smtp_secure: true,
+    smtp_user: '',
+    smtp_pass: '',
+    daily_limit: 40,
+  });
+
   const loadWarmup = useCallback(async () => {
     try {
       const status = await api.getEmailWarmupStatus();
@@ -46,9 +108,203 @@ export function SendingHealthPage({ store }: Props) {
     }
   }, []);
 
+  const loadInboxes = useCallback(async () => {
+    try {
+      setIsLoadingInboxes(true);
+      const res = await api.getInboxes();
+      setInboxes(res.inboxes);
+      setPoolSummary(res.summary);
+    } catch (err) {
+      console.error('Failed to load inboxes:', err);
+    } finally {
+      setIsLoadingInboxes(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadWarmup();
-  }, [loadWarmup]);
+    loadInboxes();
+  }, [loadWarmup, loadInboxes]);
+
+  const handleProviderPresetChange = (provider: 'google_workspace' | 'office_365' | 'smtp') => {
+    if (provider === 'google_workspace') {
+      setNewInboxForm((prev) => ({
+        ...prev,
+        provider,
+        smtp_host: 'smtp.gmail.com',
+        smtp_port: 465,
+        smtp_secure: true,
+      }));
+    } else if (provider === 'office_365') {
+      setNewInboxForm((prev) => ({
+        ...prev,
+        provider,
+        smtp_host: 'smtp.office365.com',
+        smtp_port: 587,
+        smtp_secure: false,
+      }));
+    } else {
+      setNewInboxForm((prev) => ({
+        ...prev,
+        provider,
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_secure: false,
+      }));
+    }
+    setInboxTestResult(null);
+    setInboxFormError(null);
+  };
+
+  const handleTestConnection = async () => {
+    setInboxFormError(null);
+    setInboxTestResult(null);
+    if (!newInboxForm.smtp_host || !newInboxForm.smtp_user || !newInboxForm.smtp_pass) {
+      setInboxFormError('Please enter SMTP Host, Username and Password to test connection.');
+      return;
+    }
+    try {
+      setIsTestingInbox(true);
+      const res = await api.testInboxConnection({
+        smtp_host: newInboxForm.smtp_host,
+        smtp_port: Number(newInboxForm.smtp_port),
+        smtp_secure: Boolean(newInboxForm.smtp_secure),
+        smtp_user: newInboxForm.smtp_user.trim(),
+        smtp_pass: newInboxForm.smtp_pass,
+        provider: newInboxForm.provider,
+      });
+      setInboxTestResult(res);
+    } catch (err: any) {
+      setInboxTestResult({
+        success: false,
+        message: err.message || 'SMTP Connection test failed. Check host, port and authentication credentials.',
+      });
+    } finally {
+      setIsTestingInbox(false);
+    }
+  };
+
+  const handleCreateInbox = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInboxFormError(null);
+    if (!newInboxForm.email.trim() || !newInboxForm.smtp_user.trim() || !newInboxForm.smtp_pass.trim()) {
+      setInboxFormError('Please fill in email address, username, and password.');
+      return;
+    }
+
+    try {
+      setIsSubmittingInbox(true);
+      await api.addInbox({
+        name: newInboxForm.name.trim() || `${newInboxForm.sender_name} (${newInboxForm.email})`,
+        sender_name: newInboxForm.sender_name.trim(),
+        email: newInboxForm.email.trim(),
+        provider: newInboxForm.provider,
+        smtp_host: newInboxForm.smtp_host.trim(),
+        smtp_port: Number(newInboxForm.smtp_port),
+        smtp_secure: Boolean(newInboxForm.smtp_secure),
+        smtp_user: newInboxForm.smtp_user.trim(),
+        smtp_pass: newInboxForm.smtp_pass,
+        daily_limit: Number(newInboxForm.daily_limit) || 40,
+      });
+
+      setIsAddInboxModalOpen(false);
+      setInboxTestResult(null);
+      setNewInboxForm({
+        name: '',
+        sender_name: 'Online Digital Solution Team',
+        email: '',
+        provider: 'google_workspace',
+        smtp_host: 'smtp.gmail.com',
+        smtp_port: 465,
+        smtp_secure: true,
+        smtp_user: '',
+        smtp_pass: '',
+        daily_limit: 40,
+      });
+      await loadInboxes();
+      await loadWarmup();
+    } catch (err: any) {
+      setInboxFormError(err.message || 'Failed to connect inbox.');
+    } finally {
+      setIsSubmittingInbox(false);
+    }
+  };
+
+  const handleToggleInboxStatus = async (inbox: ConnectedInbox) => {
+    try {
+      setTogglingInboxId(inbox.id);
+      const newStatus = inbox.status === 'active' ? 'paused' : 'active';
+      await api.updateInbox(inbox.id, { status: newStatus });
+      await loadInboxes();
+    } catch (err) {
+      console.error('Failed to toggle inbox status:', err);
+    } finally {
+      setTogglingInboxId(null);
+    }
+  };
+
+  const handleDeleteInbox = async (inbox: ConnectedInbox) => {
+    if (inbox.is_default) {
+      alert('The default primary inbox cannot be deleted.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to remove inbox "${inbox.name}" (${inbox.email}) from the rotation pool?`)) {
+      return;
+    }
+    try {
+      setDeletingInboxId(inbox.id);
+      await api.deleteInbox(inbox.id);
+      await loadInboxes();
+      await loadWarmup();
+    } catch (err) {
+      console.error('Failed to delete inbox:', err);
+    } finally {
+      setDeletingInboxId(null);
+    }
+  };
+
+  const handleSaveLimit = async () => {
+    if (!editingLimitInbox) return;
+    try {
+      setIsUpdatingLimit(true);
+      await api.updateInbox(editingLimitInbox.id, { daily_limit: Number(newLimitValue) || 40 });
+      setEditingLimitInbox(null);
+      await loadInboxes();
+      await loadWarmup();
+    } catch (err) {
+      console.error('Failed to update daily limit:', err);
+    } finally {
+      setIsUpdatingLimit(false);
+    }
+  };
+
+  const handleExecuteTestSend = async () => {
+    if (!testSendInbox || !testEmailTarget.trim()) return;
+    try {
+      setIsSendingTestEmail(true);
+      setTestSendFeedback(null);
+      const res = await api.testSendInbox(testSendInbox.id, testEmailTarget.trim());
+      if (res.success) {
+        setTestSendFeedback({
+          success: true,
+          message: `Live test email successfully delivered to ${testEmailTarget} via ${testSendInbox.email}!`,
+        });
+        await loadInboxes();
+      } else {
+        setTestSendFeedback({
+          success: false,
+          message: res.reason || 'Test send failed. Check server logs.',
+        });
+      }
+    } catch (err: any) {
+      setTestSendFeedback({
+        success: false,
+        message: err.message || 'Failed to dispatch test send.',
+      });
+    } finally {
+      setIsSendingTestEmail(false);
+    }
+  };
 
   const handleStageChange = async (newStage: number) => {
     try {
@@ -366,6 +622,284 @@ export function SendingHealthPage({ store }: Props) {
         </div>
       </div>
 
+      {/* APOLLO-GRADE MULTI-INBOX DELIVERABILITY & ROTATION POOL */}
+      <div className="mb-6 card p-6 border-brand-200/80 bg-gradient-to-b from-white to-slate-50/50">
+        <div className="mb-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm shrink-0 mt-0.5">
+              <Zap size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h3 className="text-base font-bold text-ink-900">Multi-Inbox Deliverability &amp; Rotation Pool</h3>
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full border border-brand-200">
+                  <ShieldCheck size={12} /> Apollo-Grade Scaling
+                </span>
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  {poolSummary?.activeInboxes || inboxes.filter((i) => i.status === 'active').length} Active Rotating
+                </span>
+              </div>
+              <p className="text-xs text-ink-500 mt-1 max-w-2xl leading-relaxed">
+                Connect and rotate multiple Google Workspace, Microsoft 365, and SMTP accounts. Distribute sending volume evenly so each inbox sends a safe volume (30–50/day) while scaling aggregate volume to hundreds or thousands per day without burning domain reputation.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+            <button
+              onClick={loadInboxes}
+              disabled={isLoadingInboxes}
+              className="btn-secondary py-1.5 px-3 text-xs flex items-center gap-1.5"
+              title="Refresh inbox statuses"
+            >
+              <RefreshCw size={13} className={isLoadingInboxes ? 'animate-spin' : ''} />
+              <span>Refresh</span>
+            </button>
+            <button
+              onClick={() => {
+                setIsAddInboxModalOpen(true);
+                setInboxTestResult(null);
+                setInboxFormError(null);
+              }}
+              className="btn-primary py-1.5 px-3.5 text-xs flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus size={14} />
+              <span>Connect Mailbox</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Aggregate Pool Metric Strip */}
+        <div className="mb-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Rotation Inboxes</span>
+            <p className="text-xl font-bold text-ink-900 mt-0.5">
+              {poolSummary?.totalInboxes || inboxes.length} <span className="text-xs font-normal text-ink-500">mailboxes</span>
+            </p>
+            <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
+              {poolSummary?.activeInboxes || inboxes.filter((i) => i.status === 'active').length} active in round-robin
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Total Daily Capacity</span>
+            <p className="text-xl font-bold text-ink-900 mt-0.5">
+              {poolSummary?.totalDailyCapacity || inboxes.reduce((s, i) => s + (i.status === 'active' ? i.daily_limit : 0), 0)}
+              <span className="text-xs font-normal text-ink-500"> / day</span>
+            </p>
+            <p className="text-[11px] text-brand-600 font-medium mt-0.5">
+              Safe distributed threshold
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Dispatched Today</span>
+            <p className="text-xl font-bold text-ink-900 mt-0.5">
+              {poolSummary?.totalSentToday ?? inboxes.reduce((s, i) => s + i.sent_today, 0)}
+            </p>
+            <p className="text-[11px] text-ink-500 font-medium mt-0.5">
+              {poolSummary?.remainingCapacityToday ?? Math.max(0, (poolSummary?.totalDailyCapacity || 50) - (poolSummary?.totalSentToday || 0))} capacity remaining
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-slate-200/80 bg-white p-3.5 shadow-2xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Pool Health Score</span>
+            <p className="text-xl font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
+              {poolSummary?.averageHealthScore ?? 100}%
+            </p>
+            <p className="text-[11px] text-emerald-600 font-medium mt-0.5">
+              All SPF / DKIM / MX healthy
+            </p>
+          </div>
+        </div>
+
+        {/* Connected Inboxes Cards List */}
+        <div className="space-y-3">
+          {inboxes.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center bg-white">
+              <Server size={32} className="mx-auto text-slate-400 mb-2" />
+              <p className="font-bold text-sm text-ink-800">No Inboxes Connected</p>
+              <p className="text-xs text-ink-400 max-w-md mx-auto mt-1 mb-4">
+                Add your Google Workspace or Microsoft 365 accounts to start rotating cold email dispatches and scaling safely.
+              </p>
+              <button
+                onClick={() => setIsAddInboxModalOpen(true)}
+                className="btn-primary py-1.5 px-4 text-xs inline-flex items-center gap-1.5"
+              >
+                <Plus size={14} /> Connect First Mailbox
+              </button>
+            </div>
+          ) : (
+            inboxes.map((inbox) => {
+              const usagePercent = Math.min(100, Math.round((inbox.sent_today / Math.max(1, inbox.daily_limit)) * 100));
+              const isExhausted = inbox.sent_today >= inbox.daily_limit;
+
+              return (
+                <div
+                  key={inbox.id}
+                  className={`rounded-xl border p-4 transition-all bg-white shadow-2xs ${
+                    inbox.status === 'active'
+                      ? 'border-slate-200/90 hover:border-brand-300'
+                      : 'border-slate-200/60 bg-slate-50/40 opacity-75'
+                  }`}
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    {/* Inbox Info */}
+                    <div className="flex items-start gap-3.5 min-w-0">
+                      <div
+                        className={`flex h-10 w-10 items-center justify-center rounded-xl shrink-0 ${
+                          inbox.provider === 'google_workspace'
+                            ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                            : inbox.provider === 'office_365'
+                            ? 'bg-sky-50 text-sky-600 border border-sky-200'
+                            : 'bg-indigo-50 text-indigo-600 border border-indigo-200'
+                        }`}
+                      >
+                        {inbox.provider === 'google_workspace' ? (
+                          <Mail size={18} />
+                        ) : inbox.provider === 'office_365' ? (
+                          <Globe size={18} />
+                        ) : (
+                          <Server size={18} />
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-sm text-ink-900 truncate">{inbox.name}</h4>
+                          {inbox.is_default && (
+                            <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                              Primary Master
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-md px-2 py-0.5 text-[10px] font-bold capitalize border ${
+                              inbox.status === 'active'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : inbox.status === 'paused'
+                                ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            }`}
+                          >
+                            {inbox.status}
+                          </span>
+                          <span className="text-[11px] text-ink-400 capitalize">
+                            {inbox.provider.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs text-ink-500 mt-1 flex-wrap">
+                          <span className="font-mono text-ink-700 font-medium">{inbox.email}</span>
+                          <span>•</span>
+                          <span>
+                            Sender: <strong className="text-ink-800">{inbox.sender_name}</strong>
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono text-[11px] text-ink-400">
+                            {inbox.smtp_host}:{inbox.smtp_port}
+                          </span>
+                        </div>
+
+                        {inbox.last_error && (
+                          <p className="text-[11px] text-red-600 font-medium mt-1 flex items-center gap-1">
+                            <AlertCircle size={12} /> {inbox.last_error}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress Bar & Actions */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 shrink-0">
+                      {/* Daily Limit Bar */}
+                      <div className="w-48">
+                        <div className="flex items-center justify-between text-[11px] mb-1">
+                          <span className="font-medium text-ink-600">Daily Cap</span>
+                          <span className="font-bold text-ink-900">
+                            {inbox.sent_today} / {inbox.daily_limit}{' '}
+                            <span className="text-ink-400 font-normal">({usagePercent}%)</span>
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                          <div
+                            className={`h-2 rounded-full transition-all ${
+                              isExhausted ? 'bg-amber-500' : 'bg-brand-600'
+                            }`}
+                            style={{ width: `${usagePercent}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-ink-400 mt-0.5">
+                          <span>{Math.max(0, inbox.daily_limit - inbox.sent_today)} left today</span>
+                          <span className="text-emerald-600 font-semibold">{inbox.health_score}/100 Health</span>
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleToggleInboxStatus(inbox)}
+                          disabled={togglingInboxId === inbox.id}
+                          className={`btn-secondary py-1 px-2.5 text-xs flex items-center gap-1 ${
+                            inbox.status === 'active'
+                              ? 'text-slate-700 hover:bg-slate-100'
+                              : 'text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                          title={inbox.status === 'active' ? 'Pause rotation' : 'Resume rotation'}
+                        >
+                          {togglingInboxId === inbox.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Power size={12} />
+                          )}
+                          <span>{inbox.status === 'active' ? 'Pause' : 'Resume'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setTestSendInbox(inbox);
+                            setTestSendFeedback(null);
+                          }}
+                          className="btn-secondary py-1 px-2.5 text-xs flex items-center gap-1"
+                          title="Send test email from this mailbox"
+                        >
+                          <Send size={12} />
+                          <span>Test Send</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setEditingLimitInbox(inbox);
+                            setNewLimitValue(inbox.daily_limit);
+                          }}
+                          className="btn-secondary py-1 px-2 text-xs"
+                          title="Adjust daily limit"
+                        >
+                          <Sliders size={12} />
+                        </button>
+
+                        {!inbox.is_default && (
+                          <button
+                            onClick={() => handleDeleteInbox(inbox)}
+                            disabled={deletingInboxId === inbox.id}
+                            className="btn-secondary py-1 px-2 text-xs text-red-600 hover:bg-red-50 border-red-200"
+                            title="Remove mailbox from pool"
+                          >
+                            {deletingInboxId === inbox.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <Trash2 size={12} />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       {/* Channel Adapters Architecture Grid (Phase 3 & Phase 4) */}
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Email Adapter: Subdomain & Warm-Up Tracker */}
@@ -677,6 +1211,426 @@ export function SendingHealthPage({ store }: Props) {
           </div>
         )}
       </div>
+
+      {/* CONNECT NEW MAILBOX MODAL */}
+      {isAddInboxModalOpen && (
+        <Modal
+          isOpen={true}
+          onClose={() => setIsAddInboxModalOpen(false)}
+          title="Connect Cold Outreach Mailbox (Rotation Pool)"
+          maxWidth="max-w-2xl"
+        >
+          <form onSubmit={handleCreateInbox} className="space-y-4">
+            {/* Provider Selector Tabs */}
+            <div>
+              <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider mb-2">
+                Select Mailbox Provider
+              </label>
+              <div className="grid grid-cols-3 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleProviderPresetChange('google_workspace')}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition-all ${
+                    newInboxForm.provider === 'google_workspace'
+                      ? 'border-rose-400 bg-rose-50/70 text-rose-900 ring-2 ring-rose-200'
+                      : 'border-slate-200 bg-white text-ink-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Mail size={20} className={newInboxForm.provider === 'google_workspace' ? 'text-rose-600' : 'text-slate-400'} />
+                  <span>Google Workspace</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleProviderPresetChange('office_365')}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition-all ${
+                    newInboxForm.provider === 'office_365'
+                      ? 'border-sky-400 bg-sky-50/70 text-sky-900 ring-2 ring-sky-200'
+                      : 'border-slate-200 bg-white text-ink-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Globe size={20} className={newInboxForm.provider === 'office_365' ? 'text-sky-600' : 'text-slate-400'} />
+                  <span>Microsoft 365</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleProviderPresetChange('smtp')}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs font-semibold transition-all ${
+                    newInboxForm.provider === 'smtp'
+                      ? 'border-indigo-400 bg-indigo-50/70 text-indigo-900 ring-2 ring-indigo-200'
+                      : 'border-slate-200 bg-white text-ink-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Server size={20} className={newInboxForm.provider === 'smtp' ? 'text-indigo-600' : 'text-slate-400'} />
+                  <span>Custom SMTP</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Provider Guidance Banner */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-ink-600 leading-relaxed">
+              {newInboxForm.provider === 'google_workspace' && (
+                <p>
+                  <strong>Google Workspace Tip:</strong> Generate a 16-character <em>App Password</em> in your Google Account &gt; Security &gt; 2-Step Verification &gt; App passwords. Standard account passwords will be rejected by Google SMTP.
+                </p>
+              )}
+              {newInboxForm.provider === 'office_365' && (
+                <p>
+                  <strong>Microsoft 365 Tip:</strong> Ensure Authenticated SMTP (SMTP AUTH) is enabled for this mailbox in the Microsoft 365 Admin Center under Mail apps.
+                </p>
+              )}
+              {newInboxForm.provider === 'smtp' && (
+                <p>
+                  <strong>Custom SMTP Tip:</strong> Use your private cold outreach domain host (e.g. Namecheap, Titan, Hostinger, AWS SES, or private Mailcow server).
+                </p>
+              )}
+            </div>
+
+            {/* Basic Info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-ink-700 mb-1">Mailbox Label *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Outreach Google #2"
+                  value={newInboxForm.name}
+                  onChange={(e) => setNewInboxForm({ ...newInboxForm, name: e.target.value })}
+                  className="input py-1.5 text-xs w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-700 mb-1">Sender Display Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Online Digital Solution Team"
+                  value={newInboxForm.sender_name}
+                  onChange={(e) => setNewInboxForm({ ...newInboxForm, sender_name: e.target.value })}
+                  className="input py-1.5 text-xs w-full"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-ink-700 mb-1">From Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. alex@yourdomain.com"
+                  value={newInboxForm.email}
+                  onChange={(e) => setNewInboxForm({ ...newInboxForm, email: e.target.value })}
+                  className="input py-1.5 text-xs w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-700 mb-1">
+                  Daily Cap (Recommended: 30–50) *
+                </label>
+                <input
+                  type="number"
+                  min="5"
+                  max="500"
+                  required
+                  value={newInboxForm.daily_limit}
+                  onChange={(e) => setNewInboxForm({ ...newInboxForm, daily_limit: Number(e.target.value) })}
+                  className="input py-1.5 text-xs w-full"
+                />
+              </div>
+            </div>
+
+            {/* SMTP Settings */}
+            <div className="rounded-xl border border-slate-200 p-3.5 space-y-3 bg-white">
+              <span className="text-xs font-bold text-ink-800 uppercase tracking-wider block">
+                SMTP Protocol Settings
+              </span>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-ink-700 mb-1">SMTP Host *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. smtp.gmail.com"
+                    value={newInboxForm.smtp_host}
+                    onChange={(e) => setNewInboxForm({ ...newInboxForm, smtp_host: e.target.value })}
+                    className="input py-1.5 text-xs w-full font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink-700 mb-1">Port *</label>
+                  <input
+                    type="number"
+                    required
+                    value={newInboxForm.smtp_port}
+                    onChange={(e) => setNewInboxForm({ ...newInboxForm, smtp_port: Number(e.target.value) })}
+                    className="input py-1.5 text-xs w-full font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-0.5">
+                <input
+                  type="checkbox"
+                  id="smtp_secure_check"
+                  checked={newInboxForm.smtp_secure}
+                  onChange={(e) => setNewInboxForm({ ...newInboxForm, smtp_secure: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                />
+                <label htmlFor="smtp_secure_check" className="text-xs text-ink-700 font-medium cursor-pointer">
+                  Use Direct SSL (Port 465). Uncheck for STARTTLS (Port 587).
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-ink-700 mb-1">SMTP Username *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Usually your full email address"
+                    value={newInboxForm.smtp_user}
+                    onChange={(e) => setNewInboxForm({ ...newInboxForm, smtp_user: e.target.value })}
+                    className="input py-1.5 text-xs w-full font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink-700 mb-1">SMTP Password / App Password *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="••••••••••••••••"
+                    value={newInboxForm.smtp_pass}
+                    onChange={(e) => setNewInboxForm({ ...newInboxForm, smtp_pass: e.target.value })}
+                    className="input py-1.5 text-xs w-full font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Test Connection Results */}
+            {inboxTestResult && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                  inboxTestResult.success
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-red-200 bg-red-50 text-red-800'
+                }`}
+              >
+                {inboxTestResult.success ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-bold">{inboxTestResult.success ? 'SMTP Handshake Verified' : 'Connection Failed'}</p>
+                  <p className="mt-0.5">{inboxTestResult.message}</p>
+                </div>
+              </div>
+            )}
+
+            {inboxFormError && (
+              <p className="text-xs text-red-600 font-medium bg-red-50 p-2.5 rounded-lg border border-red-200 flex items-center gap-1.5">
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>{inboxFormError}</span>
+              </p>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handleTestConnection}
+                disabled={isTestingInbox || isSubmittingInbox}
+                className="btn-secondary py-1.5 px-3 text-xs flex items-center gap-1.5"
+              >
+                {isTestingInbox ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Verifying Handshake...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={14} className="text-brand-600" />
+                    <span>Test SMTP Connection</span>
+                  </>
+                )}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddInboxModalOpen(false)}
+                  className="btn-secondary py-1.5 px-3 text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingInbox || isTestingInbox}
+                  className="btn-primary py-1.5 px-4 text-xs flex items-center gap-1.5"
+                >
+                  {isSubmittingInbox ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Saving Mailbox...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={14} />
+                      <span>Add to Rotation Pool</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* TEST SEND VERIFICATION EMAIL MODAL */}
+      {testSendInbox && (
+        <Modal
+          isOpen={true}
+          onClose={() => setTestSendInbox(null)}
+          title={`Test Live Email Delivery: ${testSendInbox.name}`}
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-ink-500 leading-relaxed">
+              Send a live probe email from <strong className="text-ink-800">{testSendInbox.email}</strong> to verify that your SMTP credentials, TLS handshake, and deliverability pass end-to-end.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-ink-700 mb-1">
+                Recipient Email Address *
+              </label>
+              <input
+                type="email"
+                value={testEmailTarget}
+                onChange={(e) => setTestEmailTarget(e.target.value)}
+                placeholder="e.g. you@company.com"
+                className="input py-1.5 text-xs w-full"
+              />
+            </div>
+
+            {testSendFeedback && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
+                  testSendFeedback.success
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-red-200 bg-red-50 text-red-800'
+                }`}
+              >
+                {testSendFeedback.success ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-bold">{testSendFeedback.success ? 'Delivered Successfully' : 'Delivery Error'}</p>
+                  <p className="mt-0.5">{testSendFeedback.message}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setTestSendInbox(null)}
+                className="btn-secondary py-1.5 px-3 text-xs"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteTestSend}
+                disabled={isSendingTestEmail || !testEmailTarget.trim()}
+                className="btn-primary py-1.5 px-4 text-xs flex items-center gap-1.5"
+              >
+                {isSendingTestEmail ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Sending Live Probe...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={13} />
+                    <span>Send Test Email</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ADJUST DAILY DISPATCH LIMIT MODAL */}
+      {editingLimitInbox && (
+        <Modal
+          isOpen={true}
+          onClose={() => setEditingLimitInbox(null)}
+          title={`Adjust Daily Sending Cap: ${editingLimitInbox.name}`}
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-ink-500 leading-relaxed">
+              Configure the maximum cold outreach emails permitted from <strong className="text-ink-800">{editingLimitInbox.email}</strong> in a 24-hour cycle.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-ink-700 mb-1">
+                Daily Send Limit (Recommended: 30–50) *
+              </label>
+              <input
+                type="number"
+                min="5"
+                max="500"
+                value={newLimitValue}
+                onChange={(e) => setNewLimitValue(Number(e.target.value))}
+                className="input py-1.5 text-xs w-full"
+              />
+              <span className="text-[11px] text-ink-400 mt-1 block">
+                Higher numbers risk domain spam filters. Apollo.io &amp; Smartlead best practices advise keeping each mailbox under 50/day.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingLimitInbox(null)}
+                className="btn-secondary py-1.5 px-3 text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveLimit}
+                disabled={isUpdatingLimit}
+                className="btn-primary py-1.5 px-4 text-xs flex items-center gap-1.5"
+              >
+                {isUpdatingLimit ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Saving Limit...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>Save Daily Limit</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

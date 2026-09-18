@@ -8,7 +8,9 @@ export async function addSeenRepliedToMessages() {
     ADD COLUMN IF NOT EXISTS is_seen BOOLEAN DEFAULT false,
     ADD COLUMN IF NOT EXISTS seen_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS is_replied BOOLEAN DEFAULT false,
-    ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false,
+    ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
   `);
 
   await query(`

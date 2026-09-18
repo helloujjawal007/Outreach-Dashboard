@@ -2,11 +2,12 @@ import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { whatsappAdapter } from '../adapters/whatsappAdapter';
 import { instagramAdapter } from '../adapters/instagramAdapter';
+import { facebookAdapter } from '../adapters/facebookAdapter';
 import { conversationOrchestrator, type ClientConversionResult } from './orchestratorService';
 
 export interface SendResult {
   allowed: boolean;
-  channel: 'email' | 'whatsapp' | 'instagram';
+  channel: 'email' | 'whatsapp' | 'instagram' | 'facebook' | 'linkedin';
   actionTaken: 'sent_direct' | 'queued_draft' | 'blocked_consent' | 'blocked_channel_rule' | 'throttled_warmup';
   reason?: string;
   messageId?: string;
@@ -141,7 +142,7 @@ export class OutreachEngineService {
    */
   async routeOutreachMessage(params: {
     leadId: string;
-    channel: 'email' | 'whatsapp' | 'instagram';
+    channel: 'email' | 'whatsapp' | 'instagram' | 'facebook' | 'linkedin';
     text: string;
     campaignId?: string;
     stepId?: string;
@@ -157,8 +158,10 @@ export class OutreachEngineService {
       phone: string;
       instagram: string;
       whatsapp: string;
+      facebook: string;
+      linkedin: string;
     }>(
-      `SELECT id, business_name, consent_status, email, phone, instagram, whatsapp FROM leads WHERE id = $1`,
+      `SELECT id, business_name, consent_status, email, phone, instagram, whatsapp, facebook, linkedin FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -242,7 +245,7 @@ export class OutreachEngineService {
       };
     }
 
-    // B) INSTAGRAM / FACEBOOK: Draft queue workflow (requires human send)
+    // B) INSTAGRAM: Draft queue workflow (requires human send)
     if (channel === 'instagram') {
       const igResult = await instagramAdapter.enqueueDraft({
         leadId,
@@ -262,7 +265,53 @@ export class OutreachEngineService {
       };
     }
 
-    // C) EMAIL: Dedicated subdomain with progressive warm-up tracking & auto-throttling
+    // C) FACEBOOK: Draft queue workflow
+    if (channel === 'facebook') {
+      const fbResult = await facebookAdapter.enqueueDraft({
+        leadId,
+        campaignId,
+        stepId,
+        profileOrPage: lead.facebook || lead.business_name,
+        text,
+      });
+
+      return {
+        allowed: true,
+        channel: 'facebook',
+        actionTaken: 'queued_draft',
+        queueId: fbResult.queueId,
+        deepLink: fbResult.deepLink,
+        reason: fbResult.explanation,
+      };
+    }
+
+    // D) LINKEDIN: Engagement & draft queue for Anupam Kumar
+    if (channel === 'linkedin') {
+      const cleanProfile = (lead.linkedin || '').trim();
+      const deepLink = cleanProfile.startsWith('http')
+        ? cleanProfile
+        : cleanProfile
+        ? `https://${cleanProfile}`
+        : 'https://www.linkedin.com/in/anupam-kumar-seo-specialist/';
+
+      const insertRes = await query<{ id: string }>(
+        `INSERT INTO send_queue (lead_id, campaign_id, step_id, channel, message_preview, status, scheduled_for)
+         VALUES ($1, $2, $3, 'linkedin', $4, 'draft', NOW())
+         RETURNING id`,
+        [leadId, campaignId || null, stepId || null, text]
+      );
+
+      return {
+        allowed: true,
+        channel: 'linkedin',
+        actionTaken: 'queued_draft',
+        queueId: insertRes.rows[0].id,
+        deepLink,
+        reason: 'LinkedIn outreach drafted for Anupam Kumar (@anupam-kumar-seo-specialist).',
+      };
+    }
+
+    // E) EMAIL: Dedicated subdomain with progressive warm-up tracking & auto-throttling
     const emailResult = await emailAdapter.sendEmail({
       to: lead.email,
       subject: `Introduction for ${lead.business_name}`,
@@ -277,6 +326,20 @@ export class OutreachEngineService {
         actionTaken: 'throttled_warmup',
         reason: emailResult.reason,
       };
+    }
+
+    if (emailResult.success) {
+      try {
+        const { websiteFormService } = await import('./websiteFormService');
+        await websiteFormService.submitContactForm(leadId, {
+          senderName: 'Online Digital Solution',
+          senderEmail: 'team.onlinedigitalsolution@gmail.com',
+          subject: `Introduction for ${lead.business_name}`,
+          message: text,
+        });
+      } catch (fErr: any) {
+        console.warn(`[OutreachEngine] Form submission skipped for lead ${leadId}:`, fErr?.message);
+      }
     }
 
     return {

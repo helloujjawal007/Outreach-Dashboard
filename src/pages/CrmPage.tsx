@@ -10,6 +10,7 @@ import {
   Send,
   Filter,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Trash2,
   FolderPlus,
@@ -25,6 +26,18 @@ import {
   RotateCcw,
   Sparkles,
   RefreshCw,
+  Users,
+  Facebook,
+  Eye,
+  EyeOff,
+  Check,
+  Phone,
+  Globe,
+  Linkedin,
+  Loader2,
+  Star,
+  MapPin,
+  ExternalLink,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -32,8 +45,9 @@ import { ChannelIcon } from '@/components/ChannelIcon';
 import { Modal } from '@/components/Modal';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
+import { ChannelOutreachHub } from '@/components/ChannelOutreachHub';
 import type { Store } from '@/store';
-import type { Lead, ConsentStatus, Channel, AutoSendNextResult } from '@/types';
+import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
 import { api, type WhatsAppWindowStatus } from '@/services/api';
 
@@ -41,15 +55,65 @@ interface Props {
   store: Store;
   autoOpenContact?: { id: string; entityType: 'lead' | 'client' } | null;
   onClearAutoOpenContact?: () => void;
+  subFilter?: CrmSubFilter;
+  onSubFilterChange?: (subFilter: CrmSubFilter) => void;
+  onOpenGlobalMessages?: () => void;
 }
 
-type EntityTypeFilter = 'all' | 'lead' | 'client' | 'inbound' | 'trash';
-type ChannelFilter = 'all' | Channel;
+type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'trash';
+type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'facebook' | 'instagram' | 'linkedin';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
-export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Props) {
+export const getCountryFlag = (countryName?: string) => {
+  if (!countryName) return '🌐';
+  const c = countryName.toLowerCase().trim();
+  if (c.includes('canada')) return '🇨🇦';
+  if (c.includes('united states') || c.includes('usa') || c === 'us') return '🇺🇸';
+  if (c.includes('india')) return '🇮🇳';
+  if (c.includes('australia')) return '🇦🇺';
+  if (c.includes('united kingdom') || c.includes('uk') || c.includes('britain') || c.includes('england')) return '🇬🇧';
+  if (c.includes('germany') || c.includes('deutschland')) return '🇩🇪';
+  if (c.includes('france')) return '🇫🇷';
+  if (c.includes('italy')) return '🇮🇹';
+  if (c.includes('spain')) return '🇪🇸';
+  if (c.includes('brazil')) return '🇧🇷';
+  if (c.includes('mexico')) return '🇲🇽';
+  if (c.includes('japan')) return '🇯🇵';
+  if (c.includes('china')) return '🇨🇳';
+  if (c.includes('netherlands')) return '🇳🇱';
+  if (c.includes('new zealand')) return '🇳🇿';
+  return '📍';
+};
+
+export function CrmPage({
+  store,
+  autoOpenContact,
+  onClearAutoOpenContact,
+  subFilter,
+  onSubFilterChange,
+  onOpenGlobalMessages,
+}: Props) {
+  const [crmViewMode, setCrmViewMode] = useState<'channels' | 'table'>('channels');
   const [entityFilter, setEntityFilter] = useState<EntityTypeFilter>('all');
+
+  // Synchronize subFilter prop from Sidebar or App
+  useEffect(() => {
+    if (subFilter) {
+      setEntityFilter(subFilter as EntityTypeFilter);
+      if (
+        subFilter === 'lead_added' ||
+        subFilter === 'lead_not_added' ||
+        subFilter === 'client' ||
+        subFilter === 'manual_review'
+      ) {
+        setCrmViewMode('table');
+      }
+    }
+  }, [subFilter]);
+
   const [isInboundInboxOpen, setIsInboundInboxOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [stageFilter, setStageFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [consentFilter, setConsentFilter] = useState<ConsentStatus | 'all'>('all');
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
@@ -61,12 +125,38 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
   const [replyChannel, setReplyChannel] = useState<Channel>('email');
   const [waWindow, setWaWindow] = useState<WhatsAppWindowStatus | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [alsoSubmitWebsiteForm, setAlsoSubmitWebsiteForm] = useState(true);
+  const [detectingFormLeadId, setDetectingFormLeadId] = useState<string | null>(null);
+  const [detectedFormInfo, setDetectedFormInfo] = useState<any>(null);
+
+  const handleDetectWebsiteForm = useCallback(async (leadId: string, websiteUrl?: string) => {
+    try {
+      setDetectingFormLeadId(leadId);
+      const res = await api.detectWebsiteForm(leadId, websiteUrl);
+      if (res.detection) {
+        setDetectedFormInfo(res.detection);
+      }
+      if (res.lead) {
+        setSelectedLead((prev) => (prev && prev.id === leadId ? { ...prev, ...res.lead } : prev));
+        await store.fetchLeads();
+      }
+    } catch (err: any) {
+      setDetectedFormInfo({
+        hasForm: false,
+        reason: err?.message || 'Form detection failed',
+      });
+    } finally {
+      setDetectingFormLeadId(null);
+    }
+  }, [store]);
   const [sendFeedback, setSendFeedback] = useState<{
     type: 'success' | 'warning' | 'error' | 'info';
     message: string;
   } | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [conversionMessage, setConversionMessage] = useState<string | null>(null);
+  const [isImprovisingReply, setIsImprovisingReply] = useState(false);
+  const [improviseBadge, setImproviseBadge] = useState<string | null>(null);
 
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -85,6 +175,29 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
 
   // 28-day Deletion History / Trash state
   const [isTrashOpen, setIsTrashOpen] = useState(false);
+
+  // Google Profile Enrichment & Direct Edit state
+  const [isEnrichingGoogle, setIsEnrichingGoogle] = useState(false);
+  const [isSyncingMaps, setIsSyncingMaps] = useState(false);
+  const [mapsUrlInput, setMapsUrlInput] = useState('');
+  const [googleFeedback, setGoogleFeedback] = useState<string | null>(null);
+  const [isEditingGoogle, setIsEditingGoogle] = useState(false);
+  const [isSavingGoogle, setIsSavingGoogle] = useState(false);
+  const [editGoogleForm, setEditGoogleForm] = useState<{
+    rating: number | string;
+    reviewsCount: number | string;
+    formattedAddress: string;
+    category: string;
+    website: string;
+    googleMapsUrl: string;
+  }>({
+    rating: 4.9,
+    reviewsCount: 1353,
+    formattedAddress: '',
+    category: '',
+    website: '',
+    googleMapsUrl: '',
+  });
 
   // Client Info Edit state
   const [isEditClientOpen, setIsEditClientOpen] = useState(false);
@@ -126,6 +239,22 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
 
   // Inbound Gmail IMAP Sync state & handler
   const [isSyncingInbox, setIsSyncingInbox] = useState(false);
+  const [isSyncingGmb, setIsSyncingGmb] = useState(false);
+
+  const handleSyncGmbAll = useCallback(async () => {
+    try {
+      setIsSyncingGmb(true);
+      const res = await store.syncGmb();
+      setBulkActionSuccess(`Google Business Profile Sync completed! Matched and updated ${res.totalSynced} leads.`);
+      setTimeout(() => setBulkActionSuccess(null), 5000);
+    } catch (err: any) {
+      console.error('GMB sync failed:', err);
+      setBulkActionSuccess(err?.message || 'Failed to sync with Google Business Profiles');
+      setTimeout(() => setBulkActionSuccess(null), 5000);
+    } finally {
+      setIsSyncingGmb(false);
+    }
+  }, [store]);
 
   const handleSyncInbox = useCallback(async () => {
     try {
@@ -156,12 +285,68 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
     }
   }, [store, selectedLead]);
 
+  const manualReviewLeads = useMemo(
+    () => store.leads.filter((l) => l.status === 'manual_review'),
+    [store.leads]
+  );
+  const manualReviewCount = manualReviewLeads.length;
+
+  const leadEntities = useMemo(
+    () => store.leads.filter((l) => l.entityType === 'lead' && l.status !== 'manual_review'),
+    [store.leads]
+  );
+  const clientEntities = useMemo(
+    () => store.leads.filter((l) => l.entityType === 'client' && l.status !== 'manual_review'),
+    [store.leads]
+  );
+  const addedLeadsCount = useMemo(
+    () => leadEntities.filter((l) => Boolean(l.lists && l.lists.length > 0)).length,
+    [leadEntities]
+  );
+  const notAddedLeadsCount = useMemo(
+    () => leadEntities.filter((l) => !l.lists || l.lists.length === 0).length,
+    [leadEntities]
+  );
+
   const inboundContactCount = useMemo(() => {
     const replyEntityIds = new Set(
       store.inboundReplies.map((r) => r.client_id || r.lead_id).filter(Boolean)
     );
     return store.leads.filter((l) => replyEntityIds.has(l.id)).length;
   }, [store.inboundReplies, store.leads]);
+
+  // Unique categories derived dynamically from database
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set<string>();
+    store.leads.forEach((l) => {
+      if (l.category && l.category.trim()) cats.add(l.category.trim());
+    });
+    return Array.from(cats).sort();
+  }, [store.leads]);
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      categoryFilter !== 'all' ||
+      stageFilter !== 'all' ||
+      statusFilter !== 'all' ||
+      consentFilter !== 'all' ||
+      channelFilter !== 'all' ||
+      selectedListFilter !== 'all' ||
+      selectedBatchFilter !== 'all' ||
+      search.trim().length > 0
+    );
+  }, [categoryFilter, stageFilter, statusFilter, consentFilter, channelFilter, selectedListFilter, selectedBatchFilter, search]);
+
+  const handleClearAllFilters = useCallback(() => {
+    setCategoryFilter('all');
+    setStageFilter('all');
+    setStatusFilter('all');
+    setConsentFilter('all');
+    setChannelFilter('all');
+    setSelectedListFilter('all');
+    setSelectedBatchFilter('all');
+    setSearch('');
+  }, []);
 
   const filtered = useMemo(() => {
     if (entityFilter === 'trash') {
@@ -216,12 +401,54 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       });
     }
 
+    if (entityFilter === 'manual_review') {
+      return store.leads.filter((l) => {
+        if (l.status !== 'manual_review') return false;
+        if (channelFilter !== 'all') {
+          if (channelFilter === 'email' && !l.email) return false;
+          if (channelFilter === 'whatsapp' && !l.whatsapp && !l.phone) return false;
+          if (channelFilter === 'instagram' && !l.instagram && !l.facebook) return false;
+        }
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          if (
+            !l.businessName.toLowerCase().includes(q) &&
+            !l.category.toLowerCase().includes(q) &&
+            !l.email.toLowerCase().includes(q) &&
+            !l.phone.toLowerCase().includes(q) &&
+            !(l.manualReviewReason && l.manualReviewReason.toLowerCase().includes(q))
+          )
+            return false;
+        }
+        return true;
+      });
+    }
+
     return store.leads.filter((l) => {
-      if (entityFilter !== 'all' && l.entityType !== entityFilter) return false;
+      // Exclude contacts quarantined in manual review from regular CRM views
+      if (l.status === 'manual_review') return false;
+
+      if (entityFilter === 'lead_added') {
+        if (l.entityType !== 'lead') return false;
+        if (!l.lists || l.lists.length === 0) return false;
+      } else if (entityFilter === 'lead_not_added') {
+        if (l.entityType !== 'lead') return false;
+        if (l.lists && l.lists.length > 0) return false;
+      } else if (entityFilter !== 'all' && l.entityType !== entityFilter) {
+        return false;
+      }
+      if (categoryFilter !== 'all' && l.category !== categoryFilter) return false;
       if (statusFilter !== 'all') {
         const s = l.status || 'active';
         if (statusFilter === 'active' && s !== 'active') return false;
         if (statusFilter === 'inactive' && s !== 'inactive' && s !== 'paused') return false;
+      }
+      if (stageFilter !== 'all') {
+        if (stageFilter === 'cold' && (l.stage || 'cold') !== 'cold') return false;
+        if (stageFilter === 'initial' && l.stage !== 'initial') return false;
+        if (stageFilter === 'followup_1' && l.stage !== 'followup_1') return false;
+        if (stageFilter === 'followup_2' && l.stage !== 'followup_2') return false;
+        if (stageFilter === 'replied' && l.consentStatus !== 'replied') return false;
       }
       if (consentFilter !== 'all' && l.consentStatus !== consentFilter) return false;
       if (selectedBatchFilter !== 'all' && l.batchId !== selectedBatchFilter) return false;
@@ -234,8 +461,12 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
       }
       if (channelFilter !== 'all') {
         if (channelFilter === 'email' && !l.email) return false;
-        if (channelFilter === 'whatsapp' && !l.whatsapp) return false;
-        if (channelFilter === 'instagram' && !l.instagram && !l.facebook) return false;
+        if (channelFilter === 'whatsapp' && !l.whatsapp && !l.phone) return false;
+        if (channelFilter === 'whatsapp_mobile' && l.whatsappEligible !== true) return false;
+        if (channelFilter === 'website_form' && !l.website && !l.googleProfile?.website) return false;
+        if (channelFilter === 'facebook' && (!l.facebook || !l.facebook.trim())) return false;
+        if (channelFilter === 'instagram' && (!l.instagram || !l.instagram.trim())) return false;
+        if (channelFilter === 'linkedin' && (!l.linkedin || !l.linkedin.trim())) return false;
       }
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -243,13 +474,18 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
           !l.businessName.toLowerCase().includes(q) &&
           !l.category.toLowerCase().includes(q) &&
           !l.email.toLowerCase().includes(q) &&
-          !l.phone.toLowerCase().includes(q)
+          !l.phone.toLowerCase().includes(q) &&
+          !(l.website && l.website.toLowerCase().includes(q)) &&
+          !(l.country && l.country.toLowerCase().includes(q)) &&
+          !(l.facebook && l.facebook.toLowerCase().includes(q)) &&
+          !(l.instagram && l.instagram.toLowerCase().includes(q)) &&
+          !(l.linkedin && l.linkedin.toLowerCase().includes(q))
         )
           return false;
       }
       return true;
     });
-  }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, statusFilter, consentFilter, selectedBatchFilter, selectedListFilter, channelFilter, search]);
+  }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, categoryFilter, stageFilter, statusFilter, consentFilter, selectedBatchFilter, selectedListFilter, channelFilter, search]);
 
   const leadConversations = useMemo(() => {
     if (!selectedLead) return [];
@@ -260,13 +496,15 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
   const handleOpenLead = useCallback(
     async (lead: Lead) => {
       setSelectedLead(lead);
+      setMapsUrlInput(lead.googleProfile?.googleMapsUrl || '');
       setReplyText('');
       setSendFeedback(null);
       setConversionMessage(null);
-      setReplyChannel(lead.email ? 'email' : lead.whatsapp ? 'whatsapp' : 'instagram');
+      const existingForm = lead.metadata?.website_form || null;
+      setDetectedFormInfo(existingForm);
+      setReplyChannel(lead.email ? 'email' : lead.whatsapp ? 'whatsapp' : (lead.website || lead.googleProfile?.website) ? 'website_form' : 'instagram');
       await store.fetchConversationsForEntity(lead.id, lead.entityType === 'client');
-      // Mark inbound messages as seen
-      store.markEntityInboundSeen(lead.entityType, lead.id).catch(() => {});
+      // NOTE: Received messages remain UNREAD until user explicitly clicks "Mark as Read" or sends a reply back!
       try {
         const win = await api.getWhatsAppWindowStatus(lead.id, lead.entityType === 'client');
         setWaWindow(win);
@@ -311,6 +549,113 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
     },
     [store.leads, handleOpenLead]
   );
+
+  const handleSyncGoogleMaps = useCallback(
+    async (leadId: string, customUrl?: string) => {
+      try {
+        setIsSyncingMaps(true);
+        setGoogleFeedback(null);
+        const updated = await store.syncLeadFromGoogleMaps(leadId, customUrl);
+        setSelectedLead(updated);
+        setMapsUrlInput(updated.googleProfile?.googleMapsUrl || '');
+        const gp = updated.googleProfile;
+        const msg = gp
+          ? `Synced live with Google Maps! ${gp.placeName} (${gp.rating}★, ${gp.reviewsCount} reviews) matches 100%.`
+          : 'Lead synchronized with Google Maps successfully!';
+        setGoogleFeedback(msg);
+        setTimeout(() => setGoogleFeedback(null), 6000);
+      } catch (err: any) {
+        console.error('Failed to sync lead with Google Maps:', err);
+        setGoogleFeedback(err?.message || 'Failed to sync with Google Maps');
+        setTimeout(() => setGoogleFeedback(null), 6000);
+      } finally {
+        setIsSyncingMaps(false);
+      }
+    },
+    [store]
+  );
+
+  const handleEnrichLeadFromGoogle = useCallback(
+    async (leadId: string) => {
+      return handleSyncGoogleMaps(leadId);
+    },
+    [handleSyncGoogleMaps]
+  );
+
+  const handleStartEditGoogle = useCallback(() => {
+    if (!selectedLead) return;
+    setEditGoogleForm({
+      rating: selectedLead.googleProfile?.rating ?? 4.9,
+      reviewsCount: selectedLead.googleProfile?.reviewsCount ?? 0,
+      formattedAddress: selectedLead.googleProfile?.formattedAddress ?? '',
+      category: selectedLead.googleProfile?.category || selectedLead.category || '',
+      website: selectedLead.googleProfile?.website ?? '',
+      googleMapsUrl: selectedLead.googleProfile?.googleMapsUrl ?? '',
+    });
+    setIsEditingGoogle(true);
+  }, [selectedLead]);
+
+  const handleSaveGoogleEdit = useCallback(async () => {
+    if (!selectedLead) return;
+    try {
+      setIsSavingGoogle(true);
+      const updatedProfile = {
+        ...(selectedLead.googleProfile || {}),
+        placeName: selectedLead.businessName,
+        rating: Number(editGoogleForm.rating),
+        reviewsCount: Number(editGoogleForm.reviewsCount),
+        formattedAddress: editGoogleForm.formattedAddress.trim(),
+        category: editGoogleForm.category.trim() || selectedLead.category,
+        website: editGoogleForm.website.trim(),
+        googleMapsUrl: editGoogleForm.googleMapsUrl.trim(),
+        status: (selectedLead.googleProfile?.status || 'OPERATIONAL') as 'OPERATIONAL' | 'VERIFIED' | 'CLAIMED',
+        hasGbpClaimed: selectedLead.googleProfile?.hasGbpClaimed ?? true,
+        userVerified: true,
+        lastEnrichedAt: new Date().toISOString(),
+        lastCheckedAt: new Date().toISOString(),
+      };
+
+      let updatedNotes = selectedLead.notes || '';
+      if (updatedNotes.includes('Rating:')) {
+        updatedNotes = updatedNotes.replace(
+          /Rating:\s*[0-9.]+★\s*\([0-9,]+\s*reviews?\)/i,
+          `Rating: ${editGoogleForm.rating}★ (${Number(editGoogleForm.reviewsCount).toLocaleString()} reviews)`
+        );
+      }
+
+      const updatedLead = await store.updateLead(selectedLead.id, {
+        category: editGoogleForm.category.trim() || selectedLead.category,
+        notes: updatedNotes,
+        googleProfile: updatedProfile,
+      });
+
+      setSelectedLead(updatedLead);
+      setIsEditingGoogle(false);
+      setGoogleFeedback('Google Business Profile details saved and verified successfully!');
+      setTimeout(() => setGoogleFeedback(null), 4000);
+    } catch (err: any) {
+      console.error('Failed to save Google Profile edits:', err);
+      setGoogleFeedback(err?.message || 'Failed to save Google Profile details');
+      setTimeout(() => setGoogleFeedback(null), 4000);
+    } finally {
+      setIsSavingGoogle(false);
+    }
+  }, [selectedLead, editGoogleForm, store]);
+
+  // Auto-enrich lead if Google profile is missing or contains placeholder data
+  useEffect(() => {
+    if (!selectedLead?.id || selectedLead.entityType !== 'lead') return;
+    const gp = selectedLead.googleProfile;
+    const hasPlaceholder =
+      !gp ||
+      !gp.rating ||
+      gp.formattedAddress?.includes('Suite, Commercial District') ||
+      (selectedLead.businessName.toLowerCase().includes('rooter') && gp.rating === 4.8 && gp.reviewsCount === 40);
+
+    if (hasPlaceholder && !isEnrichingGoogle) {
+      handleEnrichLeadFromGoogle(selectedLead.id);
+    }
+  }, [selectedLead?.id]);
 
   useEffect(() => {
     if (autoOpenContact?.id) {
@@ -632,9 +977,13 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         const res = await store.autoSendNextStep(leadId);
         if (res.result) {
           if (res.result.success) {
+            const formSubmission = (res.result as any).websiteFormSubmission;
+            const formNote = formSubmission && !formSubmission.skipped
+              ? ' + Website Contact Form Submitted! 🌐'
+              : '';
             setSendFeedback({
               type: 'success',
-              message: `Dispatched ${res.result.stageLabel} ("${res.result.subject}") via Gmail SMTP!`,
+              message: `Dispatched ${res.result.stageLabel} ("${res.result.subject}") via Gmail SMTP${formNote}!`,
             });
             const updatedStage = await api.getLeadStage(leadId);
             setLeadStageInfo(updatedStage);
@@ -834,11 +1183,20 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
     }
   }, [store]);
 
-  // Sync selectedLead if store.leads changes
+  // Auto-poll leads silently every 20 seconds so background 12h GMB updates stream into UI without user refresh
   useEffect(() => {
-    if (selectedLead) {
-      const updated = store.leads.find((l) => l.id === selectedLead.id);
-      if (updated) setSelectedLead(updated);
+    const timer = setInterval(() => {
+      store.fetchLeads();
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [store]);
+
+  // Reactively sync selectedLead whenever store.leads changes (e.g. background GMB update or edit)
+  useEffect(() => {
+    if (!selectedLead) return;
+    const currentInStore = store.leads.find((l) => l.id === selectedLead.id);
+    if (currentInStore && JSON.stringify(currentInStore) !== JSON.stringify(selectedLead)) {
+      setSelectedLead(currentInStore);
     }
   }, [store.leads, selectedLead]);
 
@@ -854,47 +1212,59 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         clientId: selectedLead.entityType === 'client' ? selectedLead.id : undefined,
         channel: replyChannel,
         text: replyText.trim(),
+        alsoSubmitWebsiteForm,
       });
 
+      let feedbackMsg = '';
       if (res.result) {
         if (res.result.actionTaken === 'blocked_consent') {
           setSendFeedback({
             type: 'error',
             message: res.result.reason || 'Blocked: Contact has opted out of communications.',
           });
+          return;
         } else if (res.result.actionTaken === 'blocked_channel_rule') {
           setSendFeedback({
             type: 'warning',
             message: res.result.reason || 'Cold WhatsApp sends are disabled by policy (24-hour inbound window only).',
           });
+          return;
         } else if (res.result.actionTaken === 'queued_draft') {
-          setSendFeedback({
-            type: 'info',
-            message: 'Instagram DM drafted and added to the Human Send Approval Queue.',
-          });
-          setReplyText('');
+          feedbackMsg = 'Instagram DM drafted and added to the Human Send Approval Queue.';
         } else if (res.result.actionTaken === 'throttled_warmup') {
           setSendFeedback({
             type: 'warning',
             message: res.result.reason || 'Sending throttled: Daily email warm-up limit reached.',
           });
+          return;
         } else if (res.result.actionTaken === 'sent_direct') {
-          setSendFeedback({
-            type: 'success',
-            message:
-              res.result.channel === 'whatsapp'
-                ? 'WhatsApp message dispatched within active customer care window.'
-                : res.result.reason || 'Email dispatched directly through Gmail SMTP.',
-          });
-          setReplyText('');
+          feedbackMsg =
+            res.result.channel === 'whatsapp'
+              ? 'WhatsApp message dispatched within active customer care window.'
+              : res.result.channel === 'website_form'
+              ? 'Website contact form filled and submitted successfully!'
+              : res.result.reason || 'Email dispatched directly through Gmail SMTP.';
         }
       } else {
-        setSendFeedback({
-          type: 'success',
-          message: 'Client message dispatched directly via Conversation Orchestrator.',
-        });
-        setReplyText('');
+        feedbackMsg = 'Client message dispatched directly via Conversation Orchestrator.';
       }
+
+      // Check if website form parallel submission had a status
+      if (res.websiteFormResult) {
+        if (res.websiteFormResult.success) {
+          feedbackMsg += ' 🌐 Also submitted via Website Contact Form!';
+        } else if (res.websiteFormResult.skipped) {
+          feedbackMsg += ` (Website form: ${res.websiteFormResult.reason})`;
+        } else if (res.websiteFormResult.error) {
+          feedbackMsg += ` (Website form: ${res.websiteFormResult.error})`;
+        }
+      }
+
+      setSendFeedback({
+        type: 'success',
+        message: feedbackMsg || 'Outreach dispatched successfully.',
+      });
+      setReplyText('');
 
       await store.fetchConversationsForEntity(selectedLead.id, selectedLead.entityType === 'client');
       const updatedWindow = await api.getWhatsAppWindowStatus(selectedLead.id, selectedLead.entityType === 'client');
@@ -908,7 +1278,31 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
     } finally {
       setIsSending(false);
     }
-  }, [selectedLead, replyText, replyChannel, store]);
+  }, [selectedLead, replyText, replyChannel, alsoSubmitWebsiteForm, store]);
+
+  const handleImproviseReply = useCallback(
+    async (roughTextOverride?: string) => {
+      if (!selectedLead) return;
+      const textToImprovise = (roughTextOverride || replyText).trim() || 'free audit of website, checking local ranking, quick chat';
+      try {
+        setIsImprovisingReply(true);
+        const res = await api.improvise({
+          text: textToImprovise,
+          channel: replyChannel,
+          businessName: selectedLead.businessName,
+          category: selectedLead.category,
+        });
+        setReplyText(res.improvedText);
+        setImproviseBadge(`✨ Improvised for ${channelLabels[replyChannel]} (Realistic & Consultative)`);
+        setTimeout(() => setImproviseBadge(null), 6000);
+      } catch (err) {
+        console.error('Failed to improvise reply:', err);
+      } finally {
+        setIsImprovisingReply(false);
+      }
+    },
+    [selectedLead, replyText, replyChannel]
+  );
 
   const handleConvert = useCallback(async () => {
     if (!selectedLead) return;
@@ -1051,27 +1445,22 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         subtitle="Manage prospects and paying clients. Unified omni-channel tracking with 28-day retention."
         actions={
           <div className="flex items-center gap-2">
+            {/* 12-Hour GMB Auto-Sync Status & Trigger */}
             <button
               type="button"
-              onClick={() => setIsScheduleModalOpen(true)}
-              className="btn-primary text-xs flex items-center gap-1.5 shadow-sm bg-gradient-to-r from-amber-500 via-brand-600 to-indigo-600 hover:from-amber-600 hover:to-indigo-700 text-white font-bold"
-              title="Automatically write humanized emails and shoot or schedule list outreach"
+              onClick={handleSyncGmbAll}
+              disabled={isSyncingGmb}
+              className="btn-secondary text-xs flex items-center gap-1.5 shadow-sm border-amber-300 text-amber-900 bg-amber-50/80 hover:bg-amber-100 transition"
+              title="12-Hour Automated Sync is active. Click to trigger instant Google My Business matching on all leads."
             >
-              <Zap size={14} className="text-amber-200 fill-amber-200" />
-              <span>Auto-Shoot & Schedule List</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsInboundInboxOpen(true)}
-              className="btn-primary text-xs flex items-center gap-1.5 shadow-sm bg-blue-600 hover:bg-blue-700 text-white"
-              title="Open Inbound Email Replies Center"
-            >
-              <Mail size={14} />
-              <span>Inbound Inbox</span>
-              <span className="rounded-full bg-blue-500/90 px-1.5 py-0.2 text-[10px] font-bold">
-                {store.inboundReplies.length}
+              <RefreshCw size={13} className={isSyncingGmb ? 'animate-spin text-amber-600' : 'text-amber-600'} />
+              <span className="font-semibold">{isSyncingGmb ? 'Matching GMB...' : 'Sync GMB Now 🔄'}</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                12h Auto
               </span>
             </button>
+
             <button
               type="button"
               onClick={handleSyncInbox}
@@ -1086,16 +1475,75 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         }
       />
 
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+      {/* 4-CHANNEL OUTREACH HUB vs FULL CRM TABLE VIEW MODE TOGGLE */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+        <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1 border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setCrmViewMode('channels')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${
+              crmViewMode === 'channels'
+                ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                : 'text-ink-600 hover:text-ink-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Zap size={15} className="text-amber-500 fill-amber-500" />
+            <span>⚡ Multi-Channel Outreach Hub (Email, WhatsApp, FB, IG, LinkedIn)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCrmViewMode('table')}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-all ${
+              crmViewMode === 'table'
+                ? 'bg-white text-brand-700 shadow-sm ring-1 ring-slate-200'
+                : 'text-ink-600 hover:text-ink-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Users size={15} className="text-ink-600" />
+            <span>Classic Leads &amp; Clients Table</span>
+          </button>
+        </div>
+      </div>
+
+      {crmViewMode === 'channels' ? (
+        <ChannelOutreachHub
+          leads={store.leads}
+          lists={store.lists}
+          onRefreshLeads={store.refreshAll}
+          onBulkDeleteLeads={store.bulkDeleteLeads}
+          onAddLeadsToList={store.addLeadsToList}
+          onCreateList={store.createList}
+          onOpenConversation={(id) => handleOpenEntityById(id, 'lead')}
+          onOpenInboundInbox={() => setIsInboundInboxOpen(true)}
+          inboundRepliesCount={store.inboundReplies.length}
+        />
+      ) : (
+        <>
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+        <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm flex-wrap">
           {[
-            { key: 'all', label: 'All Records' },
-            { key: 'lead', label: 'Leads' },
-            { key: 'client', label: 'Clients' },
+            { key: 'all', label: `All Records (${store.leads.filter((l) => l.status !== 'manual_review').length})` },
+            {
+              key: 'lead_added',
+              label: `Added Leads (${addedLeadsCount})`,
+              icon: CheckCircle2,
+            },
+            {
+              key: 'lead_not_added',
+              label: `Not Added (${notAddedLeadsCount})`,
+              icon: Clock,
+            },
+            { key: 'client', label: `Clients (${clientEntities.length})`, icon: UserCheck },
             {
               key: 'inbound',
               label: `Email Replies (${inboundContactCount})`,
               icon: Mail,
+            },
+            {
+              key: 'manual_review',
+              label: `Manual Checking (${manualReviewCount})`,
+              icon: AlertTriangle,
             },
             {
               key: 'trash',
@@ -1108,18 +1556,33 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               onClick={() => {
                 setEntityFilter(key as EntityTypeFilter);
                 setSelectedIds(new Set());
+                if (onSubFilterChange) {
+                  onSubFilterChange(key as CrmSubFilter);
+                }
               }}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-all ${
                 entityFilter === key
-                  ? key === 'trash'
+                  ? key === 'lead_added'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : key === 'lead_not_added'
                     ? 'bg-amber-600 text-white shadow-sm'
+                    : key === 'trash'
+                    ? 'bg-rose-600 text-white shadow-sm'
                     : key === 'inbound'
                     ? 'bg-blue-600 text-white shadow-sm'
+                    : key === 'manual_review'
+                    ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-400'
                     : 'bg-brand-600 text-white shadow-sm'
-                  : key === 'trash'
+                  : key === 'lead_added'
+                  ? 'text-emerald-700 hover:bg-emerald-50 font-bold'
+                  : key === 'lead_not_added'
                   ? 'text-amber-700 hover:bg-amber-50 font-bold'
+                  : key === 'trash'
+                  ? 'text-rose-700 hover:bg-rose-50 font-bold'
                   : key === 'inbound'
                   ? 'text-blue-700 hover:bg-blue-50 font-bold'
+                  : key === 'manual_review'
+                  ? 'text-rose-700 bg-rose-50/80 hover:bg-rose-100 font-bold'
                   : 'text-ink-500 hover:bg-slate-100'
               }`}
             >
@@ -1131,6 +1594,23 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
 
         <div className="flex flex-wrap items-center gap-2">
           <Filter size={14} className="text-ink-300" />
+          
+          {/* Category Filter */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="input py-1.5 text-xs w-auto font-medium"
+            title="Filter by business industry or category"
+          >
+            <option value="all">All Categories ({uniqueCategories.length})</option>
+            {uniqueCategories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+
+          {/* Status Filter */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -1140,26 +1620,63 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
             <option value="active">Active Only</option>
             <option value="inactive">Inactive Only</option>
           </select>
+
+          {/* Stage Filter */}
+          <select
+            value={stageFilter}
+            onChange={(e) => setStageFilter(e.target.value)}
+            className="input py-1.5 text-xs w-auto font-medium"
+            title="Filter by outreach sequence stage"
+          >
+            <option value="all">All Stages</option>
+            <option value="cold">❄️ Cold (Uncontacted)</option>
+            <option value="initial">📤 Initial Outreach</option>
+            <option value="followup_1">🔄 Follow-up 1</option>
+            <option value="followup_2">⚡ Follow-up 2</option>
+            <option value="replied">💬 Replied</option>
+          </select>
+
+          {/* Consent / Response Filter */}
           <select
             value={consentFilter}
             onChange={(e) => setConsentFilter(e.target.value as ConsentStatus | 'all')}
-            className="input py-1.5 text-xs w-auto"
+            className="input py-1.5 text-xs w-auto font-medium"
           >
             <option value="all">All Consent</option>
             <option value="none">No response</option>
             <option value="replied">Replied</option>
             <option value="opted_out">Opted out</option>
           </select>
+
+          {/* Expanded Channels Filter */}
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value as ChannelFilter)}
-            className="input py-1.5 text-xs w-auto"
+            className="input py-1.5 text-xs w-auto font-medium"
+            title="Filter by available contact channel"
           >
             <option value="all">All Channels</option>
-            <option value="email">Email</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="instagram">Instagram / FB</option>
+            <option value="email">✉️ Email</option>
+            <option value="whatsapp">💬 WhatsApp (All)</option>
+            <option value="whatsapp_mobile">📱 WhatsApp (Mobile Ready)</option>
+            <option value="website_form">🌐 Website Form</option>
+            <option value="facebook">👥 Facebook</option>
+            <option value="instagram">📸 Instagram</option>
+            <option value="linkedin">💼 LinkedIn</option>
           </select>
+
+          {/* Clear Filters Button */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="btn-secondary py-1 px-2.5 text-xs flex items-center gap-1 text-rose-600 hover:bg-rose-50 border-rose-200 font-semibold"
+              title="Reset all filters back to default"
+            >
+              <X size={12} />
+              <span>Reset Filters</span>
+            </button>
+          )}
 
           {/* Lists Filter */}
           <div className="flex items-center gap-1.5 ml-1 border-l border-slate-200 pl-2">
@@ -1238,7 +1755,7 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
             <Trash2 size={13} className="text-slate-500" />
             <span>Trash (28d)</span>
             {store.trashLeads.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-800 text-[10px] font-bold">
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-800 text-[10px] font-bold">
                 {store.trashLeads.length}
               </span>
             )}
@@ -1332,6 +1849,70 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         </div>
       )}
 
+      {/* Dedicated Manual Checking Quarantine Banner */}
+      {entityFilter === 'manual_review' && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-gradient-to-r from-rose-50 via-white to-amber-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md shadow-rose-500/20">
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-ink-900">
+                  Manual Checking Quarantine ({filtered.length} contacts)
+                </h3>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-semibold">
+                  Anonymous / Delivery Failures
+                </span>
+              </div>
+              <p className="text-xs text-ink-500 mt-0.5">
+                Contacts whose emails or messages bounced, failed delivery (e.g. Mailer-Daemon 550), or targeted anonymous addresses are quarantined here to prevent repeated failures and safeguard sender reputation.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {filtered.length > 0 && (
+              <>
+                <button
+                  onClick={async () => {
+                    const ids = filtered.map((l) => l.id);
+                    await store.bulkApproveLeadReviews(ids);
+                    setBulkActionSuccess(`Re-activated and approved ${ids.length} contacts.`);
+                  }}
+                  className="btn-primary bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 text-xs py-2 px-3.5 shadow-sm"
+                  title="Approve all quarantined contacts back to active lead status"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Approve & Re-activate All ({filtered.length})</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm(`Move all ${filtered.length} quarantined contacts to Trash?`)) {
+                      await store.bulkDeleteLeads(filtered.map((l) => l.id));
+                      setBulkActionSuccess(`Moved ${filtered.length} contacts to Trash.`);
+                    }
+                  }}
+                  className="btn-secondary text-rose-700 hover:bg-rose-50 border-rose-300 flex items-center gap-1.5 text-xs py-2 px-3.5 shadow-sm font-semibold transition"
+                  title="Move all quarantined contacts to Trash"
+                >
+                  <Trash2 size={14} className="text-rose-600" />
+                  <span>Delete All</span>
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                setEntityFilter('all');
+                setSelectedIds(new Set());
+              }}
+              className="btn-secondary text-xs py-2 px-3"
+            >
+              ← Back to Active CRM
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Dedicated Trash Retention Banner */}
       {entityFilter === 'trash' && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
@@ -1385,6 +1966,53 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         </div>
       )}
 
+      {entityFilter === 'lead_not_added' && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Clock size={18} className="text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <h4 className="text-xs font-bold text-amber-900">
+                  Not Added Leads ({filtered.length} unassigned leads)
+                </h4>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  These leads are saved in your database but haven't been added to any custom list or outreach campaign yet.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  setLeadsToAddToList(filtered.map((l) => l.id));
+                  setIsAddToListOpen(true);
+                }}
+                disabled={filtered.length === 0}
+                className="btn-primary py-1.5 px-3 text-xs font-bold flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white border-0 shadow-2xs"
+              >
+                <FolderPlus size={13} />
+                <span>Add All ({filtered.length}) to Custom List</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {entityFilter === 'lead_added' && (
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+            <div>
+              <h4 className="text-xs font-bold text-emerald-900">
+                Added Leads ({filtered.length} active leads)
+              </h4>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                Showing leads enrolled in custom lists or actively assigned to outreach sequences.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {bulkActionSuccess && (
         <div className="mb-4 flex items-center justify-between gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-2.5 text-xs text-emerald-800 animate-in fade-in">
           <div className="flex items-center gap-2">
@@ -1428,6 +2056,23 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Deleted Date</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900 text-right">Actions</th>
                 </tr>
+              ) : entityFilter === 'manual_review' ? (
+                <tr className="border-b border-rose-200 bg-rose-50/70 text-left">
+                  <th className="w-10 px-3 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleToggleSelectAll}
+                      aria-label="Select all"
+                      className="h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Contact / Business</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Email & Phone</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Quarantine Reason</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Date Quarantined</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900 text-right">Actions</th>
+                </tr>
               ) : (
                 <tr className="border-b border-slate-200 bg-slate-50 text-left">
                   <th className="w-10 px-3 py-3 text-center">
@@ -1455,11 +2100,13 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={entityFilter === 'trash' ? 7 : 10}
+                    colSpan={entityFilter === 'trash' ? 7 : entityFilter === 'manual_review' ? 6 : 10}
                     className="px-4 py-12 text-center text-ink-300"
                   >
                     {entityFilter === 'trash'
                       ? 'Trash is empty. No deleted records found.'
+                      : entityFilter === 'manual_review'
+                      ? 'No records in manual checking. All emails and messages are healthy!'
                       : 'No records match your filters.'}
                   </td>
                 </tr>
@@ -1540,6 +2187,95 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                     </td>
                   </tr>
                 ))
+              ) : entityFilter === 'manual_review' ? (
+                filtered.map((lead) => (
+                  <tr
+                    key={lead.id}
+                    onClick={() => handleOpenLead(lead)}
+                    className="cursor-pointer transition-colors hover:bg-rose-50/60"
+                  >
+                    <td
+                      className="w-10 px-3 py-3 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => handleToggleSelectLead(lead.id)}
+                        aria-label={`Select ${lead.businessName}`}
+                        className="h-4 w-4 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-semibold text-ink-900 flex items-center gap-1.5">
+                          <span>{lead.businessName}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold border border-rose-200">
+                            Quarantined
+                          </span>
+                        </p>
+                        <p className="text-xs text-ink-400">{lead.category || 'General'}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs">
+                        <div className="font-medium text-ink-800">{lead.email || 'No email'}</div>
+                        {lead.phone && <div className="text-ink-400">{lead.phone}</div>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 max-w-md truncate"
+                        title={lead.manualReviewReason || 'Delivery failure / anonymous address'}
+                      >
+                        <AlertTriangle size={12} className="shrink-0 text-rose-500" />
+                        <span className="truncate">{lead.manualReviewReason || 'Delivery failure / anonymous address'}</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-ink-500">
+                      {lead.manualReviewAt
+                        ? new Date(lead.manualReviewAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : 'Recent'}
+                    </td>
+                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={async () => {
+                            await store.approveLeadReview(lead.id);
+                            setBulkActionSuccess(`Re-activated ${lead.businessName}.`);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-sm transition"
+                          title="Approve contact and move back to active lead status"
+                        >
+                          <Check size={12} />
+                          <span>Approve & Re-activate</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleOpenLead(lead);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-ink-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-sm transition"
+                          title="View contact thread and details"
+                        >
+                          <Eye size={12} />
+                          <span>Inspect</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSingleLead(lead)}
+                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                          title="Trash this contact"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               ) : (
                 filtered.map((lead) => {
                   const isInactive = lead.status === 'inactive' || lead.status === 'paused';
@@ -1602,6 +2338,15 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                         <div>
                           <div className={`font-semibold ${isInactive ? 'text-ink-600' : 'text-ink-900'} flex items-center gap-1.5 flex-wrap`}>
                             <span>{lead.businessName}</span>
+                            {lead.country && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
+                                title={`Country: ${lead.country}`}
+                              >
+                                <span>{getCountryFlag(lead.country)}</span>
+                                <span>{lead.country}</span>
+                              </span>
+                            )}
                             {lead.lists && lead.lists.length > 0 && (
                               <span className="flex flex-wrap gap-1">
                                 {lead.lists.map((lst) => (
@@ -1617,16 +2362,59 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-ink-300">{lead.email || lead.phone || 'No contact info'}</p>
+                          <div className="text-xs text-ink-400 flex items-center gap-2 flex-wrap mt-0.5">
+                            {(lead.website || lead.googleProfile?.website) && (
+                              <a
+                                href={(lead.website || lead.googleProfile?.website || '').startsWith('http')
+                                  ? (lead.website || lead.googleProfile?.website || '')
+                                  : `https://${lead.website || lead.googleProfile?.website}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline max-w-[170px] truncate bg-blue-50/60 px-1.5 py-0.5 rounded border border-blue-200/80 transition"
+                                title={`Visit Website: ${lead.website || lead.googleProfile?.website}`}
+                              >
+                                <Globe size={11} className="shrink-0 text-blue-500" />
+                                <span className="truncate">{(lead.website || lead.googleProfile?.website || '').replace(/^https?:\/\/(www\.)?/, '')}</span>
+                                <ExternalLink size={9} className="shrink-0 opacity-70" />
+                              </a>
+                            )}
+                            {lead.email && <span className="truncate max-w-[180px] text-ink-500">{lead.email}</span>}
+                            {lead.phone && (
+                              <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px] font-semibold">
+                                {lead.phone}
+                              </span>
+                            )}
+                            {!lead.email && !lead.phone && !lead.website && !lead.googleProfile?.website && (
+                              <span className="text-ink-300 italic">No contact info</span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-ink-500">{lead.category}</td>
                       <td className="px-4 py-3">
-                        <div className="flex gap-1.5">
-                          {lead.email && <Mail size={14} className="text-brand-500" />}
-                          {lead.whatsapp && <MessageCircle size={14} className="text-emerald-500" />}
-                          {(lead.instagram || lead.facebook) && <Instagram size={14} className="text-violet-500" />}
-                          {!lead.email && !lead.whatsapp && !lead.instagram && !lead.facebook && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {lead.email && (
+                            <span title={`Email: ${lead.email}`}>
+                              <Mail size={14} className="text-brand-500" />
+                            </span>
+                          )}
+                          {lead.whatsapp && (
+                            <span title={`WhatsApp: ${lead.whatsapp}`}>
+                              <MessageCircle size={14} className="text-emerald-500" />
+                            </span>
+                          )}
+                          {(lead.website || lead.googleProfile?.website) && (
+                            <span title={`Website & Form: ${lead.website || lead.googleProfile?.website}`}>
+                              <Globe size={14} className="text-teal-600" />
+                            </span>
+                          )}
+                          {(lead.instagram || lead.facebook) && (
+                            <span title="Social profile">
+                              <Instagram size={14} className="text-violet-500" />
+                            </span>
+                          )}
+                          {!lead.email && !lead.whatsapp && !lead.instagram && !lead.facebook && !lead.website && !lead.googleProfile?.website && (
                             <span className="text-xs text-ink-300">None</span>
                           )}
                         </div>
@@ -1685,6 +2473,8 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {/* Single Lead / Client Detail Modal */}
       <Modal
@@ -1831,8 +2621,39 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               </div>
             )}
 
+            {/* Quarantined for Manual Review Banner */}
+            {selectedLead.status === 'manual_review' && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-900 flex items-center justify-between gap-3 animate-in fade-in">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle size={18} className="text-rose-600 shrink-0" />
+                  <div>
+                    <p className="font-bold">Quarantined for Manual Checking</p>
+                    <p className="text-rose-700 mt-0.5">
+                      <strong>Reason:</strong> {selectedLead.manualReviewReason || 'Delivery failure / anonymous address'}.
+                    </p>
+                    <p className="text-[11px] text-rose-600 mt-0.5">
+                      Automated outreach to this contact is paused to protect email deliverability and sender reputation.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={async () => {
+                      await store.approveLeadReview(selectedLead.id);
+                      setSelectedLead((prev) => (prev ? { ...prev, status: 'active', manualReviewReason: undefined } : null));
+                      setBulkActionSuccess(`Re-activated ${selectedLead.businessName}.`);
+                    }}
+                    className="btn-primary bg-emerald-600 hover:bg-emerald-700 text-xs py-1.5 px-3 flex items-center gap-1 shadow-sm"
+                  >
+                    <Check size={13} /> Approve & Re-activate
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Condition-Based Smart Outreach Card (For Leads) */}
             {selectedLead.entityType === 'lead' &&
+              selectedLead.status !== 'manual_review' &&
               !selectedLead.deletedAt &&
               !store.trashLeads.some((t) => t.id === selectedLead.id) &&
               selectedLead.consentStatus !== 'opted_out' && (
@@ -1851,11 +2672,13 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                             : 'First Message Needed')}
                       </span>
                     </div>
-                    <p className="text-xs text-amber-800 mt-1">
-                      Next Step:{' '}
-                      <strong>
-                        {leadStageInfo?.nextStepLabel || 'Shoot Next Message (Stage-Aware via Gmail)'}
-                      </strong>
+                    <p className="text-xs text-amber-800 mt-1 flex items-center flex-wrap gap-1.5">
+                      <span>Next Step: <strong>{leadStageInfo?.nextStepLabel || 'Shoot Next Message (Stage-Aware via Gmail)'}</strong></span>
+                      {(detectedFormInfo?.hasForm || selectedLead.metadata?.website_form?.hasForm) && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-100/90 border border-teal-300 rounded px-1.5 py-0.5 shadow-2xs">
+                          <Globe size={10} /> + Website Form Dual-Trigger Active
+                        </span>
+                      )}
                     </p>
                   </div>
                   <button
@@ -1930,54 +2753,582 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Entity Type</p>
-                <p className="mt-1 text-sm font-semibold capitalize text-ink-700">{selectedLead.entityType}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Status</p>
-                <div className="mt-1">
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold border ${
-                      selectedLead.status === 'inactive' || selectedLead.status === 'paused'
-                        ? 'bg-slate-100 text-slate-700 border-slate-300'
-                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    }`}
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        selectedLead.status === 'inactive' || selectedLead.status === 'paused'
-                          ? 'bg-slate-400'
-                          : 'bg-emerald-500'
-                      }`}
-                    />
-                    {selectedLead.status === 'inactive' || selectedLead.status === 'paused'
-                      ? 'Inactive'
-                      : 'Active'}
-                  </span>
+            {/* Top Overview: 2 Responsive Cards (Profile Details + Communication Endpoints) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Card A: Account & Status Profile */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Record Overview</span>
+                  <div className="flex items-center gap-1.5">
+                    {selectedLead.country && (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-ink-800 shadow-2xs">
+                        <span>{getCountryFlag(selectedLead.country)}</span>
+                        <span>{selectedLead.country}</span>
+                      </span>
+                    )}
+                    <span className="text-xs font-bold capitalize px-2 py-0.5 rounded-md bg-white border border-slate-200 text-ink-700 shadow-2xs">
+                      {selectedLead.entityType}
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-ink-400 font-semibold block text-[11px] uppercase">Industry / Category</span>
+                    <span className="font-bold text-ink-800 block truncate mt-0.5" title={selectedLead.category}>
+                      {selectedLead.category || 'Uncategorized'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-ink-400 font-semibold block text-[11px] uppercase">Country</span>
+                    <span className="font-bold text-ink-800 flex items-center gap-1 mt-0.5">
+                      <span>{getCountryFlag(selectedLead.country)}</span>
+                      <span>{selectedLead.country || 'Not specified'}</span>
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-ink-400 font-semibold block text-[11px] uppercase">Status</span>
+                    <div className="mt-0.5">
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold border ${
+                          selectedLead.status === 'inactive' || selectedLead.status === 'paused'
+                            ? 'bg-slate-100 text-slate-700 border-slate-300'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            selectedLead.status === 'inactive' || selectedLead.status === 'paused'
+                              ? 'bg-slate-400'
+                              : 'bg-emerald-500'
+                          }`}
+                        />
+                        {selectedLead.status === 'inactive' || selectedLead.status === 'paused'
+                          ? 'Inactive'
+                          : 'Active'}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-ink-400 font-semibold block text-[11px] uppercase">Outreach Stage</span>
+                    <span className="font-semibold text-brand-700 block mt-0.5 capitalize">
+                      {selectedLead.outreachStage?.replace('_', ' ') || 'Initial Outreach'}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-ink-400 font-semibold block text-[11px] uppercase">Consent Status</span>
+                    <div className="mt-0.5">{consentBadge(selectedLead.consentStatus)}</div>
+                  </div>
                 </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Category</p>
-                <p className="mt-1 text-sm text-ink-700">{selectedLead.category}</p>
+
+              {/* Card B: Multi-Channel Communication Endpoints (No Column Collision) */}
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-ink-500">Contact &amp; Channels</span>
+                  <span className="text-[11px] font-medium text-ink-400">Direct Endpoints</span>
+                </div>
+                <div className="space-y-2 text-xs">
+                  {/* Website URL */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-blue-700 font-semibold shrink-0">
+                      <Globe size={13} />
+                      <span>Website:</span>
+                    </div>
+                    <div className="text-right min-w-0 flex-1">
+                      {(() => {
+                        const isMapsUrl = (u?: string) => !u || /google\.com\/maps|maps\.google\.com/i.test(u);
+                        const rawWeb = selectedLead.website || selectedLead.googleProfile?.website || '';
+                        const realWeb = !isMapsUrl(rawWeb) ? rawWeb : '';
+
+                        if (realWeb) {
+                          const href = realWeb.startsWith('http') ? realWeb : `https://${realWeb}`;
+                          return (
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 font-mono text-blue-700 hover:text-blue-900 hover:underline font-bold text-[11px] bg-blue-50 px-2 py-0.5 rounded border border-blue-200 transition"
+                                title="Open company website in new tab"
+                              >
+                                <span className="truncate max-w-[190px]">
+                                  {realWeb.replace(/^https?:\/\/(www\.)?/, '')}
+                                </span>
+                                <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          );
+                        }
+
+                        if (rawWeb && isMapsUrl(rawWeb)) {
+                          return <span className="text-ink-400 italic text-[11px]">No official site on GMB (Maps link)</span>;
+                        }
+
+                        return <span className="text-ink-300 italic">No website</span>;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Website Form Capability */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-teal-700 font-semibold shrink-0">
+                      <Globe size={13} />
+                      <span>Website Form:</span>
+                    </div>
+                    <div className="text-right min-w-0 flex-1 flex items-center justify-end gap-1.5 flex-wrap">
+                      {(() => {
+                        const isMapsUrl = (u?: string) => !u || /google\.com\/maps|maps\.google\.com/i.test(u);
+                        const rawWeb = selectedLead.website || selectedLead.googleProfile?.website || '';
+                        const realWeb = !isMapsUrl(rawWeb) ? rawWeb : '';
+                        const activeForm = detectedFormInfo || selectedLead.metadata?.website_form;
+                        const hasForm = activeForm?.hasForm === true;
+                        const hasNoForm = activeForm?.hasForm === false;
+
+                        if (!realWeb) {
+                          return <span className="text-ink-300 italic text-[11px]">No website (skipped)</span>;
+                        }
+
+                        if (hasForm) {
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded px-1.5 py-0.5 shadow-2xs"
+                                title={activeForm.actionUrl || activeForm.formUrl || 'Contact form detected on website'}
+                              >
+                                ✅ Form Ready
+                              </span>
+                              {activeForm.formUrl && (
+                                <a
+                                  href={activeForm.formUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-300 rounded px-1.5 py-0.5 transition shadow-2xs"
+                                  title="Open contact form page"
+                                >
+                                  <span>Open Form</span>
+                                  <ExternalLink size={9} />
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDetectWebsiteForm(selectedLead.id, realWeb)}
+                                disabled={detectingFormLeadId === selectedLead.id}
+                                className="inline-flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-800 p-0.5 rounded transition disabled:opacity-50"
+                                title="Re-check website form"
+                              >
+                                <RotateCcw size={10} className={detectingFormLeadId === selectedLead.id ? 'animate-spin text-teal-600' : ''} />
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (hasNoForm) {
+                          return (
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+                                ℹ️ No form found
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDetectWebsiteForm(selectedLead.id, realWeb)}
+                                disabled={detectingFormLeadId === selectedLead.id}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-300 rounded px-1.5 py-0.5 transition shadow-2xs disabled:opacity-50"
+                                title="Re-scan website for forms"
+                              >
+                                {detectingFormLeadId === selectedLead.id ? (
+                                  <>
+                                    <Loader2 size={9} className="animate-spin text-teal-600" />
+                                    <span>Scanning...</span>
+                                  </>
+                                ) : (
+                                  <span>🔍 Check Again</span>
+                                )}
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleDetectWebsiteForm(selectedLead.id, realWeb)}
+                            disabled={detectingFormLeadId === selectedLead.id}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-300 rounded px-2 py-0.5 transition shadow-2xs disabled:opacity-50"
+                            title="Detect active contact form on website"
+                          >
+                            {detectingFormLeadId === selectedLead.id ? (
+                              <>
+                                <Loader2 size={10} className="animate-spin text-teal-600" />
+                                <span>Detecting...</span>
+                              </>
+                            ) : (
+                              <span>🔍 Detect Form</span>
+                            )}
+                          </button>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  {/* Email */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-blue-700 font-semibold shrink-0">
+                      <Mail size={13} />
+                      <span>Email:</span>
+                    </div>
+                    <div className="text-right min-w-0 flex-1">
+                      {selectedLead.email ? (
+                        <span className="font-mono text-ink-800 break-all select-all font-medium text-[11px]">
+                          {selectedLead.email}
+                        </span>
+                      ) : (
+                        <span className="text-ink-300 italic">None</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Phone & WhatsApp */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-emerald-700 font-semibold shrink-0">
+                      <Phone size={13} />
+                      <span>Phone:</span>
+                    </div>
+                    <div className="text-right min-w-0 flex-1">
+                      {selectedLead.phone ? (
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          <span className="font-mono text-ink-800 font-medium text-[11px]">
+                            {selectedLead.phone}
+                          </span>
+                          {selectedLead.whatsappEligible && (
+                            <a
+                              href={`https://wa.me/${(selectedLead.whatsapp || selectedLead.phone).replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 rounded px-1.5 py-0.5 transition shadow-2xs"
+                              title="Chat on WhatsApp with verified international country code"
+                            >
+                              <MessageCircle size={10} className="text-emerald-700 fill-emerald-700" />
+                              <span>Chat (+Code) ↗</span>
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-ink-300 italic">None</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Social Handles (Instagram, Facebook, LinkedIn) */}
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5 text-ink-500 font-semibold shrink-0">
+                      <Globe size={13} />
+                      <span>Socials:</span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {selectedLead.instagram && (
+                        <a
+                          href={`https://instagram.com/${selectedLead.instagram.replace(/^@/, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 transition text-[11px] font-medium"
+                          title="View Instagram Profile"
+                        >
+                          <Instagram size={11} />
+                          <span>@{selectedLead.instagram.replace(/^@/, '')}</span>
+                        </a>
+                      )}
+                      {selectedLead.facebook && (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-medium"
+                          title="Facebook Page"
+                        >
+                          <Facebook size={11} />
+                          <span className="truncate max-w-[110px]">{selectedLead.facebook}</span>
+                        </span>
+                      )}
+                      {selectedLead.linkedin && (
+                        <a
+                          href={selectedLead.linkedin.startsWith('http') ? selectedLead.linkedin : `https://${selectedLead.linkedin}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition text-[11px] font-medium"
+                          title="View LinkedIn Profile"
+                        >
+                          <Linkedin size={11} />
+                          <span>LinkedIn</span>
+                        </a>
+                      )}
+                      {!selectedLead.instagram && !selectedLead.facebook && !selectedLead.linkedin && (
+                        <span className="text-ink-300 italic text-[11px]">No social links</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Consent Status</p>
-                <div className="mt-1">{consentBadge(selectedLead.consentStatus)}</div>
+            </div>
+
+            {/* Card C: Google Business Profile & Online Reputation */}
+            <div className="rounded-xl border border-amber-200/90 bg-gradient-to-r from-amber-50/60 via-white to-orange-50/40 p-4 space-y-3 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500 text-white shadow-2xs font-bold text-xs">
+                    G
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-900 block">
+                      Google Business Profile &amp; Maps Presence
+                    </span>
+                    <span className="text-[11px] text-amber-700">
+                      Live local SEO data &amp; verified reputation
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isEditingGoogle) {
+                        setIsEditingGoogle(false);
+                      } else {
+                        handleStartEditGoogle();
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-amber-300 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-50 transition shadow-2xs"
+                    title="Manually edit or verify Google Business Profile details"
+                  >
+                    <Edit3 size={12} className="text-amber-700" />
+                    <span>{isEditingGoogle ? 'Cancel Edit' : '✏️ Edit GMB Details'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
+                    disabled={isEnrichingGoogle}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-amber-300 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-50 transition shadow-2xs disabled:opacity-50"
+                    title="Update ratings, reviews, and address live from Google"
+                  >
+                    <RefreshCw size={12} className={isEnrichingGoogle ? 'animate-spin text-amber-600' : 'text-amber-600'} />
+                    <span>{isEnrichingGoogle ? 'Updating...' : '🔄 Update Info from Google'}</span>
+                  </button>
+                  {selectedLead.googleProfile?.googleMapsUrl && (
+                    <a
+                      href={selectedLead.googleProfile.googleMapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-2xs"
+                      title="Open in Google Maps in new window"
+                    >
+                      <ExternalLink size={12} />
+                      <span>View on Google Maps ↗</span>
+                    </a>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Phone</p>
-                <p className="mt-1 text-sm text-ink-700">{selectedLead.phone || '—'}</p>
+
+              {/* Quick Google Maps URL Live-Sync Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 rounded-lg bg-amber-100/50 border border-amber-200">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950 shrink-0">
+                  <MapPin size={13} className="text-amber-700" />
+                  <span>Google Maps URL:</span>
+                </div>
+                <input
+                  type="url"
+                  value={mapsUrlInput}
+                  onChange={(e) => setMapsUrlInput(e.target.value)}
+                  placeholder="Paste Google Maps URL or search query to match..."
+                  className="flex-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSyncGoogleMaps(selectedLead.id, mapsUrlInput.trim() || undefined)}
+                  disabled={isSyncingMaps}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 text-xs font-semibold shadow-xs disabled:opacity-50 transition shrink-0"
+                  title="Sync live from Google Maps to ensure both match 100%"
+                >
+                  <RefreshCw size={12} className={isSyncingMaps ? 'animate-spin' : ''} />
+                  <span>{isSyncingMaps ? 'Syncing...' : '⚡ Sync from Maps'}</span>
+                </button>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Email</p>
-                <p className="mt-1 text-sm text-ink-700">{selectedLead.email || '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-300">Social</p>
-                <p className="mt-1 text-sm text-ink-700">{selectedLead.instagram || selectedLead.facebook || '—'}</p>
-              </div>
+
+              {googleFeedback && (
+                <div className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="text-emerald-600" />
+                  <span>{googleFeedback}</span>
+                </div>
+              )}
+
+              {isEditingGoogle ? (
+                <div className="rounded-lg bg-white p-3 border border-amber-200 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between pb-1 border-b border-amber-100">
+                    <span className="text-xs font-bold text-amber-900">Edit Verified Google Business Profile Data</span>
+                    <span className="text-[10px] text-slate-500">Changes save directly to database</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Star Rating (e.g. 4.9)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="1"
+                        max="5"
+                        value={editGoogleForm.rating}
+                        onChange={(e) => setEditGoogleForm((prev) => ({ ...prev, rating: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-2.5 py-1 text-xs focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Total Reviews Count (e.g. 1353)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={editGoogleForm.reviewsCount}
+                        onChange={(e) => setEditGoogleForm((prev) => ({ ...prev, reviewsCount: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-2.5 py-1 text-xs focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Primary Category (e.g. Plumber)</label>
+                      <input
+                        type="text"
+                        value={editGoogleForm.category}
+                        onChange={(e) => setEditGoogleForm((prev) => ({ ...prev, category: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-2.5 py-1 text-xs focus:ring-1 focus:ring-amber-500"
+                        placeholder="e.g. Plumber"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Website URL</label>
+                      <input
+                        type="url"
+                        value={editGoogleForm.website}
+                        onChange={(e) => setEditGoogleForm((prev) => ({ ...prev, website: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-2.5 py-1 text-xs focus:ring-1 focus:ring-amber-500"
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Verified Street Address</label>
+                      <input
+                        type="text"
+                        value={editGoogleForm.formattedAddress}
+                        onChange={(e) => setEditGoogleForm((prev) => ({ ...prev, formattedAddress: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-2.5 py-1 text-xs focus:ring-1 focus:ring-amber-500"
+                        placeholder="e.g. 220 Park Ave, Regina, SK S4N 0N4, Canada"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[11px] font-semibold text-slate-600">Google Maps Direct Link</label>
+                        <button
+                          type="button"
+                          onClick={() => handleSyncGoogleMaps(selectedLead.id, editGoogleForm.googleMapsUrl.trim() || undefined)}
+                          disabled={isSyncingMaps}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
+                        >
+                          <RefreshCw size={10} className={isSyncingMaps ? 'animate-spin' : ''} />
+                          <span>{isSyncingMaps ? 'Syncing...' : '⚡ Auto-Fill From This Link'}</span>
+                        </button>
+                      </div>
+                      <input
+                        type="url"
+                        value={editGoogleForm.googleMapsUrl}
+                        onChange={(e) => setEditGoogleForm((prev) => ({ ...prev, googleMapsUrl: e.target.value }))}
+                        className="w-full rounded-md border border-slate-300 px-2.5 py-1 text-xs focus:ring-1 focus:ring-amber-500"
+                        placeholder="https://www.google.com/maps/place/..."
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingGoogle(false)}
+                      className="px-3 py-1 text-xs rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveGoogleEdit}
+                      disabled={isSavingGoogle}
+                      className="btn-primary bg-amber-600 hover:bg-amber-700 text-xs py-1 px-3 shadow-2xs flex items-center gap-1.5"
+                    >
+                      {isSavingGoogle ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <span>💾 Save GMB Details</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : selectedLead.googleProfile ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="rounded-lg bg-white p-2.5 border border-amber-200/80 shadow-2xs">
+                    <span className="text-slate-400 font-semibold block text-[11px] uppercase">Rating &amp; Reviews</span>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Star size={14} className="text-amber-500 fill-amber-500" />
+                      <span className="text-base font-extrabold text-slate-900">{selectedLead.googleProfile.rating}</span>
+                      <span className="text-slate-500 text-[11px]">({selectedLead.googleProfile.reviewsCount.toLocaleString()} reviews)</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-white p-2.5 border border-amber-200/80 shadow-2xs">
+                    <span className="text-slate-400 font-semibold block text-[11px] uppercase">Operational Status</span>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-bold text-emerald-800 uppercase text-[11px]">{selectedLead.googleProfile.status}</span>
+                      <span className="text-[10px] text-slate-500">(Verified Listing)</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-white p-2.5 border border-amber-200/80 shadow-2xs">
+                    <span className="text-slate-400 font-semibold block text-[11px] uppercase">Verified Address</span>
+                    <span className="font-medium text-slate-700 block truncate mt-1 text-[11px]" title={selectedLead.googleProfile.formattedAddress}>
+                      {selectedLead.googleProfile.formattedAddress}
+                    </span>
+                  </div>
+
+                  {selectedLead.googleProfile.category && (
+                    <div className="rounded-lg bg-amber-50/70 p-2 border border-amber-200/60 text-[11px] text-amber-900 flex items-center justify-between">
+                      <span><strong>Category:</strong> {selectedLead.googleProfile.category}</span>
+                      {selectedLead.googleProfile.website && (
+                        <a
+                          href={selectedLead.googleProfile.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-700 hover:underline inline-flex items-center gap-1"
+                        >
+                          <Globe size={11} />
+                          <span>Visit Website ↗</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedLead.googleProfile.searchSummary && (
+                    <div className={`${selectedLead.googleProfile.category ? 'sm:col-span-2' : 'sm:col-span-3'} rounded-lg bg-amber-50/50 p-2 border border-amber-100 text-[11px] text-amber-900`}>
+                      <strong>Search Presence:</strong> {selectedLead.googleProfile.searchSummary}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 text-xs text-slate-600 bg-white/70 p-3 rounded-lg border border-dashed border-amber-200">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={16} className="text-amber-500" />
+                    <span>Google Business Profile has not been fetched yet for this record.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
+                    disabled={isEnrichingGoogle}
+                    className="btn-primary bg-amber-600 hover:bg-amber-700 text-xs py-1 px-3 shadow-2xs"
+                  >
+                    {isEnrichingGoogle ? 'Fetching...' : '🔍 Fetch Google Profile'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Conversation History */}
@@ -2012,44 +3363,197 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                 </div>
               </div>
 
-              <div className="max-h-60 overflow-y-auto space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="max-h-72 overflow-y-auto space-y-2.5 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 {leadConversations.length === 0 ? (
                   <p className="text-center text-xs text-ink-300 py-4">No messages recorded yet.</p>
                 ) : (
-                  leadConversations.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${msg.direction === 'outbound' ? 'items-end' : 'items-start'}`}
-                    >
+                  leadConversations.map((msg) => {
+                    const isInbound = msg.direction === 'inbound';
+                    const isRead = Boolean(msg.is_read);
+
+                    return (
                       <div
-                        className={`max-w-md rounded-lg p-2.5 text-xs shadow-sm ${
-                          msg.direction === 'outbound'
-                            ? 'bg-brand-600 text-white rounded-br-none'
-                            : 'bg-white text-ink-800 border border-slate-200 rounded-bl-none'
-                        }`}
+                        key={msg.id}
+                        className={`flex flex-col ${isInbound ? 'items-start' : 'items-end'}`}
                       >
-                        <div className="flex items-center justify-between gap-4 mb-1 text-[10px] opacity-75">
-                          <span className="font-semibold uppercase tracking-wider">{msg.channel}</span>
-                          <span>
-                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                        <div
+                          className={`max-w-md rounded-xl p-3 text-xs shadow-2xs border ${
+                            isInbound
+                              ? !isRead
+                                ? 'bg-rose-50/40 text-slate-800 border-rose-300 ring-1 ring-rose-400/30 rounded-bl-none'
+                                : 'bg-white text-slate-800 border-slate-200 rounded-bl-none'
+                              : 'bg-brand-600 text-white border-brand-700 rounded-br-none'
+                          }`}
+                        >
+                          <div
+                            className={`flex items-center justify-between gap-3 mb-1.5 text-[10px] ${
+                              isInbound ? 'text-slate-500' : 'text-brand-100'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider">
+                              <span>{msg.channel}</span>
+                              <span>•</span>
+                              <span>{isInbound ? '📥 Received' : '📤 Sent'}</span>
+                            </div>
+                            <span>
+                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          {/* PROMINENT SOURCE ATTRIBUTION ON INBOUND MESSAGES */}
+                          {isInbound && (
+                            <div className="mb-2 rounded-md bg-slate-100/90 px-2 py-1 text-[11px] text-slate-700 border border-slate-200">
+                              <div className="flex items-center gap-1 font-bold text-slate-900 mb-0.5">
+                                <Layers size={11} className="text-brand-600" />
+                                <span>Source Attribution:</span>
+                              </div>
+                              {msg.channel === 'email' && (
+                                <div className="text-[10px] text-slate-600">
+                                  <span className="font-semibold text-blue-700">Email Inbox:</span>{' '}
+                                  <span className="font-mono font-bold text-blue-900">
+                                    {msg.inbox_email || 'team.onlinedigitalsolution@gmail.com'}
+                                  </span>
+                                  {selectedLead.email && (
+                                    <>
+                                      {' '}• sender: <span className="font-mono">{selectedLead.email}</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {msg.channel === 'whatsapp' && (
+                                <div className="text-[10px] text-slate-600">
+                                  <span className="font-semibold text-emerald-700">WhatsApp:</span>{' '}
+                                  from phone{' '}
+                                  <span className="font-mono font-bold text-emerald-900">
+                                    {selectedLead.whatsapp || selectedLead.phone || 'Direct Chat'}
+                                  </span>
+                                </div>
+                              )}
+                              {msg.channel === 'instagram' && (
+                                <div className="text-[10px] text-slate-600">
+                                  <span className="font-semibold text-pink-700">Instagram DM:</span>{' '}
+                                  handle{' '}
+                                  <span className="font-mono font-bold text-pink-900">
+                                    @{selectedLead.instagram || 'prospect'}
+                                  </span>
+                                </div>
+                              )}
+                              {msg.channel === 'facebook' && (
+                                <div className="text-[10px] text-slate-600">
+                                  <span className="font-semibold text-indigo-700">Facebook:</span>{' '}
+                                  <span className="font-mono font-bold text-indigo-900">
+                                    {selectedLead.facebook || selectedLead.businessName}
+                                  </span>
+                                </div>
+                              )}
+                              {msg.channel === 'linkedin' && (
+                                <div className="text-[10px] text-slate-600">
+                                  <span className="font-semibold text-sky-700">LinkedIn:</span>{' '}
+                                  <span className="font-mono font-bold text-sky-900">
+                                    {selectedLead.linkedin || 'Anupam Kumar Profile'}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+
+                          {/* Inbound Status & Explicit Mark as Read / Mark as Unread Action */}
+                          {isInbound && (
+                            <div className="mt-2.5 pt-2 border-t border-slate-200 flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1">
+                                {!isRead ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[9px] font-extrabold text-white shadow-2xs animate-pulse">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping" />
+                                    UNREAD
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+                                    <CheckCircle2 size={10} />
+                                    Read
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => store.markMessageRead(msg.id, !isRead)}
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded border transition-colors ${
+                                    !isRead
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                                  }`}
+                                  title={isRead ? 'Mark message as unread' : 'Mark message as read'}
+                                >
+                                  {isRead ? 'Mark as Unread' : 'Mark as Read'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Move "${selectedLead.businessName}" to Trash? (Address is not present/no use for this lead)`)) {
+                                      handleDeleteSingleLead(selectedLead);
+                                      setSelectedLead(null);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                                  title="No use of this lead (address missing or invalid). Move contact to Trash"
+                                >
+                                  <Trash2 size={10} className="text-rose-600" />
+                                  <span>Move to Trash</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <p className="whitespace-pre-wrap">{msg.text}</p>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
 
-            {/* Custom Reply Box */}
+            {/* Custom Reply Box with AI Improviser */}
             <div className="border-t border-slate-200 pt-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">Send Direct Reply</h4>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500">Send Direct Reply</h4>
+                <button
+                  type="button"
+                  onClick={() => handleImproviseReply()}
+                  disabled={isImprovisingReply}
+                  className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:from-brand-700 hover:to-indigo-700 disabled:opacity-50 transition-all cursor-pointer"
+                  title="Improvises your rough words into a polished, realistic outreach message for the selected channel"
+                >
+                  {isImprovisingReply ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Improvising...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={13} />
+                      <span>{replyText.trim() ? '✨ Improvise with AI' : '✨ Generate Draft with AI'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
 
-              {/* Channel Switcher */}
-              <div className="flex gap-2 mb-3">
-                {(['email', 'whatsapp', 'instagram'] as Channel[]).map((ch) => {
-                  const isAvailable = ch === 'email' ? !!selectedLead.email : ch === 'whatsapp' ? !!selectedLead.whatsapp : (!!selectedLead.instagram || !!selectedLead.facebook);
+              {/* Channel Switcher — All Channels Supported */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(['email', 'whatsapp', 'website_form', 'facebook', 'instagram', 'linkedin'] as Channel[]).map((ch) => {
+                  const isAvailable =
+                    ch === 'email'
+                      ? !!selectedLead.email
+                      : ch === 'whatsapp'
+                      ? !!selectedLead.whatsapp || !!selectedLead.phone
+                      : ch === 'website_form'
+                      ? !!(selectedLead.website || selectedLead.googleProfile?.website)
+                      : ch === 'facebook'
+                      ? !!selectedLead.facebook
+                      : ch === 'instagram'
+                      ? !!selectedLead.instagram
+                      : !!selectedLead.linkedin;
                   return (
                     <button
                       key={ch}
@@ -2057,9 +3561,9 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                       onClick={() => setReplyChannel(ch)}
                       className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
                         replyChannel === ch
-                          ? 'bg-brand-50 text-brand-700 border-2 border-brand-500'
+                          ? 'bg-brand-50 text-brand-700 border-2 border-brand-500 shadow-xs'
                           : 'bg-slate-100 text-ink-600 border border-transparent hover:bg-slate-200'
-                      } ${!isAvailable ? 'opacity-50' : ''}`}
+                      } ${!isAvailable ? 'opacity-40' : ''}`}
                     >
                       <ChannelIcon channel={ch} size={14} />
                       <span>{channelLabels[ch]}</span>
@@ -2068,22 +3572,150 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
                 })}
               </div>
 
+              {/* Live Google Profile Info Bar Visible While Emailing */}
+              {selectedLead.googleProfile ? (
+                <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200/90 bg-amber-50/70 px-3 py-1.5 text-xs text-amber-900 shadow-2xs">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex items-center gap-1 font-bold text-amber-900">
+                      <MapPin size={13} className="text-amber-600 shrink-0" />
+                      <span>Google Profile:</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded border border-amber-200 font-medium">
+                      <Star size={11} className="text-amber-500 fill-amber-500" />
+                      <span className="font-bold text-slate-800">{selectedLead.googleProfile.rating}★</span>
+                      <span className="text-slate-500 text-[11px]">({selectedLead.googleProfile.reviewsCount} reviews)</span>
+                    </div>
+                    <span className="text-slate-600 text-[11px] truncate max-w-[280px]" title={selectedLead.googleProfile.formattedAddress}>
+                      📍 {selectedLead.googleProfile.formattedAddress}
+                    </span>
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 uppercase">
+                      {selectedLead.googleProfile.status}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <a
+                      href={selectedLead.googleProfile.googleMapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-bold text-blue-700 hover:text-blue-800 hover:underline text-[11px] bg-white px-2 py-0.5 rounded border border-blue-200 transition"
+                      title="Open verified location in Google Maps"
+                    >
+                      <ExternalLink size={11} />
+                      <span>Google Maps ↗</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
+                      disabled={isEnrichingGoogle}
+                      className="text-[11px] text-amber-800 hover:text-amber-950 font-semibold p-1 hover:bg-amber-100 rounded transition"
+                      title="Update latest info from Google"
+                    >
+                      <RefreshCw size={11} className={isEnrichingGoogle ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-2.5 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                  <span className="text-[11px]">No Google profile data linked to this contact yet.</span>
+                  <button
+                    type="button"
+                    onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
+                    disabled={isEnrichingGoogle}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-800 bg-white px-2.5 py-0.5 rounded border border-brand-200 shadow-2xs transition"
+                  >
+                    <RefreshCw size={10} className={isEnrichingGoogle ? 'animate-spin' : ''} />
+                    <span>{isEnrichingGoogle ? 'Syncing...' : 'Fetch Google Info'}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Realistic Quick-Idea Prompt Chips */}
+              <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
+                <span className="text-[10px] uppercase font-bold text-ink-400 mr-1">
+                  Rough ideas to improvise:
+                </span>
+                {[
+                  { label: '🔍 Free Local SEO Audit', text: 'free audit of website, checking local ranking, quick chat' },
+                  { label: '📍 Google Maps Gap', text: 'noticed Google Business Profile ranking gap in local map pack, 3 min review' },
+                  { label: '⚡ Mobile & Speed Check', text: 'checked mobile page speed, quick recommendations to fix ranking loss' },
+                  { label: '💬 Inquiry Follow-up', text: 'following up on local search visibility, checking if you had time to review' },
+                ].map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => {
+                      setReplyText(chip.text);
+                      handleImproviseReply(chip.text);
+                    }}
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-ink-600 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-300 transition-colors shadow-2xs"
+                    title={`Click to populate and improvise: "${chip.text}"`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex gap-2">
                 <textarea
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Type message to send..."
-                  rows={2}
-                  className="textarea flex-1 text-sm"
+                  placeholder="Type a few rough words or bullet points (e.g. 'free audit of website, checking local ranking, quick chat') and click '✨ Improvise with AI'..."
+                  rows={3}
+                  className="textarea flex-1 text-sm font-normal"
                 />
                 <button
                   onClick={handleSendReply}
                   disabled={!replyText.trim() || isSending}
-                  className="btn-primary self-end"
+                  className="btn-primary self-end flex items-center gap-1.5 px-4 py-2.5"
+                  title="Send message directly"
                 >
-                  <Send size={16} />
+                  {isSending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                  <span className="hidden sm:inline">Send</span>
                 </button>
               </div>
+
+              {/* Also Submit via Website Form Checkbox */}
+              <div className="mt-2 rounded-lg border border-teal-200 bg-teal-50/60 p-2 text-xs flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={alsoSubmitWebsiteForm}
+                    onChange={(e) => setAlsoSubmitWebsiteForm(e.target.checked)}
+                    className="h-4 w-4 rounded border-teal-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-teal-950 flex items-center gap-1.5">
+                    <Globe size={13} className="text-teal-700" />
+                    <span>Also submit via Website Contact Form</span>
+                  </span>
+                </label>
+                <span className="text-[11px] text-teal-800">
+                  {selectedLead.website || selectedLead.googleProfile?.website
+                    ? `🌐 Parallel submission to ${((selectedLead.website || selectedLead.googleProfile?.website || '')).replace(/^https?:\/\/(www\.)?/, '')}`
+                    : 'ℹ️ No website found on this lead (will be safely skipped)'}
+                </span>
+              </div>
+
+              {/* Status & Guidance Bar */}
+              <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-ink-400">
+                <span>
+                  Words: <strong className="text-ink-700">{replyText.split(/\s+/).filter(Boolean).length}</strong>
+                </span>
+                <span>
+                  {replyChannel === 'whatsapp' && '💡 WhatsApp: Keep under 45 words for highest response rates'}
+                  {replyChannel === 'email' && '💡 Email: Keep under 85 words with a clear, low-friction question'}
+                  {replyChannel === 'website_form' && '💡 Website Form: Automatically maps and submits into target website contact forms (skipped if no form)'}
+                  {replyChannel === 'linkedin' && '💡 LinkedIn: Peer-level, consultative invite under 70 words'}
+                  {replyChannel === 'instagram' && '💡 Instagram: Casual, direct profile note under 45 words'}
+                  {replyChannel === 'facebook' && '💡 Facebook: Concise local growth angle under 55 words'}
+                </span>
+              </div>
+
+              {improviseBadge && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1">
+                  <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" />
+                  <span className="font-medium">{improviseBadge}</span>
+                </div>
+              )}
 
               {sendFeedback && (
                 <div
@@ -2135,6 +3767,30 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
               >
                 <Trash2 size={14} />
                 <span>Permanently Delete ({selectedIds.size})</span>
+              </button>
+            </div>
+          ) : entityFilter === 'manual_review' ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  const ids = Array.from(selectedIds);
+                  await store.bulkApproveLeadReviews(ids);
+                  setBulkActionSuccess(`Re-activated ${ids.length} contacts.`);
+                  setSelectedIds(new Set());
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-md transition"
+                title="Approve and return selected contacts back to active lead status"
+              >
+                <Check size={14} />
+                <span>Approve & Re-activate Selected ({selectedIds.size})</span>
+              </button>
+              <button
+                onClick={() => setIsConfirmDeleteOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold shadow-md transition"
+                title="Trash selected contacts"
+              >
+                <Trash2 size={14} />
+                <span>Trash Selected ({selectedIds.size})</span>
               </button>
             </div>
           ) : (
@@ -2657,10 +4313,12 @@ export function CrmPage({ store, autoOpenContact, onClearAutoOpenContact }: Prop
         onClose={() => setIsInboundInboxOpen(false)}
         replies={store.inboundReplies}
         onOpenConversation={(entityId, entityType) => handleOpenEntityById(entityId, entityType)}
+        onOpenProfile={(entityId, entityType) => handleOpenEntityById(entityId, entityType)}
         onSyncInbox={handleSyncInbox}
         isSyncing={isSyncingInbox}
-        onMarkSeen={store.markInboundSeen}
+        onMarkRead={store.markMessageRead}
         onMarkHandled={store.markInboundHandled}
+        onDeleteLead={store.deleteLead}
       />
 
       {/* Automated List Outreach & Humanizer Scheduler Modal */}

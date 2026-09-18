@@ -164,3 +164,28 @@ healthRouter.post('/reset-today', async (_req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to reset test signals' });
   }
 });
+
+// GET /api/health/test-form - Serves a test contact form for verifying website form detection
+healthRouter.get('/test-form', (_req: Request, res: Response) => {
+  res.send(`<!DOCTYPE html>
+<html>
+<head><title>Nova Meridian Health - Contact Us</title></head>
+<body>
+  <h2>Contact Nova Meridian Health</h2>
+  <form action="/api/health/test-form-submit" method="POST">
+    <input type="text" name="name" placeholder="Full Name" required />
+    <input type="email" name="email" placeholder="Email Address" required />
+    <input type="tel" name="phone" placeholder="Phone" />
+    <input type="text" name="subject" placeholder="Subject" />
+    <textarea name="message" placeholder="Your message here..." required></textarea>
+    <button type="submit">Submit Inquiry</button>
+  </form>
+</body>
+</html>`);
+});
+
+// POST /api/health/test-form-submit - Receives submitted form
+healthRouter.post('/test-form-submit', (req: Request, res: Response) => {
+  res.json({ success: true, message: 'Inquiry received successfully', received: req.body });
+});
+

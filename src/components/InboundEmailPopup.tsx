@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Mail, MessageSquare, X, ArrowRight, Sparkles, Building2 } from 'lucide-react';
+import { Mail, MessageSquare, X, ArrowRight, Sparkles, Building2, Trash2 } from 'lucide-react';
 import type { InboundReplyMessage } from '@/types';
 
 interface InboundEmailPopupProps {
   notification: InboundReplyMessage | null;
   onClose: () => void;
   onOpenConversation: (entityId: string, entityType: 'lead' | 'client') => void;
+  onDeleteLead?: (leadId: string) => Promise<void>;
   autoCloseDurationMs?: number;
 }
 
@@ -13,6 +14,7 @@ export function InboundEmailPopup({
   notification,
   onClose,
   onOpenConversation,
+  onDeleteLead,
   autoCloseDurationMs = 15000,
 }: InboundEmailPopupProps) {
   const [progress, setProgress] = useState(100);
@@ -75,7 +77,7 @@ export function InboundEmailPopup({
                   New Email Reply Received!
                 </span>
                 <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-semibold uppercase ${
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
                     entityType === 'client'
                       ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-blue-100 text-blue-700'
@@ -121,25 +123,47 @@ export function InboundEmailPopup({
         </div>
 
         {/* Actions */}
-        <div className="mt-3.5 flex items-center justify-between gap-2">
+        <div className="mt-3.5 flex items-center justify-between gap-2 flex-wrap">
           <span className="text-[10px] text-slate-400">
             {isPaused ? 'Paused countdown' : 'Auto-dismissing...'}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
+              type="button"
               onClick={onClose}
-              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               Dismiss
             </button>
+            {onDeleteLead && targetId && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (
+                    confirm(
+                      `Move "${notification.business_name || 'Contact'}" to Trash? (Address is not present/no use for this lead)`
+                    )
+                  ) {
+                    await onDeleteLead(targetId);
+                    onClose();
+                  }
+                }}
+                className="flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors cursor-pointer"
+                title="No use of this lead (missing address/invalid). Move contact to Trash"
+              >
+                <Trash2 size={12} className="text-rose-600" />
+                <span>Move to Trash</span>
+              </button>
+            )}
             <button
+              type="button"
               onClick={() => {
                 if (targetId) {
                   onOpenConversation(targetId, entityType as 'lead' | 'client');
                 }
                 onClose();
               }}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-all active:scale-95"
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 transition-all active:scale-95 cursor-pointer"
             >
               <Sparkles size={12} />
               <span>Open Conversation</span>

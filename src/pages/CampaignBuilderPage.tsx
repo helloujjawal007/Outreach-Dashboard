@@ -185,6 +185,7 @@ export function CampaignBuilderPage({ store }: Props) {
 
   const matchedLeads = useMemo(() => {
     return store.leads.filter((l) => {
+      if (l.deletedAt) return false;
       if (l.entityType !== 'lead') return false;
       if (targetCategory !== 'all' && l.category !== targetCategory) return false;
       if (targetChannel !== 'all') {

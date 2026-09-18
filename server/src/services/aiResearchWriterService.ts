@@ -48,6 +48,7 @@ export class AiResearchWriterService {
     businessName: string;
     category?: string;
     phone?: string;
+    whatsapp?: string;
     email?: string;
     instagram?: string;
     facebook?: string;
@@ -153,6 +154,7 @@ export class AiResearchWriterService {
       businessName: string;
       category?: string;
       phone?: string;
+      whatsapp?: string;
       email?: string;
       instagram?: string;
       facebook?: string;
@@ -273,7 +275,7 @@ Return only the final message text.`;
     } else if (channel === 'instagram') {
       body = `Hey ${salutation}! Love the presence you've built with ${cleanBusinessName}. We help similar brands turn search and social visitors into booked clients with zero friction. Would you be open to taking a quick look at a brief review?`;
     } else if (channel === 'linkedin') {
-      body = `Hi ${salutation}, noticed ${cleanBusinessName}’s work in ${category}. We specialize in helping businesses optimize their Google Maps ranking, build ultra-fast modern websites, and set up client inquiry automations. Open to connecting and sharing a brief note?`;
+      body = `Hi ${salutation}, noticed ${cleanBusinessName}’s work in ${contact.category || industry}. We specialize in helping businesses optimize their Google Maps ranking, build ultra-fast modern websites, and set up client inquiry automations. Open to connecting and sharing a brief note?`;
     }
 
     return {
@@ -372,7 +374,7 @@ Return ONLY the message text.`;
     // Takes the user's rough bullet points/words and weaves them into clean, realistic copy
     const bulletLines = rawText
       .split(/\r?\n|;/)
-      .map((line) => line.replace(/^[\s•\-\*\d\.\)]+/, '').trim())
+      .map((line) => line.replace(/^[\s•\-*\d.)]+/, '').trim())
       .filter((s) => s.length > 2);
 
     let bulletItems = bulletLines;
@@ -383,7 +385,7 @@ Return ONLY the message text.`;
         .filter((s) => s.length > 2);
     }
 
-    let keyTopics = bulletItems.length > 0 ? bulletItems.join(', ') : rawText;
+    const keyTopics = bulletItems.length > 0 ? bulletItems.join(', ') : rawText;
     // Format clean snippet for smooth grammatical sentence flow
     const cleanSnippet = keyTopics.replace(/\b(i|we|want|to|and|the)\b/gi, (m) => m.toLowerCase());
 

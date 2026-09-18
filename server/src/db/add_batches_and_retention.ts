@@ -1,4 +1,4 @@
-import { pool } from '../config/db.ts';
+import { pool } from '../config/db';
 
 async function migrateBatchesAndRetention() {
   console.log('🔄 Running migration: 28-day retention, upload batches, and soft deletion...');

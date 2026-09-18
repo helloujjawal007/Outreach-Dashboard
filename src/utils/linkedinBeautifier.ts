@@ -186,7 +186,7 @@ export function beautifyLinkedInPost(content: string): string {
   }
 
   // 4. Ensure proper spacing between paragraphs (avoid consecutive 3+ empty lines)
-  let cleanText = formattedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const cleanText = formattedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
   return cleanText;
 }
@@ -242,17 +242,18 @@ export function applyStyleToSelection(
         .map((line) => (line.trim() ? `✦ ${line.replace(/^[-*•✦▸]\s*/, '')}` : line))
         .join('\n');
       break;
-    case 'number':
+    case 'number': {
       let count = 1;
       transformed = selectedText
         .split('\n')
         .map((line) => {
           if (!line.trim()) return line;
           const num = toUnicodeBold(String(count++));
-          return `${num}. ${line.replace(/^\d+[\.\)]\s*/, '')}`;
+          return `${num}. ${line.replace(/^\d+[.)]\s*/, '')}`;
         })
         .join('\n');
       break;
+    }
   }
 
   const newText = fullText.slice(0, selectionStart) + transformed + fullText.slice(selectionEnd);

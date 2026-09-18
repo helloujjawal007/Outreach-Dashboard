@@ -1,5 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
 import { env } from './config/env';
 import { testConnection, query } from './config/db';
 import { ollamaService } from './services/ollamaService';
@@ -27,6 +29,7 @@ import { addLinkedInTables } from './db/add_linkedin_tables';
 import { addLinkedInPublishingColumns } from './db/add_linkedin_publishing_columns';
 import { addAiCommandHistoryTable } from './db/add_ai_command_history';
 import { addManualReviewStatus } from './db/add_manual_review_status';
+import { migrateLocationAndCleanWebsites } from './db/add_location_and_clean_websites';
 import { googleEnrichmentService } from './services/googleEnrichmentService';
 import { linkedinService } from './services/linkedinService';
 // Prevent unhandled errors or socket drops from crashing the Express API server
@@ -105,7 +108,19 @@ async function run28DayRetentionCleanup() {
 }
 
 
-// Global 404 handler
+// Serve static client bundle in deployment
+const distPath = path.resolve(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(distPath, 'index.html'));
+    }
+    next();
+  });
+}
+
+// Global 404 handler for unmatched API routes
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ success: false, error: 'Endpoint not found' });
 });
@@ -191,6 +206,12 @@ async function startServer() {
     await addManualReviewStatus();
   } catch (err) {
     console.error('[Migration Warning] Manual review migration error:', err);
+  }
+
+  try {
+    await migrateLocationAndCleanWebsites();
+  } catch (err) {
+    console.error('[Migration Warning] Location and website clean migration error:', err);
   }
 
   // Check and auto-restore saved WhatsApp session if credentials exist

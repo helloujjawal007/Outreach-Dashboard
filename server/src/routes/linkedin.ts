@@ -122,7 +122,7 @@ linkedinRouter.post('/posts', async (req: Request, res: Response) => {
  */
 linkedinRouter.put('/posts/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { title, content, status, scheduledFor } = req.body;
     const post = await linkedinService.updatePost(id, {
       title,
@@ -143,7 +143,7 @@ linkedinRouter.put('/posts/:id', async (req: Request, res: Response) => {
  */
 linkedinRouter.post('/posts/:id/publish-live', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const post = await linkedinService.publishExistingPost(id);
     res.json({
       success: true,
@@ -162,7 +162,7 @@ linkedinRouter.post('/posts/:id/publish-live', async (req: Request, res: Respons
  */
 linkedinRouter.post('/posts/:id/confirm', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const post = await linkedinService.confirmManualPost(id);
     res.json({ success: true, message: 'Post marked as confirmed on LinkedIn profile', data: post });
   } catch (err: any) {
@@ -192,7 +192,7 @@ linkedinRouter.post('/verify-cookie', async (req: Request, res: Response) => {
  */
 linkedinRouter.delete('/posts/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     await linkedinService.deletePost(id);
     res.json({ success: true, message: 'Post deleted' });
   } catch (err: any) {
@@ -221,7 +221,7 @@ linkedinRouter.get('/prospect-comments', async (_req: Request, res: Response) =>
  */
 linkedinRouter.post('/prospect-comments/:id/approve', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { customComment } = req.body;
     const updated = await linkedinService.approveAndPostComment(id, customComment);
     res.json({ success: true, message: 'Comment posted to prospect post', data: updated });
@@ -237,7 +237,7 @@ linkedinRouter.post('/prospect-comments/:id/approve', async (req: Request, res: 
  */
 linkedinRouter.post('/prospect-comments/:id/skip', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     await linkedinService.skipCommentTask(id);
     res.json({ success: true, message: 'Comment task skipped' });
   } catch (err: any) {

@@ -43,13 +43,14 @@ import {
   Maximize2,
   Minus,
   Globe,
+  MapPin,
 } from 'lucide-react';
 import { Badge } from '@/components/Badge';
 import { Modal } from '@/components/Modal';
 import { ScheduleOutreachModal } from '@/components/ScheduleOutreachModal';
 import { LinkedInOutreachHub } from '@/components/LinkedInOutreachHub';
 import { getCountryFlag } from '@/pages/CrmPage';
-import { api } from '@/services/api';
+import { api, cleanSiteUrl } from '@/services/api';
 import type {
   Lead,
   CustomList,
@@ -66,6 +67,7 @@ interface Props {
   leads: Lead[];
   lists?: CustomList[];
   onRefreshLeads?: () => Promise<void>;
+  onDeleteLead?: (leadId: string) => Promise<void>;
   onBulkDeleteLeads?: (leadIds: string[]) => Promise<void>;
   onAddLeadsToList?: (listId: string, leadIds: string[]) => Promise<void>;
   onCreateList?: (name: string, description?: string) => Promise<CustomList>;
@@ -81,6 +83,7 @@ export function ChannelOutreachHub({
   leads,
   lists = [],
   onRefreshLeads,
+  onDeleteLead,
   onBulkDeleteLeads,
   onAddLeadsToList,
   onCreateList,
@@ -91,6 +94,8 @@ export function ChannelOutreachHub({
   const [activeTab, setActiveTab] = useState<ActiveChannelTab>('whatsapp');
   const [search, setSearch] = useState('');
   const [waFilter, setWaFilter] = useState<WhatsAppFilter>('all');
+  const [channelCountryFilter, setChannelCountryFilter] = useState<string>('all');
+  const [channelCityFilter, setChannelCityFilter] = useState<string>('all');
   const [channelCategoryFilter, setChannelCategoryFilter] = useState<string>('all');
   const [channelListFilter, setChannelListFilter] = useState<string>('all');
   const [channelStatusFilter, setChannelStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -202,20 +207,21 @@ export function ChannelOutreachHub({
   const [batchShootResult, setBatchShootResult] = useState<BatchShootResponse | null>(null);
   const [shootError, setShootError] = useState<string | null>(null);
 
-  // 1. Segregate leads into channels
+  // 1. Segregate leads into channels (exclude soft-deleted leads)
   const segregated = useMemo(() => {
-    const email = leads.filter((l) => l.email && l.email.includes('@'));
-    const whatsapp = leads.filter(
+    const activeLeads = leads.filter((l) => !l.deletedAt);
+    const email = activeLeads.filter((l) => l.email && l.email.includes('@'));
+    const whatsapp = activeLeads.filter(
       (l) => (l.whatsapp && l.whatsapp.trim().length > 0) || (l.phone && l.phone.trim().length > 0)
     );
     const whatsappEligible = whatsapp.filter((l) => l.whatsappEligible === true);
     const whatsappIneligible = whatsapp.filter((l) => l.whatsappEligible !== true);
-    const website_form = leads.filter(
-      (l) => (l.website && l.website.trim().length > 0) || (l.googleProfile?.website && l.googleProfile.website.trim().length > 0)
+    const website_form = activeLeads.filter(
+      (l) => Boolean(cleanSiteUrl(l.website || l.googleProfile?.website))
     );
-    const facebook = leads.filter((l) => (l.facebook || '').trim().length > 0);
-    const instagram = leads.filter((l) => (l.instagram || '').trim().length > 0);
-    const linkedin = leads.filter((l) => (l.linkedin || '').trim().length > 0);
+    const facebook = activeLeads.filter((l) => (l.facebook || '').trim().length > 0);
+    const instagram = activeLeads.filter((l) => (l.instagram || '').trim().length > 0);
+    const linkedin = activeLeads.filter((l) => (l.linkedin || '').trim().length > 0);
 
     return {
       email,
@@ -229,38 +235,123 @@ export function ChannelOutreachHub({
     };
   }, [leads]);
 
-  // Unique categories for the current active channel
-  const activeChannelCategories = useMemo(() => {
-    const cats = new Set<string>();
-    const base =
-      activeTab === 'email'
-        ? segregated.email
-        : activeTab === 'whatsapp'
-        ? segregated.whatsapp
-        : activeTab === 'website_form'
-        ? segregated.website_form
-        : activeTab === 'facebook'
-        ? segregated.facebook
-        : activeTab === 'instagram'
-        ? segregated.instagram
-        : segregated.linkedin;
-    base.forEach((l) => {
-      if (l.category && l.category.trim()) cats.add(l.category.trim());
+  // Active Channel Base Leads
+  const activeTabBaseLeads = useMemo(() => {
+    if (activeTab === 'email') return segregated.email;
+    if (activeTab === 'whatsapp') {
+      if (waFilter === 'eligible') return segregated.whatsappEligible;
+      if (waFilter === 'ineligible') return segregated.whatsappIneligible;
+      return segregated.whatsapp;
+    }
+    if (activeTab === 'website_form') return segregated.website_form;
+    if (activeTab === 'facebook') return segregated.facebook;
+    if (activeTab === 'instagram') return segregated.instagram;
+    return segregated.linkedin;
+  }, [activeTab, segregated, waFilter]);
+
+  // Unique countries for the current active channel whose leads are listed
+  const activeChannelCountries = useMemo(() => {
+    const countryMap = new Map<string, number>();
+    activeTabBaseLeads.forEach((l) => {
+      const c =
+        (l.country || '').trim() ||
+        (l.location && l.location.toLowerCase().includes('not identified')
+          ? '(Not identified)'
+          : 'Other');
+      countryMap.set(c, (countryMap.get(c) || 0) + 1);
     });
-    return Array.from(cats).sort();
-  }, [activeTab, segregated]);
+    return Array.from(countryMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([country, count]) => ({
+        country,
+        count,
+        flag: getCountryFlag(country),
+      }))
+      .sort((a, b) => b.count - a.count || a.country.localeCompare(b.country));
+  }, [activeTabBaseLeads]);
+
+  // Unique cities for the current active channel & selected country
+  const activeChannelCities = useMemo(() => {
+    const cityMap = new Map<string, number>();
+    activeTabBaseLeads.forEach((l) => {
+      if (channelCountryFilter !== 'all') {
+        const leadCountry = (l.country || '').trim() || 'Other';
+        if (channelCountryFilter === '(Not identified)') {
+          if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+            return;
+          }
+        } else if (leadCountry.toLowerCase() !== channelCountryFilter.toLowerCase()) {
+          return;
+        }
+      }
+      if (l.location && l.location.trim() && !l.location.toLowerCase().includes('not identified')) {
+        const loc = l.location.trim();
+        cityMap.set(loc, (cityMap.get(loc) || 0) + 1);
+      }
+    });
+    return Array.from(cityMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([city, count]) => ({ city, count }))
+      .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city));
+  }, [activeTabBaseLeads, channelCountryFilter]);
+
+  // Unique categories for the current active channel with counts
+  const activeChannelCategories = useMemo(() => {
+    const catMap = new Map<string, number>();
+    activeTabBaseLeads.forEach((l) => {
+      if (l.category && l.category.trim()) {
+        const c = l.category.trim();
+        catMap.set(c, (catMap.get(c) || 0) + 1);
+      }
+    });
+    return Array.from(catMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+  }, [activeTabBaseLeads]);
+
+  // Status counts for active tab
+  const channelStatusCounts = useMemo(() => {
+    const active = activeTabBaseLeads.filter((l) => (l.status || 'active') === 'active').length;
+    const inactive = activeTabBaseLeads.filter((l) => (l.status || 'active') === 'inactive' || l.status === 'paused').length;
+    return { all: activeTabBaseLeads.length, active, inactive };
+  }, [activeTabBaseLeads]);
+
+  // Consent counts for active tab
+  const channelConsentCounts = useMemo(() => {
+    const none = activeTabBaseLeads.filter((l) => !l.consentStatus || l.consentStatus === 'none').length;
+    const replied = activeTabBaseLeads.filter((l) => l.consentStatus === 'replied').length;
+    const opted_out = activeTabBaseLeads.filter((l) => l.consentStatus === 'opted_out').length;
+    return { all: activeTabBaseLeads.length, none, replied, opted_out };
+  }, [activeTabBaseLeads]);
+
+  // List counts for active tab
+  const channelListCounts = useMemo(() => {
+    const unassigned = activeTabBaseLeads.filter((l) => !l.lists || l.lists.length === 0).length;
+    const map = new Map<string, number>();
+    activeTabBaseLeads.forEach((l) => {
+      l.lists?.forEach((lst) => {
+        map.set(lst.id, (map.get(lst.id) || 0) + 1);
+      });
+    });
+    return { all: activeTabBaseLeads.length, unassigned, map };
+  }, [activeTabBaseLeads]);
 
   const hasActiveChannelFilters = useMemo(() => {
     return (
+      channelCountryFilter !== 'all' ||
+      channelCityFilter !== 'all' ||
       channelCategoryFilter !== 'all' ||
       channelListFilter !== 'all' ||
       channelStatusFilter !== 'all' ||
       channelConsentFilter !== 'all' ||
       search.trim().length > 0
     );
-  }, [channelCategoryFilter, channelListFilter, channelStatusFilter, channelConsentFilter, search]);
+  }, [channelCountryFilter, channelCityFilter, channelCategoryFilter, channelListFilter, channelStatusFilter, channelConsentFilter, search]);
 
   const handleResetChannelFilters = useCallback(() => {
+    setChannelCountryFilter('all');
+    setChannelCityFilter('all');
     setChannelCategoryFilter('all');
     setChannelListFilter('all');
     setChannelStatusFilter('all');
@@ -270,16 +361,26 @@ export function ChannelOutreachHub({
 
   // 2. Active Channel's Leads
   const currentChannelLeads = useMemo(() => {
-    let list: Lead[] = [];
-    if (activeTab === 'email') list = segregated.email;
-    else if (activeTab === 'whatsapp') {
-      if (waFilter === 'eligible') list = segregated.whatsappEligible;
-      else if (waFilter === 'ineligible') list = segregated.whatsappIneligible;
-      else list = segregated.whatsapp;
-    } else if (activeTab === 'website_form') list = segregated.website_form;
-    else if (activeTab === 'facebook') list = segregated.facebook;
-    else if (activeTab === 'instagram') list = segregated.instagram;
-    else if (activeTab === 'linkedin') list = segregated.linkedin;
+    let list: Lead[] = activeTabBaseLeads;
+
+    // Filter by country
+    if (channelCountryFilter !== 'all') {
+      list = list.filter((l) => {
+        const leadCountry = (l.country || '').trim() || 'Other';
+        if (channelCountryFilter === '(Not identified)') {
+          return leadCountry === '(Not identified)' || (l.location && l.location.toLowerCase().includes('not identified'));
+        }
+        return leadCountry.toLowerCase() === channelCountryFilter.toLowerCase();
+      });
+    }
+
+    // Filter by city
+    if (channelCityFilter !== 'all') {
+      list = list.filter((l) => {
+        const loc = (l.location || '').toLowerCase();
+        return loc.includes(channelCityFilter.toLowerCase());
+      });
+    }
 
     // Filter by category
     if (channelCategoryFilter !== 'all') {
@@ -319,7 +420,7 @@ export function ChannelOutreachHub({
         (l.instagram && l.instagram.toLowerCase().includes(q)) ||
         (l.linkedin && l.linkedin.toLowerCase().includes(q))
     );
-  }, [activeTab, segregated, search, waFilter, channelCategoryFilter, channelListFilter, channelStatusFilter, channelConsentFilter]);
+  }, [activeTabBaseLeads, channelCountryFilter, channelCityFilter, channelCategoryFilter, channelListFilter, channelStatusFilter, channelConsentFilter, search]);
 
   // Multi-Inbox Pool Summary for Email Tab
   const [inboxSummary, setInboxSummary] = useState<InboxPoolSummary | null>(null);
@@ -458,7 +559,7 @@ export function ChannelOutreachHub({
       email: lead.email || '',
       facebook: lead.facebook || '',
       instagram: lead.instagram || '',
-      website: lead.website || lead.googleProfile?.website || '',
+      website: cleanSiteUrl(lead.website || lead.googleProfile?.website),
       country: lead.country || '',
       notes: lead.notes || '',
       status: (lead.status as any) || 'active',
@@ -505,24 +606,37 @@ export function ChannelOutreachHub({
     }
   }, [editingLead, editFormData, onRefreshLeads]);
 
+  // Toast notification helper
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setToastNotification({ message, type });
+    setTimeout(() => {
+      setToastNotification((prev) => (prev?.message === message ? null : prev));
+    }, 4500);
+  }, []);
+
   // Confirm and Execute Delete
   const handleConfirmDelete = useCallback(async () => {
     if (!deletingLead) return;
     setIsDeletingLead(true);
     setDeleteLeadError(null);
     try {
-      await api.deleteLead(deletingLead.id);
-      setDeletingLead(null);
-      if (onRefreshLeads) {
-        await onRefreshLeads();
+      if (onDeleteLead) {
+        await onDeleteLead(deletingLead.id);
+      } else {
+        await api.deleteLead(deletingLead.id);
+        if (onRefreshLeads) {
+          await onRefreshLeads();
+        }
       }
+      setDeletingLead(null);
+      showToast(`Successfully moved "${deletingLead.businessName}" to Trash (preserved for 28 days).`, 'success');
     } catch (err: any) {
       console.error('Failed to delete lead:', err);
       setDeleteLeadError(err?.message || 'Failed to delete lead');
     } finally {
       setIsDeletingLead(false);
     }
-  }, [deletingLead, onRefreshLeads]);
+  }, [deletingLead, onDeleteLead, onRefreshLeads, showToast]);
 
   // Handle opening AI Research & Copywriter
   const handleOpenAiResearch = useCallback(
@@ -572,13 +686,7 @@ export function ChannelOutreachHub({
     setTimeout(() => setIsCopied(false), 2000);
   }, []);
 
-  // Toast notification helper
-  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
-    setToastNotification({ message, type });
-    setTimeout(() => {
-      setToastNotification((prev) => (prev?.message === message ? null : prev));
-    }, 4500);
-  }, []);
+
 
   // Multi-selection computed properties (Apollo/Gmail paginated style)
   const allOnPageSelected = useMemo(() => {
@@ -1363,17 +1471,64 @@ export function ChannelOutreachHub({
             <Filter size={13} />
           </div>
 
+          {/* Country Filter */}
+          <select
+            value={channelCountryFilter}
+            onChange={(e) => {
+              setChannelCountryFilter(e.target.value);
+              setChannelCityFilter('all');
+            }}
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              channelCountryFilter !== 'all'
+                ? 'ring-2 ring-brand-500 bg-brand-50/50 text-brand-900 font-bold border-brand-300'
+                : 'bg-slate-50 border-slate-200'
+            }`}
+            title="Filter channel leads by country"
+          >
+            <option value="all">🌍 All Countries ({activeChannelCountries.length})</option>
+            {activeChannelCountries.map(({ country, count, flag }) => (
+              <option key={country} value={country}>
+                {flag} {country} ({count})
+              </option>
+            ))}
+          </select>
+
+          {/* City / Location Sub-Filter */}
+          {channelCountryFilter !== 'all' && activeChannelCities.length > 0 && (
+            <select
+              value={channelCityFilter}
+              onChange={(e) => setChannelCityFilter(e.target.value)}
+              className={`input py-1.5 text-xs w-auto font-medium transition-all animate-fadeIn ${
+                channelCityFilter !== 'all'
+                  ? 'ring-2 ring-indigo-500 bg-indigo-50/50 text-indigo-900 font-bold border-indigo-300'
+                  : 'bg-slate-50 border-slate-200'
+              }`}
+              title={`Sub-filter by city/region in ${channelCountryFilter}`}
+            >
+              <option value="all">📍 All Cities ({channelCountryFilter} - {activeChannelCities.length})</option>
+              {activeChannelCities.map(({ city, count }) => (
+                <option key={city} value={city}>
+                  {city} ({count})
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Category Filter */}
           <select
             value={channelCategoryFilter}
             onChange={(e) => setChannelCategoryFilter(e.target.value)}
-            className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              channelCategoryFilter !== 'all'
+                ? 'ring-2 ring-purple-500 bg-purple-50/50 text-purple-900 font-bold border-purple-300'
+                : 'bg-slate-50 border-slate-200'
+            }`}
             title="Filter channel leads by category"
           >
             <option value="all">All Categories ({activeChannelCategories.length})</option>
-            {activeChannelCategories.map((c) => (
-              <option key={c} value={c}>
-                {c}
+            {activeChannelCategories.map(({ category, count }) => (
+              <option key={category} value={category}>
+                {category} ({count})
               </option>
             ))}
           </select>
@@ -1385,11 +1540,11 @@ export function ChannelOutreachHub({
             className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
             title="Filter channel leads by list"
           >
-            <option value="all">All Lists</option>
-            <option value="unassigned">📥 Main List (Unassigned)</option>
+            <option value="all">All Lists ({channelListCounts.all})</option>
+            <option value="unassigned">📥 Main List (Unassigned) ({channelListCounts.unassigned})</option>
             {lists.map((l) => (
               <option key={l.id} value={l.id}>
-                🏷️ {l.name}
+                🏷️ {l.name} ({channelListCounts.map.get(l.id) || 0})
               </option>
             ))}
           </select>
@@ -1400,9 +1555,9 @@ export function ChannelOutreachHub({
             onChange={(e) => setChannelStatusFilter(e.target.value as any)}
             className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
           >
-            <option value="all">All Status</option>
-            <option value="active">Active Only</option>
-            <option value="inactive">Inactive Only</option>
+            <option value="all">All Status ({channelStatusCounts.all})</option>
+            <option value="active">Active Only ({channelStatusCounts.active})</option>
+            <option value="inactive">Inactive Only ({channelStatusCounts.inactive})</option>
           </select>
 
           {/* Consent Filter */}
@@ -1411,10 +1566,10 @@ export function ChannelOutreachHub({
             onChange={(e) => setChannelConsentFilter(e.target.value as any)}
             className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
           >
-            <option value="all">All Responses</option>
-            <option value="none">No Response</option>
-            <option value="replied">Replied</option>
-            <option value="opted_out">Opted Out</option>
+            <option value="all">All Responses ({channelConsentCounts.all})</option>
+            <option value="none">No Response ({channelConsentCounts.none})</option>
+            <option value="replied">Replied ({channelConsentCounts.replied})</option>
+            <option value="opted_out">Opted Out ({channelConsentCounts.opted_out})</option>
           </select>
 
           {/* Clear Filter Button */}

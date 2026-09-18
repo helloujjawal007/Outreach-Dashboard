@@ -204,14 +204,14 @@ export class GoogleMapsScraper {
 
           // Extract review count - prioritize reviewsStr or rating-adjacent count e.g. 4.9 \n (14) or 4.9 \n (108)
           let parsedReviews = 0;
-          const placeRevMatch = reviewsStr.match(/([0-9,]+)\s*reviews?/i) || reviewsStr.match(/\(([0-9,]+)\)/);
+          const placeRevMatch = reviewsStr.match(/([0-9,]+)\\s*reviews?/i) || reviewsStr.match(/\\(([0-9,]+)\\)/);
           if (placeRevMatch) {
             parsedReviews = parseInt(placeRevMatch[1].replace(/,/g, ''), 10);
           } else {
-            const ratingParen = fullText.match(/\b[1-5]\.[0-9]\s*\n\s*\(([0-9,]+)\)/) ||
-                                fullText.match(/\b[1-5]\.[0-9][^\n]{0,30}\(([0-9,]+)\)/) ||
-                                fullText.match(/\b([0-9,]+)\s+reviews?\b/i) ||
-                                fullText.match(/\(([0-9,]+)\)/);
+            const ratingParen = fullText.match(/\\b[1-5]\\.[0-9]\\s*\\n\\s*\\(([0-9,]+)\\)/) ||
+                                fullText.match(/\\b[1-5]\\.[0-9][^\\n]{0,30}\\(([0-9,]+)\\)/) ||
+                                fullText.match(/\\b([0-9,]+)\\s+reviews?\\b/i) ||
+                                fullText.match(/\\(([0-9,]+)\\)/);
             if (ratingParen) {
               parsedReviews = parseInt(ratingParen[1].replace(/,/g, ''), 10);
             }

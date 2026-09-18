@@ -185,7 +185,7 @@ export class EmailInboundService {
       const lock = await client.getMailboxLock('INBOX');
 
       try {
-        const totalExists = client.mailbox?.exists || 0;
+        const totalExists = (client.mailbox && typeof client.mailbox === 'object') ? client.mailbox.exists : 0;
         if (totalExists === 0) {
           return {
             syncedCount: 0,
@@ -205,11 +205,12 @@ export class EmailInboundService {
           uid: true,
         })) {
           try {
+            if (!message.source) continue;
             const parsed = await simpleParser(message.source);
             const messageId =
               parsed.messageId ||
               message.envelope?.messageId ||
-              `${message.uid}_${message.envelope?.date?.getTime() || Date.now()}@imap.gmail.com`;
+              `${message.uid}_${new Date(message.envelope?.date || Date.now()).getTime()}@imap.gmail.com`;
 
             // Check if already processed
             const checkRes = await query<{
@@ -632,7 +633,7 @@ export class EmailInboundService {
     } finally {
       this.isSyncing = false;
       try {
-        if (!client.closed) {
+        if (client.usable) {
           client.close();
         }
       } catch (_closeErr) {

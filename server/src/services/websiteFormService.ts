@@ -331,7 +331,7 @@ export class WebsiteFormService {
     const lead = leadRes.rows[0];
     const isMapsUrl = (u: string) => /google\.com\/maps|maps\.google\.com/i.test(u || '');
 
-    let targetWebsite = (customWebsiteUrl && !isMapsUrl(customWebsiteUrl))
+    const targetWebsite = (customWebsiteUrl && !isMapsUrl(customWebsiteUrl))
       ? customWebsiteUrl.trim()
       : this.resolveLeadWebsite(lead);
 

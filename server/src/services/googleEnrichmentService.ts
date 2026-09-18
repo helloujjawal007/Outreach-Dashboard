@@ -1,6 +1,7 @@
 import { query } from '../config/db';
 import { whatsappValidator } from './whatsappValidator';
 import { googleMapsScraper } from './googleMapsScraper';
+import { cleanSiteUrl } from './leadScraperService';
 
 export interface GoogleBusinessProfile {
   placeName: string;
@@ -235,7 +236,7 @@ export class GoogleEnrichmentService {
       formattedAddress,
       category: matchedCategory || 'Local Business',
       status: 'OPERATIONAL',
-      website: finalWebsite || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(searchQuery)}`,
+      website: cleanSiteUrl(finalWebsite) || undefined,
       phone: verifiedPhone || undefined,
       hasGbpClaimed: true,
       matchedVia: extractedRating !== null ? 'exact_match' : phone ? 'name_and_phone' : 'name_and_category',
@@ -332,7 +333,7 @@ export class GoogleEnrichmentService {
     const finalPhone = scraped.phone || lead.phone;
     const waEval = whatsappValidator.evaluate({ phone: finalPhone, whatsapp: lead.whatsapp });
 
-    const finalWebsite = scraped.website || lead.website || '';
+    const finalWebsite = cleanSiteUrl(scraped.website || lead.website);
     const finalCategory = scraped.category || lead.category;
 
     const updateRes = await query(

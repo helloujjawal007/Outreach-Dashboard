@@ -1,4 +1,4 @@
-import { pool } from '../config/db.ts';
+import { pool } from '../config/db';
 
 async function migrate() {
   console.log('🔄 Running migration: add lead status & client soft-delete...');

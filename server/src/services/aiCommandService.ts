@@ -5,6 +5,7 @@ import { googleEnrichmentService } from './googleEnrichmentService';
 import { inboxRotationService } from './inboxRotationService';
 import { ollamaService } from './ollamaService';
 import { humanizerService } from './humanizerService';
+import { leadScraperService } from './leadScraperService';
 
 export interface BusinessSuggestion {
   id: string;
@@ -22,7 +23,8 @@ export interface BusinessSuggestion {
     | 'sync_gmb_data'
     | 'target_ecom_leads'
     | 'view_inbound_replies'
-    | 'run_lead_diagnostic';
+    | 'run_lead_diagnostic'
+    | 'scrape_lead_locations';
   actionPayload?: Record<string, unknown>;
   badgeText: string;
   badgeVariant: 'red' | 'amber' | 'emerald' | 'indigo';
@@ -59,41 +61,77 @@ export class AiCommandService {
     const suggestions: BusinessSuggestion[] = [];
 
     try {
-      // 0. Check All Eligible Leads Ready for Outreach (Initial pitches + Due follow-ups)
+      // 0. Check All Eligible Leads Ready for Outreach (across Email, Form, and WhatsApp)
       const allEligibleRes = await query<{ count: string }>(`
         SELECT COUNT(DISTINCT l.id)::int as count
         FROM leads l
         WHERE l.deleted_at IS NULL
           AND l.consent_status != 'unsubscribed'
           AND l.consent_status != 'opted_out'
+          AND l.consent_status != 'replied'
+          AND (l.outreach_stage IS NULL OR l.outreach_stage != 'completed')
           AND (
-            ((l.outreach_stage = 'initial' OR l.outreach_stage IS NULL) AND (l.email ILIKE '%@%' OR (l.metadata->'website_form'->>'hasForm' = 'true')))
-            OR
-            (l.id IN (
-              SELECT c.lead_id
-              FROM conversations c
-              JOIN messages m ON m.conversation_id = c.id
-              WHERE m.direction = 'outbound' AND m.channel = 'email'
-              GROUP BY c.lead_id
-              HAVING COUNT(m.id) IN (1, 2)
-            ))
+            (l.email ILIKE '%@%')
+            OR (l.phone IS NOT NULL AND l.phone != '')
+            OR (l.whatsapp IS NOT NULL AND l.whatsapp != '')
+            OR (l.website IS NOT NULL AND l.website != '')
+            OR (l.metadata->'website_form'->>'hasForm' = 'true')
           )
       `);
       const allEligibleCount = Number(allEligibleRes.rows[0]?.count || 0);
 
+      // Check Completed Leads that can be re-engaged
+      const completedRes = await query<{ count: string }>(`
+        SELECT COUNT(DISTINCT l.id)::int as count
+        FROM leads l
+        WHERE l.deleted_at IS NULL
+          AND l.consent_status NOT IN ('unsubscribed', 'opted_out')
+          AND l.outreach_stage = 'completed'
+      `);
+      const completedCount = Number(completedRes.rows[0]?.count || 0);
+
+      // 0.A: Master 1-Click Growth Autopilot (Combines forms scan, GMB sync & omni-channel outreach)
       if (allEligibleCount > 0) {
+        suggestions.push({
+          id: 'sugg_master_autopilot',
+          category: 'urgent',
+          priority: 'high',
+          title: '1-Click Master Growth Autopilot',
+          description: `Execute your complete pipeline in a single click: scan website forms, sync GMB ratings, and dispatch Omni-Channel outreach across ${allEligibleCount} ready prospects (Email, Website Form & WhatsApp).`,
+          metric: `${allEligibleCount}`,
+          metricLabel: 'Leads Ready',
+          actionTitle: '⚡ 1-Click Master Autopilot',
+          actionType: 'run_full_autopilot',
+          badgeText: 'All-In-One',
+          badgeVariant: 'amber',
+        });
+
         suggestions.push({
           id: 'sugg_shoot_all_outreach',
           category: 'urgent',
           priority: 'high',
           title: 'Mass Outreach Ready for All Eligible Leads',
-          description: `${allEligibleCount} prospects across your database are eligible for outreach touches (new initial pitches + stage-aware follow-ups) via Dual-Trigger (Email + Website Form).`,
+          description: `${allEligibleCount} prospects across your database are eligible for outreach touches (new initial pitches + stage-aware follow-ups) via Omni-Channel Dual-Trigger (Email + Website Form + WhatsApp).`,
           metric: `${allEligibleCount}`,
           metricLabel: 'Leads Ready',
           actionTitle: '⚡ Shoot Outreach to All Leads',
           actionType: 'shoot_all_outreach',
           badgeText: 'Mass Shoot',
           badgeVariant: 'amber',
+        });
+      } else if (completedCount > 0) {
+        suggestions.push({
+          id: 'sugg_reset_sequences',
+          category: 'growth',
+          priority: 'high',
+          title: 'Re-engage Completed Leads (Restart Sequences)',
+          description: `All ${completedCount} leads have completed their initial sequence touches. In 1 click, reset their sequence state back to Initial to launch a fresh outreach wave.`,
+          metric: `${completedCount}`,
+          metricLabel: 'Leads Completed',
+          actionTitle: '🔄 Reset Sequences & Re-engage',
+          actionType: 'reset_completed_sequences',
+          badgeText: 'Re-engagement',
+          badgeVariant: 'indigo',
         });
       }
 
@@ -104,14 +142,8 @@ export class AiCommandService {
         WHERE l.deleted_at IS NULL
           AND l.consent_status != 'unsubscribed'
           AND l.consent_status != 'opted_out'
-          AND l.id IN (
-            SELECT c.lead_id
-            FROM conversations c
-            JOIN messages m ON m.conversation_id = c.id
-            WHERE m.direction = 'outbound' AND m.channel = 'email'
-            GROUP BY c.lead_id
-            HAVING COUNT(m.id) IN (1, 2)
-          )
+          AND l.consent_status != 'replied'
+          AND l.outreach_stage IN ('followup_1', 'followup_2')
       `);
       const overdueFollowups = Number(followupsRes.rows[0]?.count || 0);
 
@@ -244,7 +276,32 @@ export class AiCommandService {
         });
       }
 
-      // 6. Executive Diagnostic / Capacity Health
+      // 6. Check Unlocated Leads (Lead Scraper)
+      const unlocatedRes = await query<{ count: string }>(`
+        SELECT COUNT(*)::int as count
+        FROM leads
+        WHERE deleted_at IS NULL
+          AND (location IS NULL OR location = '')
+      `);
+      const unlocatedCount = Number(unlocatedRes.rows[0]?.count || 0);
+
+      if (unlocatedCount > 0) {
+        suggestions.push({
+          id: 'sugg_scrape_locations',
+          category: 'optimization',
+          priority: 'medium',
+          title: 'Scrape & Identify Lead Locations',
+          description: `${unlocatedCount} prospect(s) have unverified locations. Automatically scrape corporate email domains, website addresses, and area codes gradually (or assign '(Not identified)').`,
+          metric: `${unlocatedCount}`,
+          metricLabel: 'Unlocated Leads',
+          actionTitle: '📍 Scrape Lead Locations',
+          actionType: 'scrape_lead_locations',
+          badgeText: 'Gradual Scraper',
+          badgeVariant: 'indigo',
+        });
+      }
+
+      // 7. Executive Diagnostic / Capacity Health
       const inboxes = await inboxRotationService.getAllInboxes();
       const activeInboxes = inboxes.filter((i) => i.status === 'active');
       const totalSentToday = activeInboxes.reduce((sum, i) => sum + i.sent_today, 0);
@@ -380,8 +437,118 @@ export class AiCommandService {
 
     let result: CommandExecutionResult;
 
-    // 0. ACTION: Shoot Outreach to ALL Eligible Leads (Mass Outreach Dual-Trigger)
+    // -1. ACTION: 1-Click Master Growth Autopilot (Scan forms + Sync GMB + Omni-Channel Mass Outreach)
     if (
+      explicitAction === 'run_full_autopilot' ||
+      text.includes('autopilot') ||
+      text.includes('single click') ||
+      text.includes('1-click all') ||
+      text.includes('all works') ||
+      text.includes('execute all') ||
+      text.includes('full run') ||
+      text.includes('full growth') ||
+      text.includes('master autopilot') ||
+      text.includes('run all')
+    ) {
+      // Step 1: Scan any unscanned websites for forms (fast concurrency with 4s timeout)
+      let formsFound = 0;
+      let websitesScanned = 0;
+      try {
+        const unscannedRes = await query<{ id: string; business_name: string; website: string }>(`
+          SELECT id, business_name, website
+          FROM leads
+          WHERE deleted_at IS NULL
+            AND website IS NOT NULL 
+            AND website != ''
+            AND website NOT LIKE '%google.com/maps%'
+            AND website NOT LIKE '%maps.google.com%'
+            AND (metadata->'website_form') IS NULL
+          LIMIT 10
+        `);
+        if (unscannedRes.rows.length > 0) {
+          websitesScanned = unscannedRes.rows.length;
+          const scanPromises = unscannedRes.rows.map(async (l) => {
+            return Promise.race([
+              websiteFormService.detectAndSaveFormForLead(l.id),
+              new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+            ]);
+          });
+          const settledScans = await Promise.allSettled(scanPromises);
+          formsFound = settledScans.filter((s: any) => s.value?.detection?.hasForm).length;
+        }
+      } catch (fErr) {
+        console.warn('[AiCommandService] Autopilot website form scan warning:', fErr);
+      }
+
+      // Step 2: Sync missing GMB ratings (up to 5 leads with fast fallback)
+      let gmbSynced = 0;
+      try {
+        const gmbRes = await query<{ id: string }>(`
+          SELECT id FROM leads
+          WHERE deleted_at IS NULL
+            AND (notes NOT LIKE '%Rating:%' OR metadata->'google_profile' IS NULL OR (metadata->'google_profile'->>'userVerified') IS NULL)
+          LIMIT 5
+        `);
+        for (const gl of gmbRes.rows) {
+          try {
+            await Promise.race([
+              googleEnrichmentService.syncFromGoogleMaps(gl.id),
+              new Promise((r) => setTimeout(r, 4000)),
+            ]);
+            gmbSynced++;
+          } catch {}
+        }
+      } catch (gErr) {
+        console.warn('[AiCommandService] Autopilot GMB sync warning:', gErr);
+      }
+
+      // Step 3: Dispatch Omni-Channel Outreach across ALL eligible leads
+      const eligibleLeads = await query<{ id: string }>(`
+        SELECT l.id
+        FROM leads l
+        WHERE l.deleted_at IS NULL
+          AND l.consent_status != 'unsubscribed'
+          AND l.consent_status != 'opted_out'
+          AND l.consent_status != 'replied'
+          AND (l.outreach_stage IS NULL OR l.outreach_stage != 'completed')
+          AND (
+            (l.email ILIKE '%@%')
+            OR (l.phone IS NOT NULL AND l.phone != '')
+            OR (l.whatsapp IS NOT NULL AND l.whatsapp != '')
+            OR (l.website IS NOT NULL AND l.website != '')
+            OR (l.metadata->'website_form'->>'hasForm' = 'true')
+          )
+        ORDER BY l.created_at DESC
+      `);
+
+      const leadIds = eligibleLeads.rows.map((r) => r.id);
+      const bulkRes = await stageOutreachService.sendBulkNextStage(leadIds);
+
+      result = {
+        actionExecuted: 'run_full_autopilot',
+        success: true,
+        summary: `🚀 1-Click Master Growth Autopilot executed! Contacted ${bulkRes.sentCount} lead(s) across all active channels (${bulkRes.channelsSummary.emailsSent} Emails, ${bulkRes.channelsSummary.formsSubmitted} Website Forms, ${bulkRes.channelsSummary.whatsappDispatched} WhatsApp touches). Scanned ${websitesScanned} website(s) (${formsFound} forms detected) and verified ${gmbSynced} Google Maps profile(s).`,
+        itemsProcessed: bulkRes.sentCount,
+        details: {
+          totalEligible: leadIds.length,
+          emailsSent: bulkRes.channelsSummary.emailsSent,
+          formsSubmitted: bulkRes.channelsSummary.formsSubmitted,
+          whatsappDispatched: bulkRes.channelsSummary.whatsappDispatched,
+          websitesScanned,
+          formsFound,
+          gmbSynced,
+          initialSent: bulkRes.breakdown.initial,
+          followup1Sent: bulkRes.breakdown.followup_1,
+          followup2Sent: bulkRes.breakdown.followup_2,
+          skipped: bulkRes.skippedCount,
+          dispatchedLeads: bulkRes.results.slice(0, 50),
+        },
+        timestamp,
+      };
+    }
+
+    // 0. ACTION: Shoot Outreach to ALL Eligible Leads (Omni-Channel Multi-Trigger)
+    else if (
       explicitAction === 'shoot_all_outreach' ||
       text.includes('shoot to all') ||
       text.includes('shoot all') ||
@@ -399,31 +566,27 @@ export class AiCommandService {
       text.includes('blast all') ||
       (text.includes('all') && (text.includes('msg') || text.includes('message') || text.includes('lead') || text.includes('shoot') || text.includes('send') || text.includes('email')))
     ) {
-      // Find ALL eligible leads in entire database (initial uncontacted + overdue follow-up 1 or 2)
+      // Find ALL eligible leads in entire database across Email, Form, and WhatsApp
       const allLeadsRes = await query<{
         id: string;
         business_name: string;
         email: string;
+        phone: string;
         outreach_stage: string;
       }>(`
-        SELECT l.id, l.business_name, l.email, l.outreach_stage
+        SELECT l.id, l.business_name, l.email, l.phone, l.outreach_stage
         FROM leads l
         WHERE l.deleted_at IS NULL
           AND l.consent_status != 'unsubscribed'
           AND l.consent_status != 'opted_out'
+          AND l.consent_status != 'replied'
+          AND (l.outreach_stage IS NULL OR l.outreach_stage != 'completed')
           AND (
-            -- Uncontacted initial leads with valid email or contact form
-            ((l.outreach_stage = 'initial' OR l.outreach_stage IS NULL) AND (l.email ILIKE '%@%' OR (l.metadata->'website_form'->>'hasForm' = 'true')))
-            OR
-            -- Leads awaiting follow-up 1 or 2
-            (l.id IN (
-              SELECT c.lead_id
-              FROM conversations c
-              JOIN messages m ON m.conversation_id = c.id
-              WHERE m.direction = 'outbound' AND m.channel = 'email'
-              GROUP BY c.lead_id
-              HAVING COUNT(m.id) IN (1, 2)
-            ))
+            (l.email ILIKE '%@%')
+            OR (l.phone IS NOT NULL AND l.phone != '')
+            OR (l.whatsapp IS NOT NULL AND l.whatsapp != '')
+            OR (l.website IS NOT NULL AND l.website != '')
+            OR (l.metadata->'website_form'->>'hasForm' = 'true')
           )
         ORDER BY l.created_at DESC
       `);
@@ -432,48 +595,29 @@ export class AiCommandService {
         result = {
           actionExecuted: 'shoot_all_outreach',
           success: true,
-          summary: 'All leads in your CRM have either completed their sequences, have no contact channels (email/form), or are already up to date. No pending outreach touches needed.',
+          summary: 'All leads in your CRM have either completed their sequences, are suppressed, or are already up to date. No pending outreach touches needed.',
           itemsProcessed: 0,
           timestamp,
         };
       } else {
-        const results = [];
-        let initialCount = 0;
-        let followup1Count = 0;
-        let followup2Count = 0;
-
-        for (const lead of allLeadsRes.rows) {
-          try {
-            const dispatch = await stageOutreachService.sendNextStageToLead(lead.id);
-            results.push(dispatch);
-            if (dispatch.success) {
-              if (dispatch.stage === 'initial') initialCount++;
-              else if (dispatch.stage === 'followup_1') followup1Count++;
-              else if (dispatch.stage === 'followup_2') followup2Count++;
-            }
-          } catch (err) {
-            console.error(`[AiCommandService] Error shooting stage for lead ${lead.id}:`, err);
-          }
-        }
-
-        const formCount = results.filter((r) => r.websiteFormSubmission && r.websiteFormSubmission.success).length;
-        const emailCount = results.filter((r) => r.success && r.email).length;
-        const skippedCount = results.filter((r) => r.skipped).length;
+        const leadIds = allLeadsRes.rows.map((r) => r.id);
+        const bulkRes = await stageOutreachService.sendBulkNextStage(leadIds);
 
         result = {
           actionExecuted: 'shoot_all_outreach',
           success: true,
-          summary: `Successfully executed mass outreach to ALL ${results.length} eligible lead(s) (${initialCount} Initial, ${followup1Count} Follow-up 1, ${followup2Count} Follow-up 2). Dispatched ${emailCount} email(s) via Gmail SMTP and submitted to ${formCount} website contact form(s) in parallel.${skippedCount > 0 ? ` (${skippedCount} completed or skipped)` : ''}`,
-          itemsProcessed: results.length,
+          summary: `Successfully executed 1-Click Omni-Channel Outreach to ${bulkRes.sentCount} eligible lead(s) (${bulkRes.breakdown.initial} Initial, ${bulkRes.breakdown.followup_1} Follow-up 1, ${bulkRes.breakdown.followup_2} Follow-up 2). Dispatched ${bulkRes.channelsSummary.emailsSent} email(s) via Gmail SMTP, submitted to ${bulkRes.channelsSummary.formsSubmitted} website form(s), and processed ${bulkRes.channelsSummary.whatsappDispatched} WhatsApp touch(es).${bulkRes.skippedCount > 0 ? ` (${bulkRes.skippedCount} completed/skipped)` : ''}`,
+          itemsProcessed: bulkRes.sentCount,
           details: {
             totalEligible: allLeadsRes.rows.length,
-            initialSent: initialCount,
-            followup1Sent: followup1Count,
-            followup2Sent: followup2Count,
-            websiteFormsSubmitted: formCount,
-            emailsSent: emailCount,
-            skipped: skippedCount,
-            dispatchedLeads: results.slice(0, 50),
+            initialSent: bulkRes.breakdown.initial,
+            followup1Sent: bulkRes.breakdown.followup_1,
+            followup2Sent: bulkRes.breakdown.followup_2,
+            websiteFormsSubmitted: bulkRes.channelsSummary.formsSubmitted,
+            emailsSent: bulkRes.channelsSummary.emailsSent,
+            whatsappDispatched: bulkRes.channelsSummary.whatsappDispatched,
+            skipped: bulkRes.skippedCount,
+            dispatchedLeads: bulkRes.results.slice(0, 50),
           },
           timestamp,
         };
@@ -489,21 +633,14 @@ export class AiCommandService {
       text.includes('follow-up') ||
       text.includes('follow up')
     ) {
-      // Find leads with 1 or 2 sent emails awaiting next touch (NO LIMIT)
       const eligibleLeadsRes = await query<{ id: string; business_name: string; email: string }>(`
         SELECT l.id, l.business_name, l.email
         FROM leads l
         WHERE l.deleted_at IS NULL
           AND l.consent_status != 'unsubscribed'
           AND l.consent_status != 'opted_out'
-          AND l.id IN (
-            SELECT c.lead_id
-            FROM conversations c
-            JOIN messages m ON m.conversation_id = c.id
-            WHERE m.direction = 'outbound' AND m.channel = 'email'
-            GROUP BY c.lead_id
-            HAVING COUNT(m.id) IN (1, 2)
-          )
+          AND l.consent_status != 'replied'
+          AND l.outreach_stage IN ('followup_1', 'followup_2')
       `);
 
       if (eligibleLeadsRes.rows.length === 0) {
@@ -515,27 +652,51 @@ export class AiCommandService {
           timestamp,
         };
       } else {
-        const results = [];
-        for (const lead of eligibleLeadsRes.rows) {
-          try {
-            const dispatch = await stageOutreachService.sendNextStageToLead(lead.id);
-            results.push(dispatch);
-          } catch (err) {
-            console.error(`[AiCommandService] Error shooting stage for lead ${lead.id}:`, err);
-          }
-        }
-
-        const formCount = results.filter((r) => r.websiteFormSubmission && r.websiteFormSubmission.success).length;
+        const leadIds = eligibleLeadsRes.rows.map((r) => r.id);
+        const bulkRes = await stageOutreachService.sendBulkNextStage(leadIds);
 
         result = {
           actionExecuted: 'shoot_due_followups',
           success: true,
-          summary: `Successfully dispatched stage-aware follow-ups to ALL ${results.length} lead(s). Dispatched via Gmail SMTP and submitted to ${formCount} website contact form(s) in parallel.`,
-          itemsProcessed: results.length,
-          details: { dispatchedLeads: results },
+          summary: `Successfully dispatched stage-aware follow-ups to ALL ${bulkRes.sentCount} lead(s) (${bulkRes.channelsSummary.emailsSent} Emails, ${bulkRes.channelsSummary.formsSubmitted} Website Forms, ${bulkRes.channelsSummary.whatsappDispatched} WhatsApp touches).`,
+          itemsProcessed: bulkRes.sentCount,
+          details: {
+            totalEligible: eligibleLeadsRes.rows.length,
+            emailsSent: bulkRes.channelsSummary.emailsSent,
+            formsSubmitted: bulkRes.channelsSummary.formsSubmitted,
+            whatsappDispatched: bulkRes.channelsSummary.whatsappDispatched,
+            dispatchedLeads: bulkRes.results,
+          },
           timestamp,
         };
       }
+    }
+
+    // 1.B ACTION: Reset Completed Sequences for Re-engagement
+    else if (
+      explicitAction === 'reset_completed_sequences' ||
+      text.includes('reset sequence') ||
+      text.includes('restart sequence') ||
+      text.includes('re-engage completed') ||
+      text.includes('reset leads')
+    ) {
+      const resetRes = await query<{ id: string }>(`
+        UPDATE leads
+        SET outreach_stage = 'initial',
+            updated_at = NOW()
+        WHERE deleted_at IS NULL
+          AND consent_status NOT IN ('unsubscribed', 'opted_out')
+          AND outreach_stage = 'completed'
+        RETURNING id
+      `);
+
+      result = {
+        actionExecuted: 'reset_completed_sequences',
+        success: true,
+        summary: `Successfully reset outreach sequences for ${resetRes.rows.length} lead(s) back to Initial stage. They are now eligible for fresh 1-Click outreach across Email, Contact Form, and WhatsApp!`,
+        itemsProcessed: resetRes.rows.length,
+        timestamp,
+      };
     }
 
     // 2. ACTION: Scan Website Contact Forms
@@ -555,39 +716,45 @@ export class AiCommandService {
           AND website NOT LIKE '%google.com/maps%'
           AND website NOT LIKE '%maps.google.com%'
           AND (metadata->'website_form') IS NULL
-        LIMIT 25
       `);
 
       if (unscannedRes.rows.length === 0) {
         result = {
           actionExecuted: 'scan_website_forms',
           success: true,
-          summary: 'All valid corporate websites have already been crawled and saved to PostgreSQL.',
+          summary: 'All corporate websites have already been crawled and contact forms recorded in PostgreSQL.',
           itemsProcessed: 0,
           timestamp,
         };
       } else {
-        const scanResults = [];
-        for (const lead of unscannedRes.rows) {
+        const scanPromises = unscannedRes.rows.map(async (lead) => {
           try {
-            const scan = await websiteFormService.detectAndSaveFormForLead(lead.id);
-            scanResults.push({
+            const scan = await Promise.race([
+              websiteFormService.detectAndSaveFormForLead(lead.id),
+              new Promise<any>((r) => setTimeout(() => r(null), 5000)),
+            ]);
+            return {
               businessName: lead.business_name,
               website: lead.website,
-              hasForm: scan.hasForm,
-              formUrl: scan.formDetails?.formUrl,
-            });
-          } catch (err) {
-            console.error(`[AiCommandService] Form crawl error for ${lead.id}:`, err);
+              hasForm: scan?.detection?.hasForm ?? false,
+              formUrl: scan?.detection?.formUrl,
+            };
+          } catch {
+            return {
+              businessName: lead.business_name,
+              website: lead.website,
+              hasForm: false,
+            };
           }
-        }
+        });
 
+        const scanResults = await Promise.all(scanPromises);
         const detected = scanResults.filter((r) => r.hasForm).length;
 
         result = {
           actionExecuted: 'scan_website_forms',
           success: true,
-          summary: `Scanned ${scanResults.length} business website(s). Found and recorded ${detected} ready contact form(s) for Dual-Trigger outreach.`,
+          summary: `Scanned ${scanResults.length} business website(s) in parallel. Found and recorded ${detected} ready contact form(s) for Dual-Trigger outreach.`,
           itemsProcessed: scanResults.length,
           details: { scans: scanResults },
           timestamp,
@@ -613,7 +780,7 @@ export class AiCommandService {
             OR metadata->'google_profile' IS NULL
             OR (metadata->'google_profile'->>'userVerified') IS NULL
           )
-        LIMIT 20
+        LIMIT 10
       `);
 
       if (gmbLeads.rows.length === 0) {
@@ -625,25 +792,33 @@ export class AiCommandService {
           timestamp,
         };
       } else {
-        const syncResults = [];
-        for (const lead of gmbLeads.rows) {
+        const syncPromises = gmbLeads.rows.map(async (lead) => {
           try {
-            const synced = await googleEnrichmentService.syncFromGoogleMaps(lead.id);
-            syncResults.push({
-              businessName: lead.business_name,
-              rating: synced.metadata?.google_profile?.rating,
-              reviewsCount: synced.metadata?.google_profile?.reviewsCount,
-              address: synced.metadata?.google_profile?.address,
-            });
+            const synced = await Promise.race([
+              googleEnrichmentService.syncFromGoogleMaps(lead.id),
+              new Promise<any>((r) => setTimeout(() => r(null), 4000)),
+            ]);
+            if (synced) {
+              return {
+                businessName: lead.business_name,
+                rating: synced.metadata?.google_profile?.rating,
+                reviewsCount: synced.metadata?.google_profile?.reviewsCount,
+                address: synced.metadata?.google_profile?.address,
+              };
+            }
           } catch (err) {
             console.error(`[AiCommandService] GMB sync error for ${lead.id}:`, err);
           }
-        }
+          return null;
+        });
+
+        const syncResultsRaw = await Promise.all(syncPromises);
+        const syncResults = syncResultsRaw.filter(Boolean);
 
         result = {
           actionExecuted: 'sync_gmb_data',
           success: true,
-          summary: `Synchronized ${syncResults.length} Google Business Profile(s) directly from Google Maps via Headless CDP scraper. Star ratings and review counts saved.`,
+          summary: `Synchronized ${syncResults.length} Google Business Profile(s) directly from Google Maps in parallel. Star ratings and review counts saved.`,
           itemsProcessed: syncResults.length,
           details: { syncs: syncResults },
           timestamp,
@@ -743,7 +918,35 @@ Here is your Executive Growth Blueprint right now:
       };
     }
 
-    // 6. Conversational / Custom Query using Ollama
+    // 6. ACTION: Scrape Lead Locations (Gradual Lead Scraper)
+    else if (
+      explicitAction === 'scrape_lead_locations' ||
+      text.includes('scrape location') ||
+      text.includes('find location') ||
+      text.includes('identify location') ||
+      text.includes('lead scrapper') ||
+      text.includes('lead scraper') ||
+      (text.includes('location') && (text.includes('scrape') || text.includes('find') || text.includes('check') || text.includes('update') || text.includes('where')))
+    ) {
+      const startResult = await leadScraperService.startGradualLocationScrape({
+        overwriteIdentified: false,
+        delayMs: 1200,
+      });
+
+      result = {
+        actionExecuted: 'scrape_lead_locations',
+        success: true,
+        summary: `Lead Scraper initiated: Running gradual location scraper in background for ${startResult.total} lead(s). Inspecting email domains, website addresses, and area codes. Leads not found will be set to '(Not identified)'.`,
+        itemsProcessed: startResult.total,
+        details: {
+          totalQueued: startResult.total,
+          status: leadScraperService.getStatus(),
+        },
+        timestamp,
+      };
+    }
+
+    // 7. Conversational / Custom Query using Ollama
     else {
       try {
         const prompt = `

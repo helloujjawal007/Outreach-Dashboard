@@ -30,9 +30,22 @@ import type {
   CommandExecutionResult,
   AiCommandHistoryItem,
   AiCommandHistoryResponse,
+  ScraperProgressStatus,
 } from '@/types';
 
 const API_BASE = '/api';
+
+export function cleanSiteUrl(url?: string | null): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (/google\.com\/maps|maps\.google\.com|goo\.gl\/maps|google\.com\/search/i.test(trimmed)) {
+    return '';
+  }
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://') && trimmed.includes('.')) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -76,6 +89,7 @@ export interface BackendLead {
   deleted_at?: string | null;
   days_remaining?: number;
   notes?: string;
+  location?: string;
   status?: 'active' | 'inactive' | 'paused' | 'churned' | 'manual_review';
   manual_review_reason?: string;
   manual_review_at?: string;
@@ -101,6 +115,7 @@ export interface BackendClient {
   facebook: string;
   whatsapp: string;
   website?: string;
+  location?: string;
   country?: string;
   status: 'active' | 'paused' | 'churned';
   contract_value: number;
@@ -273,7 +288,8 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     whatsappDecisionReason: b.whatsapp_decision_reason || '',
     detectedChannels: b.detected_channels || [],
     googleProfile: b.metadata?.google_profile || b.google_profile || undefined,
-    website: b.website || b.metadata?.google_profile?.website || '',
+    website: cleanSiteUrl(b.website || b.metadata?.google_profile?.website || ''),
+    location: b.location || b.metadata?.location || '',
     country: b.country || '',
     metadata: b.metadata || {},
   };
@@ -290,7 +306,8 @@ export function mapBackendClientToLead(c: BackendClient): Lead {
     instagram: c.instagram || '',
     facebook: c.facebook || '',
     whatsapp: c.whatsapp || '',
-    website: c.website || '',
+    website: cleanSiteUrl(c.website || (c as any).metadata?.google_profile?.website || ''),
+    location: c.location || (c as any).metadata?.location || '',
     country: c.country || '',
     consentStatus: 'replied',
     entityType: 'client',
@@ -549,6 +566,62 @@ export const api = {
     intervalHours: number;
   }> {
     return request('/leads/sync-gmb-status');
+  },
+
+  // Lead Scraper (Gradual Location Scraping)
+  async scrapeLeadLocations(options?: {
+    batchSize?: number;
+    delayMs?: number;
+    overwriteIdentified?: boolean;
+    leadIds?: string[];
+  }): Promise<{ success: boolean; total: number; message: string }> {
+    return request('/leads/scrape-locations', {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
+    });
+  },
+
+  async getScrapeLocationsStatus(): Promise<{ success: boolean; status: ScraperProgressStatus }> {
+    return request('/leads/scrape-locations/status');
+  },
+
+  async stopScrapeLocations(): Promise<{ success: boolean; message: string }> {
+    return request('/leads/scrape-locations/stop', {
+      method: 'POST',
+    });
+  },
+
+  async scrapeSingleLeadLocation(leadId: string): Promise<{
+    success: boolean;
+    lead: Lead;
+    scraped: {
+      location: string;
+      identified: boolean;
+      country?: string;
+      siteUrl?: string;
+      source: string;
+      details?: string;
+    };
+  }> {
+    const data = await request<{
+      success: boolean;
+      lead: BackendLead;
+      scraped: {
+        location: string;
+        identified: boolean;
+        country?: string;
+        siteUrl?: string;
+        source: string;
+        details?: string;
+      };
+    }>(`/leads/${leadId}/scrape-location`, {
+      method: 'POST',
+    });
+    return {
+      success: data.success,
+      lead: mapBackendLeadToLead(data.lead),
+      scraped: data.scraped,
+    };
   },
 
   async deleteClient(id: string): Promise<void> {

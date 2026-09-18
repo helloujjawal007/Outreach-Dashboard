@@ -33,6 +33,7 @@ export interface Lead {
   whatsapp: string;
   linkedin?: string;
   website?: string;
+  location?: string;
   country?: string;
   consentStatus: ConsentStatus;
   entityType: LeadEntity;
@@ -64,6 +65,8 @@ export interface Client {
   category: string;
   phone: string;
   email: string;
+  website?: string;
+  location?: string;
   instagram: string;
   facebook: string;
   whatsapp: string;
@@ -74,6 +77,17 @@ export interface Client {
   notes?: string;
   deleted_at?: string | null;
   metadata?: Record<string, any>;
+}
+
+export interface ScraperProgressStatus {
+  isRunning: boolean;
+  total: number;
+  processed: number;
+  identifiedCount: number;
+  unidentifiedCount: number;
+  currentLeadName?: string;
+  lastRunAt: string | null;
+  message?: string;
 }
 
 export interface UploadBatch {

@@ -15,15 +15,34 @@ import {
   Bot,
   Sparkles,
   AlertTriangle,
+  Globe,
+  Trash2,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 
 export type PageId = 'import' | 'builder' | 'crm' | 'health' | 'copilot';
 
+export interface CountryCountItem {
+  country: string;
+  count: number;
+  flag: string;
+}
+
+export interface ChannelCountItem {
+  id: string;
+  label: string;
+  icon: string;
+  count: number;
+}
+
 interface SidebarProps {
   current: PageId;
   activeSubFilter?: CrmSubFilter;
-  onNavigate: (page: PageId, subFilter?: CrmSubFilter) => void;
+  activeCountryFilter?: string;
+  activeChannelFilter?: string;
+  countryCounts?: CountryCountItem[];
+  channelCounts?: ChannelCountItem[];
+  onNavigate: (page: PageId, subFilter?: CrmSubFilter, country?: string, channel?: string) => void;
   onOpenMessages?: () => void;
   onOpenScheduleModal?: () => void;
   counts: {
@@ -32,6 +51,7 @@ interface SidebarProps {
     notAddedLeads: number;
     clients: number;
     manualReview: number;
+    trash?: number;
     queue: number;
     unreadMessages: number;
   };
@@ -40,12 +60,18 @@ interface SidebarProps {
 export function Sidebar({
   current,
   activeSubFilter = 'all',
+  activeCountryFilter = 'all',
+  activeChannelFilter = 'all',
+  countryCounts = [],
+  channelCounts = [],
   onNavigate,
   onOpenMessages,
   onOpenScheduleModal,
   counts,
 }: SidebarProps) {
   const [crmExpanded, setCrmExpanded] = useState(true);
+  const [countriesExpanded, setCountriesExpanded] = useState(true);
+  const [channelsExpanded, setChannelsExpanded] = useState(true);
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -67,7 +93,7 @@ export function Sidebar({
           onClick={() => onNavigate('import')}
           className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
             current === 'import'
-              ? 'bg-brand-50 text-brand-700'
+              ? 'bg-brand-50 text-brand-700 font-semibold'
               : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
           }`}
         >
@@ -75,7 +101,7 @@ export function Sidebar({
             size={18}
             className={current === 'import' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
           />
-          <span className="flex-1 text-left">Lead Import</span>
+          <span>Lead Import</span>
         </button>
 
         {/* 2. Campaign Builder */}
@@ -83,7 +109,7 @@ export function Sidebar({
           onClick={() => onNavigate('builder')}
           className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
             current === 'builder'
-              ? 'bg-brand-50 text-brand-700'
+              ? 'bg-brand-50 text-brand-700 font-semibold'
               : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
           }`}
         >
@@ -91,49 +117,30 @@ export function Sidebar({
             size={18}
             className={current === 'builder' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
           />
-          <span className="flex-1 text-left">Campaign Builder</span>
+          <span>Campaigns</span>
         </button>
 
-        {/* 3. Auto-Shoot & Schedule List (Left Sidebar 1-Click Action) */}
-        <button
-          onClick={() => {
-            if (onOpenScheduleModal) {
-              onOpenScheduleModal();
-            } else {
-              onNavigate('builder');
-            }
-          }}
-          className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold transition-all bg-gradient-to-r from-amber-500/10 via-brand-500/10 to-indigo-500/10 border border-amber-200/80 text-amber-900 hover:from-amber-500/20 hover:to-indigo-500/20 shadow-2xs"
-          title="Auto-Shoot & Schedule multi-channel outreach list"
-        >
-          <Zap size={18} className="text-amber-600 fill-amber-500" />
-          <span className="flex-1 text-left">Auto-Shoot &amp; Schedule</span>
-          <span className="rounded-md bg-amber-200/90 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-900 shadow-2xs">
-            AI
-          </span>
-        </button>
-
-        {/* 4. AI Growth Copilot (Chatbox & Suggestions - Directly Below Auto-Shoot) */}
+        {/* 3. AI Copilot */}
         <button
           onClick={() => onNavigate('copilot')}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold transition-all ${
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
             current === 'copilot'
-              ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-sm'
-              : 'bg-gradient-to-r from-indigo-50/90 via-purple-50/50 to-brand-50/50 border border-indigo-200/80 text-indigo-950 hover:border-indigo-300 hover:shadow-2xs'
+              ? 'bg-indigo-50 text-indigo-700 font-semibold'
+              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
           }`}
-          title="AI Command Center & Live Business Growth Engine"
         >
-          <div className={`flex h-6 w-6 items-center justify-center rounded-md ${
-            current === 'copilot' ? 'bg-white/20 text-white' : 'bg-indigo-600 text-white'
-          }`}>
-            <Bot size={15} />
+          <div className="flex items-center gap-3">
+            <Bot
+              size={18}
+              className={current === 'copilot' ? 'text-indigo-600' : 'text-ink-300 group-hover:text-ink-500'}
+            />
+            <div className="flex items-center gap-1.5">
+              <span>AI Copilot</span>
+              <Sparkles size={13} className="text-amber-500 animate-spin-slow" />
+            </div>
           </div>
-          <span className="flex-1 text-left">AI Growth Copilot</span>
-          <span className={`flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-extrabold ${
-            current === 'copilot' ? 'bg-white/20 text-white' : 'bg-indigo-200/90 text-indigo-950'
-          }`}>
-            <Sparkles size={10} className="text-amber-500 fill-amber-500" />
-            AI
+          <span className="rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-2xs">
+            PRO
           </span>
         </button>
 
@@ -141,12 +148,12 @@ export function Sidebar({
         <div className="pt-1">
           <div
             className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all cursor-pointer ${
-              current === 'crm' && activeSubFilter === 'all'
+              current === 'crm' && activeSubFilter === 'all' && activeCountryFilter === 'all'
                 ? 'bg-brand-50 text-brand-700'
                 : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
             }`}
             onClick={() => {
-              onNavigate('crm', 'all');
+              onNavigate('crm', 'all', 'all');
               setCrmExpanded(true);
             }}
           >
@@ -179,7 +186,7 @@ export function Sidebar({
             <div className="ml-5 mt-1 space-y-0.5 border-l-2 border-slate-100 pl-3">
               {/* Added Leads */}
               <button
-                onClick={() => onNavigate('crm', 'lead_added')}
+                onClick={() => onNavigate('crm', 'lead_added', activeCountryFilter)}
                 className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
                   current === 'crm' && activeSubFilter === 'lead_added'
                     ? 'bg-emerald-50 text-emerald-800 font-bold'
@@ -197,7 +204,7 @@ export function Sidebar({
 
               {/* Not Added Leads */}
               <button
-                onClick={() => onNavigate('crm', 'lead_not_added')}
+                onClick={() => onNavigate('crm', 'lead_not_added', activeCountryFilter)}
                 className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
                   current === 'crm' && activeSubFilter === 'lead_not_added'
                     ? 'bg-amber-50 text-amber-800 font-bold'
@@ -215,7 +222,7 @@ export function Sidebar({
 
               {/* Clients */}
               <button
-                onClick={() => onNavigate('crm', 'client')}
+                onClick={() => onNavigate('crm', 'client', activeCountryFilter)}
                 className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
                   current === 'crm' && activeSubFilter === 'client'
                     ? 'bg-brand-50 text-brand-800 font-bold'
@@ -233,7 +240,7 @@ export function Sidebar({
 
               {/* Manual Checking (Bounces & Anonymous) */}
               <button
-                onClick={() => onNavigate('crm', 'manual_review')}
+                onClick={() => onNavigate('crm', 'manual_review', activeCountryFilter)}
                 className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
                   current === 'crm' && activeSubFilter === 'manual_review'
                     ? 'bg-rose-50 text-rose-800 font-bold'
@@ -254,6 +261,169 @@ export function Sidebar({
                   </span>
                 )}
               </button>
+
+              {/* Trash Bin (28-day Soft Retention) */}
+              <button
+                onClick={() => onNavigate('crm', 'trash', 'all')}
+                className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
+                  current === 'crm' && activeSubFilter === 'trash'
+                    ? 'bg-rose-50 text-rose-800 font-bold'
+                    : 'text-ink-500 hover:bg-slate-50 hover:text-ink-800'
+                }`}
+                title="Deleted leads preserved for 28 days"
+              >
+                <div className="flex items-center gap-2">
+                  <Trash2 size={13} className={counts.trash && counts.trash > 0 ? 'text-rose-600' : 'text-slate-400'} />
+                  <span>Trash Bin (28d)</span>
+                </div>
+                {counts.trash && counts.trash > 0 ? (
+                  <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700">
+                    {counts.trash}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-600">
+                    0
+                  </span>
+                )}
+              </button>
+
+              {/* Country Sub-filter list: only countries whose leads are listed */}
+              {countryCounts.length > 0 && (
+                <div className="pt-2">
+                  <div
+                    className="flex items-center justify-between px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-400 cursor-pointer hover:text-ink-600 select-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCountriesExpanded(!countriesExpanded);
+                    }}
+                    title="Toggle Country Filters"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Globe size={11} className="text-brand-500" />
+                      <span>By Country</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.2 text-[9px] font-bold text-ink-500">
+                        {countryCounts.length}
+                      </span>
+                      {countriesExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                    </div>
+                  </div>
+
+                  {countriesExpanded && (
+                    <div className="space-y-0.5 mt-0.5">
+                      {countryCounts.map(({ country, count, flag }) => {
+                        const isCountryActive =
+                          current === 'crm' &&
+                          activeCountryFilter.toLowerCase() === country.toLowerCase();
+                        return (
+                          <button
+                            key={country}
+                            onClick={() =>
+                              onNavigate(
+                                'crm',
+                                activeSubFilter === 'trash' || activeSubFilter === 'manual_review'
+                                  ? 'all'
+                                  : activeSubFilter,
+                                isCountryActive ? 'all' : country
+                              )
+                            }
+                            className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                              isCountryActive
+                                ? 'bg-indigo-50 text-indigo-900 font-bold ring-1 ring-indigo-300 shadow-2xs'
+                                : 'text-ink-500 hover:bg-slate-50 hover:text-ink-800'
+                            }`}
+                            title={`Filter leads located in ${country} (${count} leads)`}
+                          >
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="text-xs">{flag}</span>
+                              <span className="truncate">{country}</span>
+                            </div>
+                            <span
+                              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                                isCountryActive
+                                  ? 'bg-indigo-200 text-indigo-950'
+                                  : 'bg-slate-100 text-ink-600'
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Channel Sub-filter list: available outreach channels with lead counts */}
+              {channelCounts && channelCounts.length > 0 && (
+                <div className="pt-2">
+                  <div
+                    className="flex items-center justify-between px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-400 cursor-pointer hover:text-ink-600 select-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setChannelsExpanded(!channelsExpanded);
+                    }}
+                    title="Toggle Channel Filters"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Zap size={11} className="text-amber-500" />
+                      <span>By Channel</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.2 text-[9px] font-bold text-ink-500">
+                        {channelCounts.length}
+                      </span>
+                      {channelsExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                    </div>
+                  </div>
+
+                  {channelsExpanded && (
+                    <div className="space-y-0.5 mt-0.5">
+                      {channelCounts.map(({ id, label, icon, count }) => {
+                        const isChannelActive =
+                          current === 'crm' && activeChannelFilter === id;
+                        return (
+                          <button
+                            key={id}
+                            onClick={() =>
+                              onNavigate(
+                                'crm',
+                                activeSubFilter === 'trash' || activeSubFilter === 'manual_review'
+                                  ? 'all'
+                                  : activeSubFilter,
+                                activeCountryFilter,
+                                isChannelActive ? 'all' : id
+                              )
+                            }
+                            className={`flex w-full items-center justify-between rounded-md px-2 py-1 text-xs font-medium transition-all ${
+                              isChannelActive
+                                ? 'bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-300 shadow-2xs'
+                                : 'text-ink-500 hover:bg-slate-50 hover:text-ink-800'
+                            }`}
+                            title={`Filter leads with ${label} (${count} leads)`}
+                          >
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="text-xs">{icon}</span>
+                              <span className="truncate">{label}</span>
+                            </div>
+                            <span
+                              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                                isChannelActive
+                                  ? 'bg-amber-200 text-amber-950'
+                                  : 'bg-slate-100 text-ink-600'
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

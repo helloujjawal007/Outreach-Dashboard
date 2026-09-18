@@ -102,15 +102,15 @@ export class EmailSchedulerService {
     }
 
     const lead = leadRes.rows[0];
-    let recipientEmail = (lead.email || '').trim();
-    let recipientPhone = (lead.whatsapp || lead.phone || '').trim();
-    let recipientHandle = (lead.facebook || lead.instagram || '').trim();
+    const recipientEmail = (lead.email || '').trim();
+    const recipientPhone = (lead.whatsapp || lead.phone || '').trim();
+    const recipientHandle = (lead.facebook || lead.instagram || '').trim();
     let subject = params.subject?.trim() || '';
     let body = params.body?.trim() || '';
 
     // If body not provided, generate personalized message via AI copywriter
     if (!body) {
-      const generated = aiResearchWriterService.generateTailoredMessage(
+      const generated = await aiResearchWriterService.researchAndWrite(
         {
           businessName: lead.business_name,
           category: lead.category,
@@ -552,7 +552,14 @@ export class EmailSchedulerService {
     } | null = null;
 
     if (params.leadId) {
-      const res = await query(
+      const res = await query<{
+        id: string;
+        business_name: string;
+        primary_contact_name?: string;
+        email?: string;
+        category?: string;
+        notes?: string;
+      }>(
         `SELECT id, business_name, COALESCE(metadata->>'primary_contact_name', metadata->>'contact_name', '') AS primary_contact_name, email, category, notes FROM leads WHERE id = $1`,
         [params.leadId]
       );
@@ -560,7 +567,14 @@ export class EmailSchedulerService {
         sampleContact = { ...res.rows[0], entity_type: 'lead' };
       }
     } else if (params.listId) {
-      const res = await query(
+      const res = await query<{
+        id: string;
+        business_name: string;
+        primary_contact_name?: string;
+        email?: string;
+        category?: string;
+        notes?: string;
+      }>(
         `SELECT l.id, l.business_name, COALESCE(l.metadata->>'primary_contact_name', l.metadata->>'contact_name', '') AS primary_contact_name, l.email, l.category, l.notes
          FROM lead_list_memberships m
          JOIN leads l ON l.id = m.lead_id

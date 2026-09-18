@@ -93,7 +93,7 @@ export class LinkedInPublisherService {
       throw new Error(`LinkedIn OAuth userinfo failed: ${profileRes.status} ${profileRes.statusText}`);
     }
 
-    const profileData = await profileRes.json();
+    const profileData = (await profileRes.json()) as { sub?: string; [key: string]: any };
     const sub = profileData.sub;
     if (!sub) {
       throw new Error('Could not determine LinkedIn user URN sub from token');
@@ -419,7 +419,7 @@ export class LinkedInPublisherService {
 
 class CDPClient {
   private id = 1;
-  private callbacks = new Map<number, { resolve: Function; reject: Function }>();
+  private callbacks = new Map<number, { resolve: (value: any) => void; reject: (reason?: any) => void }>();
 
   constructor(private ws: WebSocket) {
     this.ws.onmessage = (event: any) => {

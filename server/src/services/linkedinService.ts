@@ -642,7 +642,7 @@ ${selectedCta}
     const scheduledFor = params.scheduledFor ? new Date(params.scheduledFor).toISOString() : null;
     const tags = params.tags || [];
     const aiGenerated = params.aiGenerated ?? true;
-    let publishedAt = requestedStatus === 'published' ? new Date().toISOString() : null;
+    const publishedAt = requestedStatus === 'published' ? new Date().toISOString() : null;
 
     const account = await this.getAccountCredentials();
     let finalStatus: 'draft' | 'scheduled' | 'published' | 'ready_to_share' = requestedStatus;
@@ -934,13 +934,14 @@ Post content:
 "${postSnippet}"`;
 
     try {
-      const comment = await ollamaService.generate({
-        prompt: `${systemPrompt}\n\n${userPrompt}`,
+      const result = await ollamaService.generateCompletion({
+        system: systemPrompt,
+        prompt: userPrompt,
         temperature: 0.7,
       });
 
-      if (comment && comment.trim().length > 20) {
-        return comment.trim().replace(/^["']|["']$/g, '');
+      if (result.response && result.response.trim().length > 20) {
+        return result.response.trim().replace(/^["']|["']$/g, '');
       }
     } catch {
       // fallback

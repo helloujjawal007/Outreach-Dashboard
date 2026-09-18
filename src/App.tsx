@@ -10,19 +10,23 @@ import { InboundEmailPopup } from '@/components/InboundEmailPopup';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import type { CrmSubFilter } from '@/types';
+import { getCountryFlag } from '@/pages/CrmPage';
 import { MessageSquare, RefreshCw, Layers } from 'lucide-react';
 
 function App() {
   const [page, setPage] = useState<PageId>('import');
   const [crmSubFilter, setCrmSubFilter] = useState<CrmSubFilter>('all');
+  const [crmCountryFilter, setCrmCountryFilter] = useState<string>('all');
+  const [crmChannelFilter, setCrmChannelFilter] = useState<string>('all');
   const [isMessagesModalOpen, setIsMessagesModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [autoOpenContact, setAutoOpenContact] = useState<{ id: string; entityType: 'lead' | 'client' } | null>(null);
   const store = useStore();
 
   const counts = useMemo(() => {
-    const leadEntities = store.leads.filter((l) => l.entityType === 'lead');
-    const clientEntities = store.leads.filter((l) => l.entityType === 'client');
+    const activeLeads = store.leads.filter((l) => !l.deletedAt);
+    const leadEntities = activeLeads.filter((l) => l.entityType === 'lead');
+    const clientEntities = activeLeads.filter((l) => l.entityType === 'client');
     const addedLeads = leadEntities.filter((l) => Boolean(l.lists && l.lists.length > 0) && l.status !== 'manual_review');
     const notAddedLeads = leadEntities.filter((l) => (!l.lists || l.lists.length === 0) && l.status !== 'manual_review');
     const manualReviewLeads = leadEntities.filter((l) => l.status === 'manual_review');
@@ -34,15 +38,76 @@ function App() {
       notAddedLeads: notAddedLeads.length,
       clients: clientEntities.length,
       manualReview: manualReviewLeads.length,
+      trash: store.trashLeads.length,
       queue: store.queue.length,
       unreadMessages,
     };
-  }, [store.leads, store.queue, store.inboundReplies]);
+  }, [store.leads, store.trashLeads, store.queue, store.inboundReplies]);
 
-  const handleNavigate = (newPage: PageId, subFilter?: CrmSubFilter) => {
+  // Derive countries dynamically whose leads are listed in the database
+  const countryCounts = useMemo(() => {
+    const countryMap = new Map<string, number>();
+    store.leads.forEach((l) => {
+      if (l.deletedAt) return;
+      const c =
+        (l.country || '').trim() ||
+        (l.location && l.location.toLowerCase().includes('not identified')
+          ? '(Not identified)'
+          : 'Other');
+      countryMap.set(c, (countryMap.get(c) || 0) + 1);
+    });
+
+    return Array.from(countryMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([country, count]) => ({
+        country,
+        count,
+        flag: getCountryFlag(country),
+      }))
+      .sort((a, b) => b.count - a.count || a.country.localeCompare(b.country));
+  }, [store.leads]);
+
+  // Derive channels dynamically whose leads are listed in the database
+  const channelCounts = useMemo(() => {
+    const active = store.leads.filter((l) => !l.deletedAt);
+    const whatsapp = active.filter(
+      (l) => (l.whatsapp && l.whatsapp.trim().length > 0) || (l.phone && l.phone.trim().length > 0)
+    ).length;
+    const whatsappMobile = active.filter((l) => l.whatsappEligible === true).length;
+    const websiteForm = active.filter(
+      (l) => Boolean(l.website || l.googleProfile?.website)
+    ).length;
+    const email = active.filter((l) => Boolean(l.email && l.email.includes('@'))).length;
+    const instagram = active.filter((l) => Boolean(l.instagram && l.instagram.trim())).length;
+    const facebook = active.filter((l) => Boolean(l.facebook && l.facebook.trim())).length;
+    const linkedin = active.filter((l) => Boolean(l.linkedin && l.linkedin.trim())).length;
+
+    return [
+      { id: 'whatsapp', label: 'WhatsApp', icon: '💬', count: whatsapp },
+      { id: 'whatsapp_mobile', label: 'WhatsApp Mobile', icon: '📱', count: whatsappMobile },
+      { id: 'website_form', label: 'Website Form', icon: '🌐', count: websiteForm },
+      { id: 'email', label: 'Email', icon: '✉️', count: email },
+      { id: 'instagram', label: 'Instagram', icon: '📸', count: instagram },
+      { id: 'facebook', label: 'Facebook', icon: '👥', count: facebook },
+      { id: 'linkedin', label: 'LinkedIn', icon: '💼', count: linkedin },
+    ].filter((c) => c.count > 0);
+  }, [store.leads]);
+
+  const handleNavigate = (
+    newPage: PageId,
+    subFilter?: CrmSubFilter,
+    country?: string,
+    channel?: string
+  ) => {
     setPage(newPage);
-    if (subFilter) {
+    if (subFilter !== undefined) {
       setCrmSubFilter(subFilter);
+    }
+    if (country !== undefined) {
+      setCrmCountryFilter(country);
+    }
+    if (channel !== undefined) {
+      setCrmChannelFilter(channel);
     }
   };
 
@@ -56,7 +121,11 @@ function App() {
     import: 'Lead Import & Ingestion',
     builder: 'Multi-Channel Campaign Builder',
     crm:
-      crmSubFilter === 'lead_added'
+      crmCountryFilter !== 'all'
+        ? `Leads & Clients • ${getCountryFlag(crmCountryFilter)} ${crmCountryFilter}`
+        : crmChannelFilter !== 'all'
+        ? `Leads & Clients • Channel: ${crmChannelFilter}`
+        : crmSubFilter === 'lead_added'
         ? 'Leads & Clients • Added Leads'
         : crmSubFilter === 'lead_not_added'
         ? 'Leads & Clients • Not Added (Unassigned)'
@@ -78,6 +147,10 @@ function App() {
       <Sidebar
         current={page}
         activeSubFilter={crmSubFilter}
+        activeCountryFilter={crmCountryFilter}
+        activeChannelFilter={crmChannelFilter}
+        countryCounts={countryCounts}
+        channelCounts={channelCounts}
         onNavigate={handleNavigate}
         onOpenMessages={() => setIsMessagesModalOpen(true)}
         onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
@@ -148,6 +221,10 @@ function App() {
                   onClearAutoOpenContact={() => setAutoOpenContact(null)}
                   subFilter={crmSubFilter}
                   onSubFilterChange={setCrmSubFilter}
+                  countryFilter={crmCountryFilter}
+                  onCountryFilterChange={setCrmCountryFilter}
+                  channelFilter={crmChannelFilter as any}
+                  onChannelFilterChange={setCrmChannelFilter as any}
                   onOpenGlobalMessages={() => setIsMessagesModalOpen(true)}
                 />
               )}

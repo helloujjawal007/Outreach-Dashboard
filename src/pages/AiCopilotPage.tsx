@@ -197,8 +197,14 @@ export function AiCopilotPage() {
 
   const quickChips = [
     {
+      label: '🚀 1-Click Master Autopilot',
+      command: 'Execute complete 1-click growth autopilot: scan forms, sync GMB & shoot omni-channel outreach',
+      actionType: 'run_full_autopilot',
+      color: 'border-amber-500 bg-gradient-to-r from-amber-100 via-orange-100 to-amber-200 text-amber-950 hover:from-amber-200 hover:to-orange-200 font-black shadow-sm ring-1 ring-amber-400/60',
+    },
+    {
       label: '⚡ Shoot to All Leads',
-      command: 'Shoot outreach message to all eligible leads in database',
+      command: 'Shoot outreach message to all eligible leads in database across all channels',
       actionType: 'shoot_all_outreach',
       color: 'border-amber-400 bg-amber-100/90 text-amber-950 hover:bg-amber-200 font-extrabold shadow-2xs',
     },
@@ -207,6 +213,12 @@ export function AiCopilotPage() {
       command: 'Shoot follow-up messages to all overdue leads',
       actionType: 'shoot_due_followups',
       color: 'border-amber-200 bg-amber-50/70 text-amber-900 hover:bg-amber-100',
+    },
+    {
+      label: '🔄 Reset Sequences',
+      command: 'Reset completed outreach sequences to Initial stage for re-engagement',
+      actionType: 'reset_completed_sequences',
+      color: 'border-indigo-200 bg-indigo-50/70 text-indigo-900 hover:bg-indigo-100',
     },
     {
       label: '🌐 Scan Website Forms',
@@ -431,6 +443,37 @@ export function AiCopilotPage() {
                       </span>
                     </div>
 
+                    {/* Multi-Channel Touch Breakdown Pills */}
+                    {msg.result.details && (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {typeof (msg.result.details as any).emailsSent === 'number' && (msg.result.details as any).emailsSent > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200 shadow-2xs">
+                            📧 {(msg.result.details as any).emailsSent} Emails Sent
+                          </span>
+                        )}
+                        {typeof (msg.result.details as any).formsSubmitted === 'number' && (msg.result.details as any).formsSubmitted > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200 shadow-2xs">
+                            🌐 {(msg.result.details as any).formsSubmitted} Forms Submitted
+                          </span>
+                        )}
+                        {typeof (msg.result.details as any).whatsappDispatched === 'number' && (msg.result.details as any).whatsappDispatched > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shadow-2xs">
+                            💬 {(msg.result.details as any).whatsappDispatched} WhatsApp Touches
+                          </span>
+                        )}
+                        {typeof (msg.result.details as any).websitesScanned === 'number' && (msg.result.details as any).websitesScanned > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700 border border-violet-200 shadow-2xs">
+                            🔍 {(msg.result.details as any).websitesScanned} Websites Scanned
+                          </span>
+                        )}
+                        {typeof (msg.result.details as any).gmbSynced === 'number' && (msg.result.details as any).gmbSynced > 0 && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-200 shadow-2xs">
+                            📍 {(msg.result.details as any).gmbSynced} GMB Verified
+                          </span>
+                        )}
+                      </div>
+                    )}
+
                     {/* AI Advice Callout */}
                     {msg.result.aiAdvice && msg.result.aiAdvice !== msg.text && (
                       <div className="mt-2 rounded-lg bg-indigo-50/70 border border-indigo-100 p-2.5 text-xs text-indigo-950">
@@ -589,8 +632,10 @@ export function AiCopilotPage() {
               }[item.badgeVariant] || 'bg-slate-50 text-slate-700 border-slate-200';
 
               const icon = {
+                run_full_autopilot: <Zap size={16} className="text-amber-500 fill-amber-400" />,
                 shoot_all_outreach: <Zap size={16} className="text-amber-500 fill-amber-400" />,
                 shoot_due_followups: <Zap size={16} className="text-amber-600" />,
+                reset_completed_sequences: <RefreshCw size={16} className="text-indigo-600" />,
                 scan_website_forms: <Globe size={16} className="text-indigo-600" />,
                 sync_gmb_data: <MapPin size={16} className="text-emerald-600" />,
                 target_ecom_leads: <ShoppingCart size={16} className="text-blue-600" />,

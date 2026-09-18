@@ -38,6 +38,7 @@ import {
   Star,
   MapPin,
   ExternalLink,
+  Compass,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -47,9 +48,9 @@ import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import { ChannelOutreachHub } from '@/components/ChannelOutreachHub';
 import type { Store } from '@/store';
-import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter } from '@/types';
+import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter, ScraperProgressStatus } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
-import { api, type WhatsAppWindowStatus } from '@/services/api';
+import { api, cleanSiteUrl, type WhatsAppWindowStatus } from '@/services/api';
 
 interface Props {
   store: Store;
@@ -57,6 +58,10 @@ interface Props {
   onClearAutoOpenContact?: () => void;
   subFilter?: CrmSubFilter;
   onSubFilterChange?: (subFilter: CrmSubFilter) => void;
+  countryFilter?: string;
+  onCountryFilterChange?: (country: string) => void;
+  channelFilter?: ChannelFilter;
+  onChannelFilterChange?: (channel: ChannelFilter) => void;
   onOpenGlobalMessages?: () => void;
 }
 
@@ -91,10 +96,33 @@ export function CrmPage({
   onClearAutoOpenContact,
   subFilter,
   onSubFilterChange,
+  countryFilter: countryFilterProp,
+  onCountryFilterChange,
+  channelFilter: channelFilterProp,
+  onChannelFilterChange,
   onOpenGlobalMessages,
 }: Props) {
   const [crmViewMode, setCrmViewMode] = useState<'channels' | 'table'>('channels');
   const [entityFilter, setEntityFilter] = useState<EntityTypeFilter>('all');
+  const [internalCountryFilter, setInternalCountryFilter] = useState<string>('all');
+  const countryFilter = countryFilterProp !== undefined ? countryFilterProp : internalCountryFilter;
+  const setCountryFilter = useCallback((c: string) => {
+    setInternalCountryFilter(c);
+    if (onCountryFilterChange) {
+      onCountryFilterChange(c);
+    }
+  }, [onCountryFilterChange]);
+  const [cityFilter, setCityFilter] = useState<string>('all');
+
+  const [internalChannelFilter, setInternalChannelFilter] = useState<ChannelFilter>('all');
+  const channelFilter = channelFilterProp !== undefined ? channelFilterProp : internalChannelFilter;
+  const setChannelFilter = useCallback((ch: ChannelFilter) => {
+    setInternalChannelFilter(ch);
+    if (onChannelFilterChange) {
+      onChannelFilterChange(ch);
+    }
+  }, [onChannelFilterChange]);
+  const [channelSubFilter, setChannelSubFilter] = useState<string>('all');
 
   // Synchronize subFilter prop from Sidebar or App
   useEffect(() => {
@@ -111,12 +139,27 @@ export function CrmPage({
     }
   }, [subFilter]);
 
+  // Synchronize countryFilter prop from Sidebar or App
+  useEffect(() => {
+    if (countryFilterProp && countryFilterProp !== 'all') {
+      setCrmViewMode('table');
+      setCityFilter('all');
+    }
+  }, [countryFilterProp]);
+
+  // Synchronize channelFilter prop from Sidebar or App
+  useEffect(() => {
+    if (channelFilterProp && channelFilterProp !== 'all') {
+      setCrmViewMode('table');
+      setChannelSubFilter('all');
+    }
+  }, [channelFilterProp]);
+
   const [isInboundInboxOpen, setIsInboundInboxOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [stageFilter, setStageFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [consentFilter, setConsentFilter] = useState<ConsentStatus | 'all'>('all');
-  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
   const [selectedListFilter, setSelectedListFilter] = useState<string>('all');
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -285,6 +328,104 @@ export function CrmPage({
     }
   }, [store, selectedLead]);
 
+  // Lead Location Scraper state & handlers
+  const [isScrapingLocations, setIsScrapingLocations] = useState(false);
+  const [scraperStatus, setScraperStatus] = useState<ScraperProgressStatus | null>(null);
+  const [isScrapingSingle, setIsScrapingSingle] = useState(false);
+
+  // Polling for gradual location scrape status
+  useEffect(() => {
+    let interval: any = null;
+
+    if (isScrapingLocations) {
+      interval = setInterval(async () => {
+        try {
+          const res = await store.getScrapeLocationsStatus();
+          if (res?.status) {
+            setScraperStatus(res.status);
+            if (!res.status.isRunning) {
+              setIsScrapingLocations(false);
+              await store.fetchLeads();
+              setBulkActionSuccess(
+                `Lead Scraper finished: ${res.status.identifiedCount} identified, ${res.status.unidentifiedCount} marked as (Not identified).`
+              );
+              setTimeout(() => setBulkActionSuccess(null), 6000);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching scrape status:', err);
+        }
+      }, 2000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isScrapingLocations, store]);
+
+  // Initial check if scraper is already running in background
+  useEffect(() => {
+    store
+      .getScrapeLocationsStatus()
+      .then((res) => {
+        if (res?.status?.isRunning) {
+          setIsScrapingLocations(true);
+          setScraperStatus(res.status);
+        }
+      })
+      .catch(() => {});
+  }, [store]);
+
+  const handleStartLocationScrape = useCallback(async () => {
+    try {
+      setIsScrapingLocations(true);
+      const res = await store.scrapeLeadLocations({ overwriteIdentified: false, delayMs: 1200 });
+      setBulkActionSuccess(res.message || `Started gradual location scraper for ${res.total} leads.`);
+      setTimeout(() => setBulkActionSuccess(null), 4000);
+    } catch (err: any) {
+      setIsScrapingLocations(false);
+      setBulkActionSuccess(err?.message || 'Failed to start location scraper');
+      setTimeout(() => setBulkActionSuccess(null), 5000);
+    }
+  }, [store]);
+
+  const handleStopLocationScrape = useCallback(async () => {
+    try {
+      await store.stopScrapeLocations();
+      setIsScrapingLocations(false);
+      setBulkActionSuccess('Stopped location scraping.');
+      await store.fetchLeads();
+      setTimeout(() => setBulkActionSuccess(null), 4000);
+    } catch (err: any) {
+      setBulkActionSuccess(err?.message || 'Failed to stop location scraper');
+      setTimeout(() => setBulkActionSuccess(null), 4000);
+    }
+  }, [store]);
+
+  const handleScrapeSingleLocation = useCallback(
+    async (leadId: string) => {
+      try {
+        setIsScrapingSingle(true);
+        const res = await store.scrapeSingleLeadLocation(leadId);
+        if (selectedLead && selectedLead.id === leadId) {
+          setSelectedLead((prev) => (prev ? { ...prev, location: res.scraped.location } : prev));
+        }
+        setBulkActionSuccess(
+          res.scraped.identified
+            ? `Identified location for ${res.lead.businessName}: ${res.scraped.location}`
+            : `Could not identify location for ${res.lead.businessName}. Marked as (Not identified).`
+        );
+        setTimeout(() => setBulkActionSuccess(null), 5000);
+      } catch (err: any) {
+        setBulkActionSuccess(err?.message || 'Failed to scrape location');
+        setTimeout(() => setBulkActionSuccess(null), 5000);
+      } finally {
+        setIsScrapingSingle(false);
+      }
+    },
+    [selectedLead, store]
+  );
+
   const manualReviewLeads = useMemo(
     () => store.leads.filter((l) => l.status === 'manual_review'),
     [store.leads]
@@ -292,11 +433,11 @@ export function CrmPage({
   const manualReviewCount = manualReviewLeads.length;
 
   const leadEntities = useMemo(
-    () => store.leads.filter((l) => l.entityType === 'lead' && l.status !== 'manual_review'),
+    () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'lead' && l.status !== 'manual_review'),
     [store.leads]
   );
   const clientEntities = useMemo(
-    () => store.leads.filter((l) => l.entityType === 'client' && l.status !== 'manual_review'),
+    () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'client' && l.status !== 'manual_review'),
     [store.leads]
   );
   const addedLeadsCount = useMemo(
@@ -315,46 +456,218 @@ export function CrmPage({
     return store.leads.filter((l) => replyEntityIds.has(l.id)).length;
   }, [store.inboundReplies, store.leads]);
 
-  // Unique categories derived dynamically from database
+  // Unique categories derived dynamically from database with counts
   const uniqueCategories = useMemo(() => {
-    const cats = new Set<string>();
+    const catMap = new Map<string, number>();
     store.leads.forEach((l) => {
-      if (l.category && l.category.trim()) cats.add(l.category.trim());
+      if (l.deletedAt) return;
+      if (l.category && l.category.trim()) {
+        const cat = l.category.trim();
+        catMap.set(cat, (catMap.get(cat) || 0) + 1);
+      }
     });
-    return Array.from(cats).sort();
+    return Array.from(catMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+  }, [store.leads]);
+
+  // Unique countries derived dynamically from database whose leads are listed
+  const uniqueCountries = useMemo(() => {
+    const countryMap = new Map<string, number>();
+    store.leads.forEach((l) => {
+      if (l.deletedAt) return;
+      const c =
+        (l.country || '').trim() ||
+        (l.location && l.location.toLowerCase().includes('not identified')
+          ? '(Not identified)'
+          : 'Other');
+      countryMap.set(c, (countryMap.get(c) || 0) + 1);
+    });
+    return Array.from(countryMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([country, count]) => ({
+        country,
+        count,
+        flag: getCountryFlag(country),
+      }))
+      .sort((a, b) => b.count - a.count || a.country.localeCompare(b.country));
+  }, [store.leads]);
+
+  // Unique cities / regions derived dynamically for the selected country whose leads are listed
+  const uniqueCitiesInCountry = useMemo(() => {
+    const cityMap = new Map<string, number>();
+    store.leads.forEach((l) => {
+      if (l.deletedAt) return;
+      if (countryFilter !== 'all') {
+        const leadCountry = (l.country || '').trim() || 'Other';
+        if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) return;
+      }
+      if (l.location && l.location.trim() && !l.location.toLowerCase().includes('not identified')) {
+        const loc = l.location.trim();
+        cityMap.set(loc, (cityMap.get(loc) || 0) + 1);
+      }
+    });
+    return Array.from(cityMap.entries())
+      .filter(([_, count]) => count > 0)
+      .map(([city, count]) => ({ city, count }))
+      .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city));
+  }, [store.leads, countryFilter]);
+
+  // Dynamic channel counts for active leads
+  const channelCounts = useMemo(() => {
+    const active = store.leads.filter((l) => !l.deletedAt);
+    const whatsapp = active.filter(
+      (l) => (l.whatsapp && l.whatsapp.trim().length > 0) || (l.phone && l.phone.trim().length > 0)
+    ).length;
+    const whatsappMobile = active.filter((l) => l.whatsappEligible === true).length;
+    const websiteForm = active.filter(
+      (l) => Boolean(l.website || l.googleProfile?.website)
+    ).length;
+    const email = active.filter((l) => Boolean(l.email && l.email.includes('@'))).length;
+    const instagram = active.filter((l) => Boolean(l.instagram && l.instagram.trim())).length;
+    const facebook = active.filter((l) => Boolean(l.facebook && l.facebook.trim())).length;
+    const linkedin = active.filter((l) => Boolean(l.linkedin && l.linkedin.trim())).length;
+
+    return {
+      all: active.length,
+      whatsapp,
+      whatsappMobile,
+      websiteForm,
+      email,
+      instagram,
+      facebook,
+      linkedin,
+    };
+  }, [store.leads]);
+
+  // Dynamic counts for status filter options
+  const statusCounts = useMemo(() => {
+    const activeLeads = store.leads.filter((l) => !l.deletedAt);
+    const active = activeLeads.filter((l) => (l.status || 'active') === 'active').length;
+    const inactive = activeLeads.filter((l) => (l.status || 'active') === 'inactive' || l.status === 'paused').length;
+    return {
+      all: activeLeads.length,
+      active,
+      inactive,
+    };
+  }, [store.leads]);
+
+  // Dynamic counts for stage filter options
+  const stageCounts = useMemo(() => {
+    const activeLeads = store.leads.filter((l) => !l.deletedAt);
+    const cold = activeLeads.filter((l) => !l.stage || l.stage === 'cold').length;
+    const initial = activeLeads.filter((l) => l.stage === 'initial').length;
+    const followup_1 = activeLeads.filter((l) => l.stage === 'followup_1').length;
+    const followup_2 = activeLeads.filter((l) => l.stage === 'followup_2').length;
+    const replied = activeLeads.filter((l) => l.consentStatus === 'replied').length;
+    return {
+      all: activeLeads.length,
+      cold,
+      initial,
+      followup_1,
+      followup_2,
+      replied,
+    };
+  }, [store.leads]);
+
+  // Dynamic counts for consent filter options
+  const consentCounts = useMemo(() => {
+    const activeLeads = store.leads.filter((l) => !l.deletedAt);
+    const none = activeLeads.filter((l) => !l.consentStatus || l.consentStatus === 'none').length;
+    const replied = activeLeads.filter((l) => l.consentStatus === 'replied').length;
+    const opted_out = activeLeads.filter((l) => l.consentStatus === 'opted_out').length;
+    return {
+      all: activeLeads.length,
+      none,
+      replied,
+      opted_out,
+    };
+  }, [store.leads]);
+
+  // Dynamic counts for lists filter options
+  const listCounts = useMemo(() => {
+    const activeLeads = store.leads.filter((l) => !l.deletedAt);
+    const unassigned = activeLeads.filter((l) => !l.lists || l.lists.length === 0).length;
+    const map = new Map<string, number>();
+    activeLeads.forEach((l) => {
+      l.lists?.forEach((lst) => {
+        map.set(lst.id, (map.get(lst.id) || 0) + 1);
+      });
+    });
+    return { unassigned, map, all: activeLeads.length };
   }, [store.leads]);
 
   const hasActiveFilters = useMemo(() => {
     return (
+      countryFilter !== 'all' ||
+      cityFilter !== 'all' ||
       categoryFilter !== 'all' ||
       stageFilter !== 'all' ||
       statusFilter !== 'all' ||
       consentFilter !== 'all' ||
       channelFilter !== 'all' ||
+      channelSubFilter !== 'all' ||
       selectedListFilter !== 'all' ||
       selectedBatchFilter !== 'all' ||
       search.trim().length > 0
     );
-  }, [categoryFilter, stageFilter, statusFilter, consentFilter, channelFilter, selectedListFilter, selectedBatchFilter, search]);
+  }, [countryFilter, cityFilter, categoryFilter, stageFilter, statusFilter, consentFilter, channelFilter, channelSubFilter, selectedListFilter, selectedBatchFilter, search]);
 
   const handleClearAllFilters = useCallback(() => {
+    setCountryFilter('all');
+    setCityFilter('all');
     setCategoryFilter('all');
     setStageFilter('all');
     setStatusFilter('all');
     setConsentFilter('all');
     setChannelFilter('all');
+    setChannelSubFilter('all');
     setSelectedListFilter('all');
     setSelectedBatchFilter('all');
     setSearch('');
-  }, []);
+  }, [setCountryFilter, setChannelFilter]);
+
+  const matchesLeadChannel = useCallback(
+    (l: Lead, channel: ChannelFilter, subFilter: string = 'all'): boolean => {
+      if (channel === 'all') return true;
+      if (channel === 'email') return Boolean(l.email && l.email.includes('@'));
+      if (channel === 'whatsapp') {
+        const hasWa = Boolean((l.whatsapp && l.whatsapp.trim().length > 0) || (l.phone && l.phone.trim().length > 0));
+        if (!hasWa) return false;
+        if (subFilter === 'mobile_ready') return l.whatsappEligible === true;
+        if (subFilter === 'ineligible') return l.whatsappEligible !== true;
+        return true;
+      }
+      if (channel === 'whatsapp_mobile') return l.whatsappEligible === true;
+      if (channel === 'website_form') return Boolean(l.website || l.googleProfile?.website);
+      if (channel === 'facebook') return Boolean(l.facebook && l.facebook.trim());
+      if (channel === 'instagram') return Boolean(l.instagram && l.instagram.trim());
+      if (channel === 'linkedin') return Boolean(l.linkedin && l.linkedin.trim());
+      return true;
+    },
+    []
+  );
 
   const filtered = useMemo(() => {
     if (entityFilter === 'trash') {
       return store.trashLeads.filter((l) => {
-        if (channelFilter !== 'all') {
-          if (channelFilter === 'email' && !l.email) return false;
-          if (channelFilter === 'whatsapp' && !l.whatsapp) return false;
-          if (channelFilter === 'instagram' && !l.instagram && !l.facebook) return false;
+        if (countryFilter !== 'all') {
+          const leadCountry = (l.country || '').trim() || 'Other';
+          if (countryFilter === '(Not identified)') {
+            if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+              return false;
+            }
+          } else if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (cityFilter !== 'all') {
+          const leadLoc = (l.location || '').toLowerCase();
+          if (!leadLoc.includes(cityFilter.toLowerCase())) return false;
+        }
+        if (channelFilter !== 'all' && !matchesLeadChannel(l, channelFilter, channelSubFilter)) {
+          return false;
         }
         if (search.trim()) {
           const q = search.toLowerCase();
@@ -362,7 +675,9 @@ export function CrmPage({
             !l.businessName.toLowerCase().includes(q) &&
             !l.category.toLowerCase().includes(q) &&
             !l.email.toLowerCase().includes(q) &&
-            !l.phone.toLowerCase().includes(q)
+            !l.phone.toLowerCase().includes(q) &&
+            !(l.location && l.location.toLowerCase().includes(q)) &&
+            !(l.country && l.country.toLowerCase().includes(q))
           )
             return false;
         }
@@ -375,17 +690,30 @@ export function CrmPage({
         store.inboundReplies.map((r) => r.client_id || r.lead_id).filter(Boolean)
       );
       return store.leads.filter((l) => {
+        if (l.deletedAt) return false;
         const hasReply = replyEntityIds.has(l.id);
         if (!hasReply) return false;
+        if (countryFilter !== 'all') {
+          const leadCountry = (l.country || '').trim() || 'Other';
+          if (countryFilter === '(Not identified)') {
+            if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+              return false;
+            }
+          } else if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (cityFilter !== 'all') {
+          const leadLoc = (l.location || '').toLowerCase();
+          if (!leadLoc.includes(cityFilter.toLowerCase())) return false;
+        }
         if (statusFilter !== 'all') {
           const s = l.status || 'active';
           if (statusFilter === 'active' && s !== 'active') return false;
           if (statusFilter === 'inactive' && s !== 'inactive' && s !== 'paused') return false;
         }
-        if (channelFilter !== 'all') {
-          if (channelFilter === 'email' && !l.email) return false;
-          if (channelFilter === 'whatsapp' && !l.whatsapp) return false;
-          if (channelFilter === 'instagram' && !l.instagram && !l.facebook) return false;
+        if (channelFilter !== 'all' && !matchesLeadChannel(l, channelFilter, channelSubFilter)) {
+          return false;
         }
         if (search.trim()) {
           const q = search.toLowerCase();
@@ -393,7 +721,9 @@ export function CrmPage({
             !l.businessName.toLowerCase().includes(q) &&
             !l.category.toLowerCase().includes(q) &&
             !l.email.toLowerCase().includes(q) &&
-            !l.phone.toLowerCase().includes(q)
+            !l.phone.toLowerCase().includes(q) &&
+            !(l.location && l.location.toLowerCase().includes(q)) &&
+            !(l.country && l.country.toLowerCase().includes(q))
           )
             return false;
         }
@@ -403,11 +733,24 @@ export function CrmPage({
 
     if (entityFilter === 'manual_review') {
       return store.leads.filter((l) => {
+        if (l.deletedAt) return false;
         if (l.status !== 'manual_review') return false;
-        if (channelFilter !== 'all') {
-          if (channelFilter === 'email' && !l.email) return false;
-          if (channelFilter === 'whatsapp' && !l.whatsapp && !l.phone) return false;
-          if (channelFilter === 'instagram' && !l.instagram && !l.facebook) return false;
+        if (countryFilter !== 'all') {
+          const leadCountry = (l.country || '').trim() || 'Other';
+          if (countryFilter === '(Not identified)') {
+            if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+              return false;
+            }
+          } else if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (cityFilter !== 'all') {
+          const leadLoc = (l.location || '').toLowerCase();
+          if (!leadLoc.includes(cityFilter.toLowerCase())) return false;
+        }
+        if (channelFilter !== 'all' && !matchesLeadChannel(l, channelFilter, channelSubFilter)) {
+          return false;
         }
         if (search.trim()) {
           const q = search.toLowerCase();
@@ -416,6 +759,8 @@ export function CrmPage({
             !l.category.toLowerCase().includes(q) &&
             !l.email.toLowerCase().includes(q) &&
             !l.phone.toLowerCase().includes(q) &&
+            !(l.location && l.location.toLowerCase().includes(q)) &&
+            !(l.country && l.country.toLowerCase().includes(q)) &&
             !(l.manualReviewReason && l.manualReviewReason.toLowerCase().includes(q))
           )
             return false;
@@ -425,6 +770,8 @@ export function CrmPage({
     }
 
     return store.leads.filter((l) => {
+      // Exclude soft-deleted leads from active CRM views
+      if (l.deletedAt) return false;
       // Exclude contacts quarantined in manual review from regular CRM views
       if (l.status === 'manual_review') return false;
 
@@ -437,6 +784,23 @@ export function CrmPage({
       } else if (entityFilter !== 'all' && l.entityType !== entityFilter) {
         return false;
       }
+
+      // Country & City/Region Filters
+      if (countryFilter !== 'all') {
+        const leadCountry = (l.country || '').trim() || 'Other';
+        if (countryFilter === '(Not identified)') {
+          if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+            return false;
+          }
+        } else if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) {
+          return false;
+        }
+      }
+      if (cityFilter !== 'all') {
+        const leadLoc = (l.location || '').toLowerCase();
+        if (!leadLoc.includes(cityFilter.toLowerCase())) return false;
+      }
+
       if (categoryFilter !== 'all' && l.category !== categoryFilter) return false;
       if (statusFilter !== 'all') {
         const s = l.status || 'active';
@@ -459,14 +823,8 @@ export function CrmPage({
           if (!l.lists || !l.lists.some((lst) => lst.id === selectedListFilter)) return false;
         }
       }
-      if (channelFilter !== 'all') {
-        if (channelFilter === 'email' && !l.email) return false;
-        if (channelFilter === 'whatsapp' && !l.whatsapp && !l.phone) return false;
-        if (channelFilter === 'whatsapp_mobile' && l.whatsappEligible !== true) return false;
-        if (channelFilter === 'website_form' && !l.website && !l.googleProfile?.website) return false;
-        if (channelFilter === 'facebook' && (!l.facebook || !l.facebook.trim())) return false;
-        if (channelFilter === 'instagram' && (!l.instagram || !l.instagram.trim())) return false;
-        if (channelFilter === 'linkedin' && (!l.linkedin || !l.linkedin.trim())) return false;
+      if (channelFilter !== 'all' && !matchesLeadChannel(l, channelFilter, channelSubFilter)) {
+        return false;
       }
       if (search.trim()) {
         const q = search.toLowerCase();
@@ -475,6 +833,7 @@ export function CrmPage({
           !l.category.toLowerCase().includes(q) &&
           !l.email.toLowerCase().includes(q) &&
           !l.phone.toLowerCase().includes(q) &&
+          !(l.location && l.location.toLowerCase().includes(q)) &&
           !(l.website && l.website.toLowerCase().includes(q)) &&
           !(l.country && l.country.toLowerCase().includes(q)) &&
           !(l.facebook && l.facebook.toLowerCase().includes(q)) &&
@@ -485,7 +844,7 @@ export function CrmPage({
       }
       return true;
     });
-  }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, categoryFilter, stageFilter, statusFilter, consentFilter, selectedBatchFilter, selectedListFilter, channelFilter, search]);
+  }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, countryFilter, cityFilter, categoryFilter, stageFilter, statusFilter, consentFilter, selectedBatchFilter, selectedListFilter, channelFilter, channelSubFilter, search, matchesLeadChannel]);
 
   const leadConversations = useMemo(() => {
     if (!selectedLead) return [];
@@ -1471,6 +1830,34 @@ export function CrmPage({
               <RefreshCw size={14} className={isSyncingInbox ? 'animate-spin text-brand-600' : 'text-brand-600'} />
               <span>{isSyncingInbox ? 'Checking Gmail...' : 'Sync Email Replies'}</span>
             </button>
+
+            {/* Lead Scraper (Gradual Location Identification) */}
+            <button
+              type="button"
+              onClick={isScrapingLocations ? handleStopLocationScrape : handleStartLocationScrape}
+              disabled={isScrapingSingle}
+              className={`btn-secondary text-xs flex items-center gap-1.5 shadow-sm transition border-indigo-300 ${
+                isScrapingLocations
+                  ? 'text-indigo-900 bg-indigo-100 hover:bg-indigo-200 ring-2 ring-indigo-400'
+                  : 'text-indigo-800 bg-indigo-50/90 hover:bg-indigo-100'
+              }`}
+              title="Inspects lead email domains, website addresses and phone area codes to find city/region or mark as (Not identified)."
+            >
+              <Compass
+                size={14}
+                className={isScrapingLocations ? 'animate-spin text-indigo-600' : 'text-indigo-600'}
+              />
+              <span className="font-semibold">
+                {isScrapingLocations
+                  ? `Scraping Locations (${scraperStatus?.processed ?? 0}/${scraperStatus?.total ?? '...'})`
+                  : '📍 Scrape Locations'}
+              </span>
+              {isScrapingLocations && (
+                <span className="ml-1 px-1.5 py-0.2 text-[10px] font-bold rounded bg-rose-200 text-rose-800 hover:bg-rose-300">
+                  Stop
+                </span>
+              )}
+            </button>
           </div>
         }
       />
@@ -1508,9 +1895,10 @@ export function CrmPage({
 
       {crmViewMode === 'channels' ? (
         <ChannelOutreachHub
-          leads={store.leads}
+          leads={store.leads.filter((l) => !l.deletedAt)}
           lists={store.lists}
           onRefreshLeads={store.refreshAll}
+          onDeleteLead={store.deleteLead}
           onBulkDeleteLeads={store.bulkDeleteLeads}
           onAddLeadsToList={store.addLeadsToList}
           onCreateList={store.createList}
@@ -1523,7 +1911,7 @@ export function CrmPage({
           <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm flex-wrap">
           {[
-            { key: 'all', label: `All Records (${store.leads.filter((l) => l.status !== 'manual_review').length})` },
+            { key: 'all', label: `All Records (${store.leads.filter((l) => !l.deletedAt && l.status !== 'manual_review').length})` },
             {
               key: 'lead_added',
               label: `Added Leads (${addedLeadsCount})`,
@@ -1594,18 +1982,65 @@ export function CrmPage({
 
         <div className="flex flex-wrap items-center gap-2">
           <Filter size={14} className="text-ink-300" />
-          
+
+          {/* Country Filter - Shows only countries whose leads are listed */}
+          <select
+            value={countryFilter}
+            onChange={(e) => {
+              setCountryFilter(e.target.value);
+              setCityFilter('all');
+            }}
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              countryFilter !== 'all'
+                ? 'ring-2 ring-brand-500 bg-brand-50/50 text-brand-900 font-bold border-brand-300'
+                : ''
+            }`}
+            title="Filter leads by country (showing only countries with leads)"
+          >
+            <option value="all">🌍 All Countries ({uniqueCountries.length})</option>
+            {uniqueCountries.map(({ country, count, flag }) => (
+              <option key={country} value={country}>
+                {flag} {country} ({count})
+              </option>
+            ))}
+          </select>
+
+          {/* City / Location Sub-Filter - Populated with cities in selected country whose leads are listed */}
+          {countryFilter !== 'all' && uniqueCitiesInCountry.length > 0 && (
+            <select
+              value={cityFilter}
+              onChange={(e) => setCityFilter(e.target.value)}
+              className={`input py-1.5 text-xs w-auto font-medium transition-all animate-fadeIn ${
+                cityFilter !== 'all'
+                  ? 'ring-2 ring-indigo-500 bg-indigo-50/50 text-indigo-900 font-bold border-indigo-300'
+                  : ''
+              }`}
+              title={`Sub-filter by city/region in ${countryFilter}`}
+            >
+              <option value="all">📍 All Cities ({countryFilter} - {uniqueCitiesInCountry.length})</option>
+              {uniqueCitiesInCountry.map(({ city, count }) => (
+                <option key={city} value={city}>
+                  {city} ({count})
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Category Filter */}
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="input py-1.5 text-xs w-auto font-medium"
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              categoryFilter !== 'all'
+                ? 'ring-2 ring-purple-500 bg-purple-50/50 text-purple-900 font-bold border-purple-300'
+                : ''
+            }`}
             title="Filter by business industry or category"
           >
             <option value="all">All Categories ({uniqueCategories.length})</option>
-            {uniqueCategories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
+            {uniqueCategories.map(({ category, count }) => (
+              <option key={category} value={category}>
+                {category} ({count})
               </option>
             ))}
           </select>
@@ -1614,56 +2049,95 @@ export function CrmPage({
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="input py-1.5 text-xs w-auto font-medium"
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              statusFilter !== 'all'
+                ? 'ring-2 ring-slate-500 bg-slate-50/50 text-slate-900 font-bold border-slate-300'
+                : ''
+            }`}
           >
-            <option value="all">All Status</option>
-            <option value="active">Active Only</option>
-            <option value="inactive">Inactive Only</option>
+            <option value="all">All Status ({statusCounts.all})</option>
+            <option value="active">Active Only ({statusCounts.active})</option>
+            <option value="inactive">Inactive Only ({statusCounts.inactive})</option>
           </select>
 
           {/* Stage Filter */}
           <select
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value)}
-            className="input py-1.5 text-xs w-auto font-medium"
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              stageFilter !== 'all'
+                ? 'ring-2 ring-amber-500 bg-amber-50/50 text-amber-900 font-bold border-amber-300'
+                : ''
+            }`}
             title="Filter by outreach sequence stage"
           >
-            <option value="all">All Stages</option>
-            <option value="cold">❄️ Cold (Uncontacted)</option>
-            <option value="initial">📤 Initial Outreach</option>
-            <option value="followup_1">🔄 Follow-up 1</option>
-            <option value="followup_2">⚡ Follow-up 2</option>
-            <option value="replied">💬 Replied</option>
+            <option value="all">All Stages ({stageCounts.all})</option>
+            <option value="cold">❄️ Cold (Uncontacted) ({stageCounts.cold})</option>
+            <option value="initial">📤 Initial Outreach ({stageCounts.initial})</option>
+            <option value="followup_1">🔄 Follow-up 1 ({stageCounts.followup_1})</option>
+            <option value="followup_2">⚡ Follow-up 2 ({stageCounts.followup_2})</option>
+            <option value="replied">💬 Replied ({stageCounts.replied})</option>
           </select>
 
           {/* Consent / Response Filter */}
           <select
             value={consentFilter}
             onChange={(e) => setConsentFilter(e.target.value as ConsentStatus | 'all')}
-            className="input py-1.5 text-xs w-auto font-medium"
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              consentFilter !== 'all'
+                ? 'ring-2 ring-emerald-500 bg-emerald-50/50 text-emerald-900 font-bold border-emerald-300'
+                : ''
+            }`}
           >
-            <option value="all">All Consent</option>
-            <option value="none">No response</option>
-            <option value="replied">Replied</option>
-            <option value="opted_out">Opted out</option>
+            <option value="all">All Consent ({consentCounts.all})</option>
+            <option value="none">No response ({consentCounts.none})</option>
+            <option value="replied">Replied ({consentCounts.replied})</option>
+            <option value="opted_out">Opted out ({consentCounts.opted_out})</option>
           </select>
 
           {/* Expanded Channels Filter */}
           <select
             value={channelFilter}
-            onChange={(e) => setChannelFilter(e.target.value as ChannelFilter)}
-            className="input py-1.5 text-xs w-auto font-medium"
+            onChange={(e) => {
+              setChannelFilter(e.target.value as ChannelFilter);
+              setChannelSubFilter('all');
+            }}
+            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
+              channelFilter !== 'all'
+                ? 'ring-2 ring-brand-500 bg-brand-50/50 text-brand-900 font-bold border-brand-300'
+                : ''
+            }`}
             title="Filter by available contact channel"
           >
-            <option value="all">All Channels</option>
-            <option value="email">✉️ Email</option>
-            <option value="whatsapp">💬 WhatsApp (All)</option>
-            <option value="whatsapp_mobile">📱 WhatsApp (Mobile Ready)</option>
-            <option value="website_form">🌐 Website Form</option>
-            <option value="facebook">👥 Facebook</option>
-            <option value="instagram">📸 Instagram</option>
-            <option value="linkedin">💼 LinkedIn</option>
+            <option value="all">⚡ All Channels ({channelCounts.all})</option>
+            <option value="whatsapp">💬 WhatsApp ({channelCounts.whatsapp})</option>
+            <option value="whatsapp_mobile">📱 WhatsApp (Mobile Ready) ({channelCounts.whatsappMobile})</option>
+            <option value="website_form">🌐 Website Form ({channelCounts.websiteForm})</option>
+            <option value="email">✉️ Email ({channelCounts.email})</option>
+            <option value="instagram">📸 Instagram ({channelCounts.instagram})</option>
+            <option value="facebook">👥 Facebook ({channelCounts.facebook})</option>
+            <option value="linkedin">💼 LinkedIn ({channelCounts.linkedin})</option>
           </select>
+
+          {/* Channel Sub-Filter for WhatsApp */}
+          {(channelFilter === 'whatsapp' || channelFilter === 'whatsapp_mobile') && (
+            <select
+              value={channelSubFilter}
+              onChange={(e) => setChannelSubFilter(e.target.value)}
+              className={`input py-1.5 text-xs w-auto font-medium transition-all animate-fadeIn ${
+                channelSubFilter !== 'all'
+                  ? 'ring-2 ring-emerald-500 bg-emerald-50/50 text-emerald-900 font-bold border-emerald-300'
+                  : ''
+              }`}
+              title="Sub-filter WhatsApp leads"
+            >
+              <option value="all">💬 All WhatsApp ({channelCounts.whatsapp})</option>
+              <option value="mobile_ready">📱 Mobile Ready Only ({channelCounts.whatsappMobile})</option>
+              {channelCounts.whatsapp - channelCounts.whatsappMobile > 0 && (
+                <option value="ineligible">☎️ Other / Landline ({channelCounts.whatsapp - channelCounts.whatsappMobile})</option>
+              )}
+            </select>
+          )}
 
           {/* Clear Filters Button */}
           {hasActiveFilters && (
@@ -1686,12 +2160,12 @@ export function CrmPage({
               onChange={(e) => handleListFilterChange(e.target.value)}
               className="input py-1.5 text-xs w-auto font-medium"
             >
-              <option value="all">📁 All Contacts</option>
-              <option value="unassigned">📥 Main List (Unassigned)</option>
+              <option value="all">📁 All Contacts ({listCounts.all})</option>
+              <option value="unassigned">📥 Main List (Unassigned) ({listCounts.unassigned})</option>
               {store.lists.length > 0 && <option disabled>──────────</option>}
               {store.lists.map((lst) => (
                 <option key={lst.id} value={lst.id}>
-                  🏷️ {lst.name} ({lst.lead_count})
+                  🏷️ {lst.name} ({listCounts.map.get(lst.id) || lst.lead_count || 0})
                 </option>
               ))}
             </select>
@@ -1771,6 +2245,385 @@ export function CrmPage({
             className="input pl-9 py-1.5 text-xs"
           />
         </div>
+      </div>
+
+      {/* Dynamic Country Sub-Filter Bar - Shows only countries whose leads are listed */}
+      {uniqueCountries.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-2xs mb-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-ink-400 mr-1 flex items-center gap-1">
+              <Globe size={13} className="text-brand-600" />
+              <span>Country:</span>
+            </span>
+
+            <button
+              onClick={() => {
+                setCountryFilter('all');
+                setCityFilter('all');
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                countryFilter === 'all'
+                  ? 'bg-slate-800 text-white shadow-2xs'
+                  : 'bg-slate-50 text-ink-600 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              <span>🌍</span>
+              <span>All Countries</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  countryFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-ink-700'
+                }`}
+              >
+                {store.leads.length}
+              </span>
+            </button>
+
+            {uniqueCountries.map(({ country, count, flag }) => {
+              const isSelected = countryFilter.toLowerCase() === country.toLowerCase();
+              return (
+                <button
+                  key={country}
+                  onClick={() => {
+                    if (isSelected) {
+                      setCountryFilter('all');
+                      setCityFilter('all');
+                    } else {
+                      setCountryFilter(country);
+                      setCityFilter('all');
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                    isSelected
+                      ? 'bg-brand-600 text-white shadow-2xs ring-1 ring-brand-400 font-bold'
+                      : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-brand-50/70 hover:border-brand-300'
+                  }`}
+                  title={`Filter leads in ${country} (${count} leads)`}
+                >
+                  <span className="text-xs">{flag}</span>
+                  <span>{country}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-ink-700'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-Filter: Cities / Regions inside Selected Country */}
+          {countryFilter !== 'all' && uniqueCitiesInCountry.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 ml-auto border-l border-slate-200 pl-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 flex items-center gap-1">
+                <MapPin size={11} />
+                <span>Cities:</span>
+              </span>
+              <button
+                onClick={() => setCityFilter('all')}
+                className={`rounded px-2 py-0.5 text-[11px] font-medium transition-all ${
+                  cityFilter === 'all'
+                    ? 'bg-indigo-600 text-white font-bold'
+                    : 'bg-indigo-50/70 text-indigo-700 hover:bg-indigo-100 border border-indigo-200/60'
+                }`}
+              >
+                All ({uniqueCitiesInCountry.reduce((sum, c) => sum + c.count, 0)})
+              </button>
+              {uniqueCitiesInCountry.map(({ city, count }) => {
+                const isCitySelected = cityFilter.toLowerCase() === city.toLowerCase();
+                return (
+                  <button
+                    key={city}
+                    onClick={() => setCityFilter(isCitySelected ? 'all' : city)}
+                    className={`rounded px-2 py-0.5 text-[11px] font-medium transition-all ${
+                      isCitySelected
+                        ? 'bg-indigo-600 text-white font-bold ring-1 ring-indigo-400 shadow-2xs'
+                        : 'bg-slate-100 text-ink-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    {city} <span className="text-[10px] opacity-75 font-semibold">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Dynamic Channel Quick-Filter Bar with Sub-Filters */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white px-3 py-2 shadow-2xs mb-4">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-ink-400 mr-1 flex items-center gap-1">
+            <Zap size={13} className="text-amber-500" />
+            <span>Channel:</span>
+          </span>
+
+          <button
+            onClick={() => {
+              setChannelFilter('all');
+              setChannelSubFilter('all');
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              channelFilter === 'all'
+                ? 'bg-slate-800 text-white shadow-2xs'
+                : 'bg-slate-50 text-ink-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <span>⚡</span>
+            <span>All Channels</span>
+            <span
+              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                channelFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-ink-700'
+              }`}
+            >
+              {channelCounts.all}
+            </span>
+          </button>
+
+          {/* WhatsApp */}
+          <button
+            onClick={() => {
+              if (channelFilter === 'whatsapp') {
+                setChannelFilter('all');
+                setChannelSubFilter('all');
+              } else {
+                setChannelFilter('whatsapp');
+                setChannelSubFilter('all');
+              }
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              channelFilter === 'whatsapp' || channelFilter === 'whatsapp_mobile'
+                ? 'bg-emerald-600 text-white shadow-2xs ring-1 ring-emerald-400 font-bold'
+                : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-emerald-50/70 hover:border-emerald-300'
+            }`}
+            title={`Filter leads with WhatsApp (${channelCounts.whatsapp} leads)`}
+          >
+            <span className="text-xs">💬</span>
+            <span>WhatsApp</span>
+            <span
+              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                channelFilter === 'whatsapp' || channelFilter === 'whatsapp_mobile'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200 text-ink-700'
+              }`}
+            >
+              {channelCounts.whatsapp}
+            </span>
+          </button>
+
+          {/* Website Form */}
+          <button
+            onClick={() => {
+              if (channelFilter === 'website_form') {
+                setChannelFilter('all');
+                setChannelSubFilter('all');
+              } else {
+                setChannelFilter('website_form');
+                setChannelSubFilter('all');
+              }
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              channelFilter === 'website_form'
+                ? 'bg-blue-600 text-white shadow-2xs ring-1 ring-blue-400 font-bold'
+                : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-blue-50/70 hover:border-blue-300'
+            }`}
+            title={`Filter leads with Website Form (${channelCounts.websiteForm} leads)`}
+          >
+            <span className="text-xs">🌐</span>
+            <span>Website Form</span>
+            <span
+              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                channelFilter === 'website_form'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200 text-ink-700'
+              }`}
+            >
+              {channelCounts.websiteForm}
+            </span>
+          </button>
+
+          {/* Email */}
+          <button
+            onClick={() => {
+              if (channelFilter === 'email') {
+                setChannelFilter('all');
+                setChannelSubFilter('all');
+              } else {
+                setChannelFilter('email');
+                setChannelSubFilter('all');
+              }
+            }}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+              channelFilter === 'email'
+                ? 'bg-brand-600 text-white shadow-2xs ring-1 ring-brand-400 font-bold'
+                : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-brand-50/70 hover:border-brand-300'
+            }`}
+            title={`Filter leads with Email (${channelCounts.email} leads)`}
+          >
+            <span className="text-xs">✉️</span>
+            <span>Email</span>
+            <span
+              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                channelFilter === 'email'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200 text-ink-700'
+              }`}
+            >
+              {channelCounts.email}
+            </span>
+          </button>
+
+          {/* Instagram */}
+          {channelCounts.instagram > 0 && (
+            <button
+              onClick={() => {
+                if (channelFilter === 'instagram') {
+                  setChannelFilter('all');
+                  setChannelSubFilter('all');
+                } else {
+                  setChannelFilter('instagram');
+                  setChannelSubFilter('all');
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                channelFilter === 'instagram'
+                  ? 'bg-pink-600 text-white shadow-2xs ring-1 ring-pink-400 font-bold'
+                  : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-pink-50/70 hover:border-pink-300'
+              }`}
+              title={`Filter leads with Instagram (${channelCounts.instagram} leads)`}
+            >
+              <span className="text-xs">📸</span>
+              <span>Instagram</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  channelFilter === 'instagram'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 text-ink-700'
+                }`}
+              >
+                {channelCounts.instagram}
+              </span>
+            </button>
+          )}
+
+          {/* Facebook */}
+          {channelCounts.facebook > 0 && (
+            <button
+              onClick={() => {
+                if (channelFilter === 'facebook') {
+                  setChannelFilter('all');
+                  setChannelSubFilter('all');
+                } else {
+                  setChannelFilter('facebook');
+                  setChannelSubFilter('all');
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                channelFilter === 'facebook'
+                  ? 'bg-indigo-600 text-white shadow-2xs ring-1 ring-indigo-400 font-bold'
+                  : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-indigo-50/70 hover:border-indigo-300'
+              }`}
+              title={`Filter leads with Facebook (${channelCounts.facebook} leads)`}
+            >
+              <span className="text-xs">👥</span>
+              <span>Facebook</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  channelFilter === 'facebook'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 text-ink-700'
+                }`}
+              >
+                {channelCounts.facebook}
+              </span>
+            </button>
+          )}
+
+          {/* LinkedIn */}
+          {channelCounts.linkedin > 0 && (
+            <button
+              onClick={() => {
+                if (channelFilter === 'linkedin') {
+                  setChannelFilter('all');
+                  setChannelSubFilter('all');
+                } else {
+                  setChannelFilter('linkedin');
+                  setChannelSubFilter('all');
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                channelFilter === 'linkedin'
+                  ? 'bg-sky-700 text-white shadow-2xs ring-1 ring-sky-500 font-bold'
+                  : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-sky-50/70 hover:border-sky-300'
+              }`}
+              title={`Filter leads with LinkedIn (${channelCounts.linkedin} leads)`}
+            >
+              <span className="text-xs">💼</span>
+              <span>LinkedIn</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  channelFilter === 'linkedin'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 text-ink-700'
+                }`}
+              >
+                {channelCounts.linkedin}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* WhatsApp Sub-Filter Pills */}
+        {(channelFilter === 'whatsapp' || channelFilter === 'whatsapp_mobile') && (
+          <div className="flex flex-wrap items-center gap-1.5 ml-auto border-l border-slate-200 pl-3">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1">
+              <Filter size={11} />
+              <span>Sub-filter:</span>
+            </span>
+            <button
+              onClick={() => {
+                setChannelFilter('whatsapp');
+                setChannelSubFilter('all');
+              }}
+              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-all ${
+                channelFilter === 'whatsapp' && channelSubFilter === 'all'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+              }`}
+            >
+              All WhatsApp ({channelCounts.whatsapp})
+            </button>
+            <button
+              onClick={() => {
+                setChannelFilter('whatsapp');
+                setChannelSubFilter('mobile_ready');
+              }}
+              className={`rounded px-2 py-0.5 text-[11px] font-medium transition-all ${
+                channelSubFilter === 'mobile_ready' || channelFilter === 'whatsapp_mobile'
+                  ? 'bg-emerald-600 text-white font-bold'
+                  : 'bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+              }`}
+            >
+              📱 Mobile Ready ({channelCounts.whatsappMobile})
+            </button>
+            {channelCounts.whatsapp - channelCounts.whatsappMobile > 0 && (
+              <button
+                onClick={() => {
+                  setChannelFilter('whatsapp');
+                  setChannelSubFilter('ineligible');
+                }}
+                className={`rounded px-2 py-0.5 text-[11px] font-medium transition-all ${
+                  channelSubFilter === 'ineligible'
+                    ? 'bg-emerald-600 text-white font-bold'
+                    : 'bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100 border border-emerald-200/60'
+                }`}
+              >
+                ☎️ Other ({channelCounts.whatsapp - channelCounts.whatsappMobile})
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Selected Batch Action Banner */}
@@ -2338,6 +3191,24 @@ export function CrmPage({
                         <div>
                           <div className={`font-semibold ${isInactive ? 'text-ink-600' : 'text-ink-900'} flex items-center gap-1.5 flex-wrap`}>
                             <span>{lead.businessName}</span>
+                            {/* Location Badge: Shows resolved location or (Not identified) */}
+                            {lead.location && lead.location !== '(Not identified)' ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                title={`Identified Location: ${lead.location}`}
+                              >
+                                <MapPin size={9} className="text-indigo-500 shrink-0" />
+                                <span>{lead.location}</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200"
+                                title="Location: (Not identified)"
+                              >
+                                <MapPin size={9} className="text-slate-400 shrink-0" />
+                                <span>(Not identified)</span>
+                              </span>
+                            )}
                             {lead.country && (
                               <span
                                 className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
@@ -2363,29 +3234,31 @@ export function CrmPage({
                             )}
                           </div>
                           <div className="text-xs text-ink-400 flex items-center gap-2 flex-wrap mt-0.5">
-                            {(lead.website || lead.googleProfile?.website) && (
-                              <a
-                                href={(lead.website || lead.googleProfile?.website || '').startsWith('http')
-                                  ? (lead.website || lead.googleProfile?.website || '')
-                                  : `https://${lead.website || lead.googleProfile?.website}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline max-w-[170px] truncate bg-blue-50/60 px-1.5 py-0.5 rounded border border-blue-200/80 transition"
-                                title={`Visit Website: ${lead.website || lead.googleProfile?.website}`}
-                              >
-                                <Globe size={11} className="shrink-0 text-blue-500" />
-                                <span className="truncate">{(lead.website || lead.googleProfile?.website || '').replace(/^https?:\/\/(www\.)?/, '')}</span>
-                                <ExternalLink size={9} className="shrink-0 opacity-70" />
-                              </a>
-                            )}
+                            {(() => {
+                              const cleanWeb = cleanSiteUrl(lead.website || lead.googleProfile?.website);
+                              if (!cleanWeb) return null;
+                              return (
+                                <a
+                                  href={cleanWeb}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-800 hover:underline max-w-[170px] truncate bg-blue-50/60 px-1.5 py-0.5 rounded border border-blue-200/80 transition"
+                                  title={`Visit Website: ${cleanWeb}`}
+                                >
+                                  <Globe size={11} className="shrink-0 text-blue-500" />
+                                  <span className="truncate">{cleanWeb.replace(/^https?:\/\/(www\.)?/, '')}</span>
+                                  <ExternalLink size={9} className="shrink-0 opacity-70" />
+                                </a>
+                              );
+                            })()}
                             {lead.email && <span className="truncate max-w-[180px] text-ink-500">{lead.email}</span>}
                             {lead.phone && (
                               <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 text-[10px] font-semibold">
                                 {lead.phone}
                               </span>
                             )}
-                            {!lead.email && !lead.phone && !lead.website && !lead.googleProfile?.website && (
+                            {!lead.email && !lead.phone && !cleanSiteUrl(lead.website || lead.googleProfile?.website) && (
                               <span className="text-ink-300 italic">No contact info</span>
                             )}
                           </div>
@@ -2404,8 +3277,8 @@ export function CrmPage({
                               <MessageCircle size={14} className="text-emerald-500" />
                             </span>
                           )}
-                          {(lead.website || lead.googleProfile?.website) && (
-                            <span title={`Website & Form: ${lead.website || lead.googleProfile?.website}`}>
+                          {cleanSiteUrl(lead.website || lead.googleProfile?.website) && (
+                            <span title={`Website & Form: ${cleanSiteUrl(lead.website || lead.googleProfile?.website)}`}>
                               <Globe size={14} className="text-teal-600" />
                             </span>
                           )}
@@ -2414,7 +3287,7 @@ export function CrmPage({
                               <Instagram size={14} className="text-violet-500" />
                             </span>
                           )}
-                          {!lead.email && !lead.whatsapp && !lead.instagram && !lead.facebook && !lead.website && !lead.googleProfile?.website && (
+                          {!lead.email && !lead.whatsapp && !lead.instagram && !lead.facebook && !cleanSiteUrl(lead.website || lead.googleProfile?.website) && (
                             <span className="text-xs text-ink-300">None</span>
                           )}
                         </div>
@@ -2828,7 +3701,7 @@ export function CrmPage({
                   <span className="text-[11px] font-medium text-ink-400">Direct Endpoints</span>
                 </div>
                 <div className="space-y-2 text-xs">
-                  {/* Website URL */}
+                  {/* Website URL - Always clean site URL, never Google Maps */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-blue-700 font-semibold shrink-0">
                       <Globe size={13} />
@@ -2836,16 +3709,13 @@ export function CrmPage({
                     </div>
                     <div className="text-right min-w-0 flex-1">
                       {(() => {
-                        const isMapsUrl = (u?: string) => !u || /google\.com\/maps|maps\.google\.com/i.test(u);
-                        const rawWeb = selectedLead.website || selectedLead.googleProfile?.website || '';
-                        const realWeb = !isMapsUrl(rawWeb) ? rawWeb : '';
+                        const realWeb = cleanSiteUrl(selectedLead.website || selectedLead.googleProfile?.website);
 
                         if (realWeb) {
-                          const href = realWeb.startsWith('http') ? realWeb : `https://${realWeb}`;
                           return (
                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
                               <a
-                                href={href}
+                                href={realWeb}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 font-mono text-blue-700 hover:text-blue-900 hover:underline font-bold text-[11px] bg-blue-50 px-2 py-0.5 rounded border border-blue-200 transition"
@@ -2860,12 +3730,37 @@ export function CrmPage({
                           );
                         }
 
-                        if (rawWeb && isMapsUrl(rawWeb)) {
-                          return <span className="text-ink-400 italic text-[11px]">No official site on GMB (Maps link)</span>;
-                        }
-
                         return <span className="text-ink-300 italic">No website</span>;
                       })()}
+                    </div>
+                  </div>
+
+                  {/* Lead Location */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-indigo-700 font-semibold shrink-0">
+                      <MapPin size={13} />
+                      <span>Location:</span>
+                    </div>
+                    <div className="text-right min-w-0 flex-1 flex items-center justify-end gap-1.5 flex-wrap">
+                      {selectedLead.location && selectedLead.location !== '(Not identified)' ? (
+                        <span className="font-semibold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 text-[11px]">
+                          {selectedLead.location}
+                        </span>
+                      ) : (
+                        <span className="text-ink-400 italic text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">
+                          (Not identified)
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleScrapeSingleLocation(selectedLead.id)}
+                        disabled={isScrapingSingle}
+                        className="inline-flex items-center gap-1 text-[10px] text-indigo-700 hover:text-indigo-900 bg-indigo-50/80 hover:bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-200 transition font-medium"
+                        title="Scrape corporate email domain, website & area code to find lead location"
+                      >
+                        <Compass size={10} className={isScrapingSingle ? 'animate-spin' : ''} />
+                        <span>{isScrapingSingle ? 'Scraping...' : 'Find Location'}</span>
+                      </button>
                     </div>
                   </div>
 
@@ -3293,9 +4188,9 @@ export function CrmPage({
                   {selectedLead.googleProfile.category && (
                     <div className="rounded-lg bg-amber-50/70 p-2 border border-amber-200/60 text-[11px] text-amber-900 flex items-center justify-between">
                       <span><strong>Category:</strong> {selectedLead.googleProfile.category}</span>
-                      {selectedLead.googleProfile.website && (
+                      {cleanSiteUrl(selectedLead.googleProfile.website) && (
                         <a
-                          href={selectedLead.googleProfile.website}
+                          href={cleanSiteUrl(selectedLead.googleProfile.website)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-700 hover:underline inline-flex items-center gap-1"

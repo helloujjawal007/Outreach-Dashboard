@@ -46,6 +46,8 @@ clientsRouter.delete('/:id', async (req: Request, res: Response) => {
     }
 
     const client = clientRes.rows[0];
+    const allTargetIds = [client.id];
+    if (client.original_lead_id) allTargetIds.push(client.original_lead_id);
 
     // Log in deletion_history
     await query(
@@ -54,14 +56,33 @@ clientsRouter.delete('/:id', async (req: Request, res: Response) => {
       [client.id, client.business_name, client.email, client.phone, JSON.stringify(client)]
     );
 
+    // Cascading deletion: remove all messages, conversations, scheduled_dispatches, send_queue, follow-ups, and memberships
+    await query(
+      `DELETE FROM messages WHERE conversation_id IN (
+         SELECT id FROM conversations WHERE client_id = ANY($1) OR lead_id = ANY($1)
+       )`,
+      [allTargetIds]
+    );
+    await query(
+      `DELETE FROM conversations WHERE client_id = ANY($1) OR lead_id = ANY($1)
+         OR (entity_type = 'client' AND client_id = ANY($1))
+         OR (entity_type = 'lead' AND lead_id = ANY($1))`,
+      [allTargetIds]
+    );
+    await query(`DELETE FROM scheduled_dispatches WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
+    await query(`DELETE FROM send_queue WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
+    await query(`DELETE FROM follow_up_logs WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
+    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
+    await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
+
     // Soft-delete client
     const updatedClient = await query(
       `UPDATE clients 
        SET deleted_at = NOW(), 
            deleted_expires_at = NOW() + INTERVAL '28 days'
-       WHERE id = $1
+       WHERE id = ANY($1)
        RETURNING *`,
-      [id]
+      [allTargetIds]
     );
 
     // Also soft-delete corresponding lead if exists
@@ -83,7 +104,7 @@ clientsRouter.delete('/:id', async (req: Request, res: Response) => {
       );
     }
 
-    res.json({ success: true, client: updatedClient.rows[0], message: 'Client soft-deleted (moved to Trash)' });
+    res.json({ success: true, client: updatedClient.rows[0], message: 'Client soft-deleted (moved to Trash Bin for 28 days)' });
   } catch (error) {
     console.error('[clientsRouter.delete]', error);
     res.status(500).json({ success: false, error: 'Failed to delete client' });

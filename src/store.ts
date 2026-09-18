@@ -554,11 +554,16 @@ export function useStore() {
     return () => clearInterval(timer);
   }, [syncEmailReplies]);
 
-  // Delete a single lead or client (moves to trash for 28 days, removes from leads & clients)
+  // Delete a single lead or client (moves to trash for 28 days, removes from everywhere)
   const deleteLead = useCallback(
     async (id: string) => {
       try {
+        const target = leads.find((l) => l.id === id);
+        // 1. Optimistic removal from active CRM, queue, dispatches, conversations, inbound
         setLeads((prev) => prev.filter((l) => l.id !== id));
+        setQueue((prev) => prev.filter((q) => q.leadId !== id));
+        setDispatches((prev) => prev.filter((d) => d.lead_id !== id && d.client_id !== id));
+        setConversations((prev) => prev.filter((c) => c.leadId !== id));
         setInboundReplies((prev) =>
           prev.filter(
             (m) =>
@@ -568,7 +573,18 @@ export function useStore() {
               (m as any).clientId !== id
           )
         );
-        const target = leads.find((l) => l.id === id);
+
+        // 2. Optimistically move into Trash Bin
+        if (target) {
+          const softDeletedLead: Lead = {
+            ...target,
+            deletedAt: new Date().toISOString(),
+            daysRemaining: 28,
+          };
+          setTrashLeads((prev) => [softDeletedLead, ...prev.filter((t) => t.id !== id)]);
+        }
+
+        // 3. Persist to API
         if (target?.entityType === 'client') {
           await api.deleteClient(id);
         } else {
@@ -601,12 +617,26 @@ export function useStore() {
     [refreshAll]
   );
 
-  // Bulk delete leads/clients (moves to trash for 28 days, removes from leads & clients)
+  // Bulk delete leads/clients (moves to trash for 28 days, removes from everywhere)
   const bulkDeleteLeads = useCallback(
     async (ids: string[]) => {
       try {
         const idSet = new Set(ids);
+        const deletedTargets = leads
+          .filter((l) => idSet.has(l.id))
+          .map((l) => ({
+            ...l,
+            deletedAt: new Date().toISOString(),
+            daysRemaining: 28,
+          }));
+
+        // 1. Optimistic removal from active CRM, queue, dispatches, conversations, inbound
         setLeads((prev) => prev.filter((l) => !idSet.has(l.id)));
+        setQueue((prev) => prev.filter((q) => !idSet.has(q.leadId)));
+        setDispatches((prev) =>
+          prev.filter((d) => !idSet.has(d.lead_id || '') && !idSet.has(d.client_id || ''))
+        );
+        setConversations((prev) => prev.filter((c) => !idSet.has(c.leadId)));
         setInboundReplies((prev) =>
           prev.filter(
             (m) =>
@@ -617,6 +647,10 @@ export function useStore() {
           )
         );
 
+        // 2. Optimistically add to Trash Bin
+        setTrashLeads((prev) => [...deletedTargets, ...prev.filter((t) => !idSet.has(t.id))]);
+
+        // 3. Persist to API
         const leadIds: string[] = [];
         const clientIds: string[] = [];
         for (const id of ids) {
@@ -880,31 +914,51 @@ export function useStore() {
   const restoreLead = useCallback(
     async (id: string) => {
       try {
-        const restored = await api.restoreLead(id);
+        const restoredTarget = trashLeads.find((l) => l.id === id);
         setTrashLeads((prev) => prev.filter((l) => l.id !== id));
+        if (restoredTarget) {
+          const cleanLead: Lead = {
+            ...restoredTarget,
+            deletedAt: null,
+            daysRemaining: undefined,
+          };
+          setLeads((prev) => [cleanLead, ...prev.filter((l) => l.id !== id)]);
+        }
+        const restored = await api.restoreLead(id);
         await refreshAll();
         return restored;
       } catch (err) {
         console.error('[Store] restoreLead error:', err);
+        await refreshAll();
         throw err;
       }
     },
-    [refreshAll]
+    [trashLeads, refreshAll]
   );
 
   const bulkRestoreLeads = useCallback(
     async (ids: string[]) => {
       try {
+        const idSet = new Set(ids);
+        const restoredTargets = trashLeads
+          .filter((l) => idSet.has(l.id))
+          .map((l) => ({
+            ...l,
+            deletedAt: null,
+            daysRemaining: undefined,
+          }));
+        setTrashLeads((prev) => prev.filter((l) => !idSet.has(l.id)));
+        setLeads((prev) => [...restoredTargets, ...prev.filter((l) => !idSet.has(l.id))]);
         const count = await api.bulkRestoreLeads(ids);
-        setTrashLeads((prev) => prev.filter((l) => !ids.includes(l.id)));
         await refreshAll();
         return count;
       } catch (err) {
         console.error('[Store] bulkRestoreLeads error:', err);
+        await refreshAll();
         throw err;
       }
     },
-    [refreshAll]
+    [trashLeads, refreshAll]
   );
 
   const restoreAllTrash = useCallback(async () => {
@@ -1062,6 +1116,46 @@ export function useStore() {
     }
   }, []);
 
+  const scrapeLeadLocations = useCallback(
+    async (options?: {
+      batchSize?: number;
+      delayMs?: number;
+      overwriteIdentified?: boolean;
+      leadIds?: string[];
+    }) => {
+      try {
+        const res = await api.scrapeLeadLocations(options);
+        return res;
+      } catch (err) {
+        console.error('[Store] scrapeLeadLocations error:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
+  const getScrapeLocationsStatus = useCallback(async () => {
+    return await api.getScrapeLocationsStatus();
+  }, []);
+
+  const stopScrapeLocations = useCallback(async () => {
+    return await api.stopScrapeLocations();
+  }, []);
+
+  const scrapeSingleLeadLocation = useCallback(
+    async (leadId: string) => {
+      try {
+        const res = await api.scrapeSingleLeadLocation(leadId);
+        await fetchLeads();
+        return res;
+      } catch (err) {
+        console.error('[Store] scrapeSingleLeadLocation error:', err);
+        throw err;
+      }
+    },
+    [fetchLeads]
+  );
+
   const clearTrash = useCallback(async () => {
     try {
       const count = await api.clearTrash();
@@ -1107,6 +1201,10 @@ export function useStore() {
       fetchLeads,
       syncGmb,
       getGmbSyncStatus,
+      scrapeLeadLocations,
+      getScrapeLocationsStatus,
+      stopScrapeLocations,
+      scrapeSingleLeadLocation,
       addLeads,
       createSingleLead,
       deleteLead,
@@ -1190,6 +1288,10 @@ export function useStore() {
       fetchLeads,
       syncGmb,
       getGmbSyncStatus,
+      scrapeLeadLocations,
+      getScrapeLocationsStatus,
+      stopScrapeLocations,
+      scrapeSingleLeadLocation,
       addLeads,
       createSingleLead,
       deleteLead,

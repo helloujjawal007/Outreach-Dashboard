@@ -300,12 +300,28 @@ conversationsRouter.post('/inbound', async (req: Request, res: Response) => {
 
     // 3. Record incoming message
     const inboxEmail = channel === 'email' ? 'team.onlinedigitalsolution@gmail.com' : '';
-    const msgRes = await query(
+    const msgRes = await query<{ id: string }>(
       `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_email, is_read)
        VALUES ($1, $2, 'inbound', $3, 'delivered', NOW(), $4, false)
        RETURNING *`,
       [convId, channel, text, inboxEmail]
     );
+
+    // Extreme Automation: Autonomous Inbound Agent (Sentiment, Auto-Draft & Hot Lead Auto-Conversion)
+    let agentResult: any = null;
+    try {
+      const { autonomousInboundAgent } = await import('../services/autonomousInboundAgent');
+      agentResult = await autonomousInboundAgent.processInboundMessage({
+        messageId: msgRes.rows[0].id,
+        conversationId: convId,
+        entityType: clientId ? 'client' : 'lead',
+        entityId: clientId || leadId,
+        subject: 'Inbound Message',
+        replyText: text,
+      });
+    } catch (agentErr) {
+      console.error('[conversationsRouter] Inbound agent warning:', agentErr);
+    }
 
     // 4. Return result with client conversion details (Phase 5)
     res.json({
@@ -314,6 +330,7 @@ conversationsRouter.post('/inbound', async (req: Request, res: Response) => {
       isOptOut: evalResult.isOptOut,
       leadConsentStatus: evalResult.newStatus,
       clientConversion: evalResult.clientConversion || null,
+      autonomousAgent: agentResult,
     });
   } catch (error) {
     console.error('[conversationsRouter.inbound]', error);
@@ -405,6 +422,9 @@ conversationsRouter.get('/recent-messages', async (req: Request, res: Response) 
         m.replied_at,
         m.inbox_email,
         m.metadata,
+        m.inbound_intent,
+        m.inbound_intent_confidence,
+        m.ai_suggested_reply,
         c.entity_type,
         c.lead_id,
         c.client_id,
@@ -477,6 +497,9 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
         m.replied_at,
         m.inbox_email,
         m.metadata,
+        m.inbound_intent,
+        m.inbound_intent_confidence,
+        m.ai_suggested_reply,
         c.entity_type,
         c.lead_id,
         c.client_id,

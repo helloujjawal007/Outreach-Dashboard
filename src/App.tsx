@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Sidebar, type PageId } from '@/components/Sidebar';
 import { useStore } from '@/store';
 import { LeadImportPage } from '@/pages/LeadImportPage';
+import { LeadScraperPage } from '@/pages/LeadScraperPage';
 import { CampaignBuilderPage } from '@/pages/CampaignBuilderPage';
 import { CrmPage } from '@/pages/CrmPage';
 import { SendingHealthPage } from '@/pages/SendingHealthPage';
@@ -9,9 +10,10 @@ import { AiCopilotPage } from '@/pages/AiCopilotPage';
 import { InboundEmailPopup } from '@/components/InboundEmailPopup';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
+import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import type { CrmSubFilter } from '@/types';
 import { getCountryFlag } from '@/pages/CrmPage';
-import { MessageSquare, RefreshCw, Layers } from 'lucide-react';
+import { MessageSquare, RefreshCw, Layers, Zap } from 'lucide-react';
 
 function App() {
   const [page, setPage] = useState<PageId>('import');
@@ -20,6 +22,7 @@ function App() {
   const [crmChannelFilter, setCrmChannelFilter] = useState<string>('all');
   const [isMessagesModalOpen, setIsMessagesModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState(false);
   const [autoOpenContact, setAutoOpenContact] = useState<{ id: string; entityType: 'lead' | 'client' } | null>(null);
   const store = useStore();
 
@@ -119,6 +122,7 @@ function App() {
 
   const pageTitleMap: Record<PageId, string> = {
     import: 'Lead Import & Ingestion',
+    scraper: 'Google Business Profile (GMB) Lead Scraper',
     builder: 'Multi-Channel Campaign Builder',
     crm:
       crmCountryFilter !== 'all'
@@ -167,6 +171,23 @@ function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* 24/7 Autopilot Master Button */}
+            <button
+              onClick={() => setIsAutopilotModalOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 px-3 py-1.5 text-xs font-bold text-indigo-950 shadow-2xs hover:border-indigo-400 hover:from-indigo-100 hover:to-purple-100 transition-all cursor-pointer"
+              title="Manage 24/7 Drip Autopilot, Inbound AI & Contact Enricher"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${store.autopilotStatus?.dripEngine.enabled ? 'bg-emerald-400 animate-ping' : 'bg-slate-400'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${store.autopilotStatus?.dripEngine.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+              </span>
+              <Zap size={14} className="text-amber-500 fill-amber-500" />
+              <span>Autopilot</span>
+              <span className="rounded-full bg-indigo-600/10 text-indigo-700 px-1.5 py-0.5 text-[10px] font-extrabold border border-indigo-300/40">
+                {store.autopilotStatus?.dripEngine.enabled ? '24/7 Active' : 'Paused'}
+              </span>
+            </button>
+
             {/* Sync Gmail Trigger */}
             <button
               onClick={() => store.syncEmailReplies()}
@@ -213,6 +234,7 @@ function App() {
           ) : (
             <div className="mx-auto max-w-7xl px-6 py-8">
               {page === 'import' && <LeadImportPage store={store} onNavigate={setPage} />}
+              {page === 'scraper' && <LeadScraperPage store={store} onNavigate={setPage} />}
               {page === 'builder' && <CampaignBuilderPage store={store} />}
               {page === 'crm' && (
                 <CrmPage
@@ -260,6 +282,13 @@ function App() {
         onClose={store.dismissNotification}
         onOpenConversation={handleOpenConversation}
         onDeleteLead={store.deleteLead}
+      />
+
+      {/* Autonomous 24/7 Outreach Autopilot Master Modal */}
+      <AutopilotControlModal
+        isOpen={isAutopilotModalOpen}
+        onClose={() => setIsAutopilotModalOpen(false)}
+        store={store}
       />
     </div>
   );

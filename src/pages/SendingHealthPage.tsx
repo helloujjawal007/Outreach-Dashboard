@@ -368,20 +368,42 @@ export function SendingHealthPage({ store }: Props) {
     if (store.health?.totals) {
       return {
         sent: store.health.totals.sent,
+        received: store.health.totals.received || 0,
         bounced: store.health.totals.bounced,
         complaints: store.health.totals.complaints || 0,
         drafted: store.health.totals.drafted,
         bounceRate: store.health.totals.bounceRate,
         complaintRate: store.health.totals.complaintRate || 0,
+        replyRate: store.health.totals.replyRate || 0,
+        sentToday: store.health.totals.sentToday ?? (healthData[healthData.length - 1]?.sent || 0),
+        receivedToday: store.health.totals.receivedToday ?? (healthData[healthData.length - 1]?.received || 0),
+        bouncedToday: store.health.totals.bouncedToday ?? (healthData[healthData.length - 1]?.bounced || 0),
+        complaintsToday: store.health.totals.complaintsToday ?? 0,
       };
     }
     const sent = healthData.reduce((s, d) => s + d.sent, 0);
+    const received = healthData.reduce((s, d) => s + (d.received || 0), 0);
     const bounced = healthData.reduce((s, d) => s + d.bounced, 0);
     const complaints = healthData.reduce((s, d) => s + (d.complaints || 0), 0);
     const drafted = store.queue.length;
     const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0;
     const complaintRate = sent > 0 ? (complaints / sent) * 100 : 0;
-    return { sent, bounced, complaints, drafted, bounceRate, complaintRate };
+    const replyRate = sent > 0 ? (received / sent) * 100 : 0;
+    const lastDay = healthData[healthData.length - 1] || { sent: 0, received: 0, bounced: 0, complaints: 0 };
+    return {
+      sent,
+      received,
+      bounced,
+      complaints,
+      drafted,
+      bounceRate,
+      complaintRate,
+      replyRate,
+      sentToday: lastDay.sent,
+      receivedToday: lastDay.received || 0,
+      bouncedToday: lastDay.bounced,
+      complaintsToday: lastDay.complaints || 0,
+    };
   }, [healthData, store.health, store.queue.length]);
 
   const isAutoThrottled = store.health?.isAutoThrottled || totals.bounceRate > 5 || totals.complaintRate > 0.3 || !!warmupStatus?.isThrottled;
@@ -1101,48 +1123,187 @@ export function SendingHealthPage({ store }: Props) {
         )}
       </div>
 
-      {/* 7-Day Trend Chart */}
-      <div className="mb-6 card p-5">
-        <div className="mb-4 flex items-center justify-between">
+      {/* DAILY MESSAGE SEND, RECEIVED & BOUNCE TRACKER */}
+      <div className="mb-6 card p-6 border-slate-200 shadow-sm">
+        <div className="mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
-            <h3 className="text-sm font-bold text-ink-900">7-Day Dispatch & Delivery Activity</h3>
-            <p className="text-xs text-ink-500">Daily sent volume vs bounces tracked in PostgreSQL</p>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-ink-900">Daily Message Send &amp; Deliverability Tracker</h3>
+              <span className="rounded-full bg-brand-50 border border-brand-200 px-2.5 py-0.5 text-[10px] font-extrabold text-brand-700 uppercase tracking-wider">
+                Live Health
+              </span>
+            </div>
+            <p className="text-xs text-ink-500 mt-0.5">
+              Exact day-by-day record of how much was sent, inbound replies received, and bounces detected.
+            </p>
           </div>
-          <div className="flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1.5 text-ink-500">
-              <span className="h-3 w-3 rounded-sm bg-brand-500" /> Sent
-            </span>
-            <span className="flex items-center gap-1.5 text-ink-500">
-              <span className="h-3 w-3 rounded-sm bg-red-400" /> Bounced
-            </span>
+
+          {/* Today's Quick Summary Pill */}
+          <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl text-xs font-medium">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
+              <span className="text-ink-500">Sent Today:</span>
+              <strong className="text-ink-900 font-bold">{totals.sentToday}</strong>
+            </div>
+            <span className="text-slate-300">|</span>
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span className="text-ink-500">Received Today:</span>
+              <strong className="text-emerald-700 font-bold">{totals.receivedToday}</strong>
+            </div>
+            <span className="text-slate-300">|</span>
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+              <span className="text-ink-500">Bounced:</span>
+              <strong className={totals.bouncedToday > 0 ? 'text-red-600 font-bold' : 'text-slate-700 font-bold'}>
+                {totals.bouncedToday}
+              </strong>
+            </div>
           </div>
         </div>
 
-        <div className="flex h-48 items-end gap-3 pt-6 pb-2">
+        {/* Legend */}
+        <div className="flex items-center justify-between mb-3 text-xs">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-ink-600 font-medium">
+              <span className="h-3 w-3 rounded-sm bg-brand-500" /> Sent That Day
+            </span>
+            <span className="flex items-center gap-1.5 text-emerald-700 font-medium">
+              <span className="h-3 w-3 rounded-sm bg-emerald-500" /> Inbound Received (Replies)
+            </span>
+            <span className="flex items-center gap-1.5 text-red-600 font-medium">
+              <span className="h-3 w-3 rounded-sm bg-red-400" /> Bounced
+            </span>
+          </div>
+          <span className="text-[11px] text-ink-400">Showing last {healthData.length} active tracking days</span>
+        </div>
+
+        {/* Visual Bar Chart */}
+        <div className="flex h-44 items-end gap-3 pt-6 pb-2 border-b border-slate-100 mb-6">
           {healthData.map((day) => {
-            const sentH = (day.sent / maxSent) * 100;
-            const bounceH = (day.bounced / maxSent) * 100;
+            const chartMax = Math.max(...healthData.map((d) => Math.max(d.sent, d.received || 0, d.bounced)), 1);
+            const sentH = (day.sent / chartMax) * 100;
+            const recvH = ((day.received || 0) / chartMax) * 100;
+            const bounceH = (day.bounced / chartMax) * 100;
             return (
               <div key={day.date} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex items-end justify-center gap-1 h-36">
+                <div className="w-full flex items-end justify-center gap-1 h-32">
+                  {/* Sent Bar */}
                   <div
-                    style={{ height: `${Math.max(sentH, 4)}%` }}
-                    className="w-full max-w-8 rounded-t bg-brand-500 transition-all hover:bg-brand-600"
-                    title={`${day.sent} sent`}
+                    style={{ height: `${Math.max(sentH, day.sent > 0 ? 6 : 2)}%` }}
+                    className="w-full max-w-6 rounded-t bg-brand-500 transition-all hover:bg-brand-600"
+                    title={`${day.sent} messages sent on ${day.date}`}
                   />
+                  {/* Received Bar */}
+                  {(day.received || 0) > 0 && (
+                    <div
+                      style={{ height: `${Math.max(recvH, 6)}%` }}
+                      className="w-2.5 rounded-t bg-emerald-500 transition-all hover:bg-emerald-600"
+                      title={`${day.received} inbound replies received on ${day.date}`}
+                    />
+                  )}
+                  {/* Bounced Bar */}
                   {day.bounced > 0 && (
                     <div
-                      style={{ height: `${Math.max(bounceH, 4)}%` }}
+                      style={{ height: `${Math.max(bounceH, 6)}%` }}
                       className="w-2 rounded-t bg-red-400 transition-all hover:bg-red-500"
-                      title={`${day.bounced} bounced`}
+                      title={`${day.bounced} bounced on ${day.date}`}
                     />
                   )}
                 </div>
-                <span className="text-[11px] font-semibold text-ink-500 whitespace-nowrap">{day.date}</span>
-                <span className="text-[10px] text-ink-300">{day.sent}</span>
+                <span className="text-[11px] font-semibold text-ink-600 whitespace-nowrap">{day.date}</span>
+                <div className="flex items-center gap-1 text-[10px] text-ink-400">
+                  <span className="text-brand-600 font-bold">{day.sent}</span>
+                  {(day.received || 0) > 0 && (
+                    <span className="text-emerald-600 font-semibold">· {day.received}r</span>
+                  )}
+                  {day.bounced > 0 && (
+                    <span className="text-rose-500 font-bold">· {day.bounced}b</span>
+                  )}
+                </div>
               </div>
             );
           })}
+        </div>
+
+        {/* Detailed Breakdown Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/70 text-ink-500 uppercase text-[10px] font-bold tracking-wider">
+                <th className="py-2.5 px-3">Date</th>
+                <th className="py-2.5 px-3 text-right">📤 Sent That Day</th>
+                <th className="py-2.5 px-3 text-right">📥 Inbound Received</th>
+                <th className="py-2.5 px-3 text-right">⚠️ Bounced</th>
+                <th className="py-2.5 px-3 text-right">🛡️ Complaints</th>
+                <th className="py-2.5 px-3 text-right">Delivery Health</th>
+                <th className="py-2.5 px-3 text-right">Reply Rate</th>
+                <th className="py-2.5 px-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium text-ink-700">
+              {healthData.slice().reverse().map((day) => {
+                const bRate = day.sent > 0 ? (day.bounced / day.sent) * 100 : 0;
+                const rRate = day.sent > 0 ? ((day.received || 0) / day.sent) * 100 : 0;
+                const delivRate = day.sent > 0 ? Math.max(0, 100 - bRate) : 100;
+                const isHealthy = bRate <= 2;
+                const isWarning = bRate > 2 && bRate <= 5;
+                const isCritical = bRate > 5;
+
+                return (
+                  <tr key={day.date} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-2.5 px-3 font-bold text-ink-900 flex items-center gap-1.5">
+                      <Clock size={12} className="text-slate-400" />
+                      <span>{day.date}</span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-brand-600">
+                      {day.sent.toLocaleString()}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-emerald-600">
+                      {day.received ? day.received.toLocaleString() : '0'}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {day.bounced > 0 ? (
+                        <span className="font-bold text-red-600">{day.bounced}</span>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {(day.complaints || 0) > 0 ? (
+                        <span className="font-bold text-red-600">{day.complaints}</span>
+                      ) : (
+                        <span className="text-slate-400">0</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-semibold">
+                      <span className={delivRate >= 98 ? 'text-emerald-700' : delivRate >= 95 ? 'text-amber-700' : 'text-red-600'}>
+                        {delivRate.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-ink-600">
+                      {rRate > 0 ? `${rRate.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {isCritical ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-100 text-red-800">
+                          Critical
+                        </span>
+                      ) : isWarning ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                          Warning
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          Optimal
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 

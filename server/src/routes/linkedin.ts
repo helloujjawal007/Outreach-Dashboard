@@ -18,6 +18,60 @@ linkedinRouter.get('/status', async (_req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/linkedin/accounts
+ * Get all synced LinkedIn accounts
+ */
+linkedinRouter.get('/accounts', async (_req: Request, res: Response) => {
+  try {
+    const accounts = await linkedinService.getAllAccounts();
+    res.json({ success: true, data: accounts });
+  } catch (err: any) {
+    console.error('[LinkedIn API] accounts error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to get LinkedIn accounts' });
+  }
+});
+
+/**
+ * POST /api/linkedin/accounts
+ * Sync/add a new LinkedIn account
+ */
+linkedinRouter.post('/accounts', async (req: Request, res: Response) => {
+  try {
+    const { accountName, headline, profileUrl, sessionCookie, accessToken, authMethod } = req.body;
+    if (!accountName) {
+      return res.status(400).json({ success: false, error: 'accountName is required' });
+    }
+    const account = await linkedinService.addAccount({
+      accountName,
+      headline,
+      profileUrl,
+      sessionCookie,
+      accessToken,
+      authMethod,
+    });
+    res.json({ success: true, message: 'LinkedIn account synced successfully', data: account });
+  } catch (err: any) {
+    console.error('[LinkedIn API] add account error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to add LinkedIn account' });
+  }
+});
+
+/**
+ * DELETE /api/linkedin/accounts/:id
+ * Remove a synced LinkedIn account
+ */
+linkedinRouter.delete('/accounts/:id', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const ok = await linkedinService.deleteAccount(id);
+    res.json({ success: ok, message: ok ? 'LinkedIn account removed' : 'Account not found' });
+  } catch (err: any) {
+    console.error('[LinkedIn API] delete account error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to delete LinkedIn account' });
+  }
+});
+
+/**
  * POST /api/linkedin/connect
  * Save credentials, li_at session cookie, or OAuth token
  */

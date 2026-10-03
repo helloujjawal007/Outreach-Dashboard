@@ -17,10 +17,11 @@ import {
   AlertTriangle,
   Globe,
   Trash2,
+  Compass,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 
-export type PageId = 'import' | 'builder' | 'crm' | 'health' | 'copilot';
+export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot';
 
 export interface CountryCountItem {
   country: string;
@@ -88,7 +89,54 @@ export function Sidebar({
 
       {/* Navigation items */}
       <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-        {/* 1. Lead Import */}
+        {/* 1. AI Copilot (Proactive Suggestions on What To Do) */}
+        <button
+          onClick={() => onNavigate('copilot')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+            current === 'copilot'
+              ? 'bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-900 font-bold ring-1 ring-indigo-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="AI Copilot: Smart Suggestions & What to Do Next"
+        >
+          <div className="flex items-center gap-3">
+            <Bot
+              size={18}
+              className={current === 'copilot' ? 'text-indigo-600' : 'text-indigo-400 group-hover:text-indigo-600'}
+            />
+            <div className="flex items-center gap-1.5">
+              <span>AI Copilot</span>
+              <Sparkles size={13} className="text-amber-500 animate-spin-slow" />
+            </div>
+          </div>
+          <span className="rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-2 py-0.5 text-[9px] font-extrabold text-white shadow-2xs uppercase tracking-wider">
+            Suggestions
+          </span>
+        </button>
+
+        {/* 2. Lead Scraper (GMB) */}
+        <button
+          onClick={() => onNavigate('scraper')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+            current === 'scraper'
+              ? 'bg-amber-50 text-amber-900 font-semibold ring-1 ring-amber-300/70 shadow-2xs'
+              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
+          }`}
+          title="Scrape up to 100 leads from Google Business Profiles"
+        >
+          <div className="flex items-center gap-3">
+            <Compass
+              size={18}
+              className={current === 'scraper' ? 'text-amber-600 animate-spin-slow' : 'text-ink-300 group-hover:text-amber-600'}
+            />
+            <span>Lead Scraper</span>
+          </div>
+          <span className="rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-1.5 py-0.2 text-[10px] font-extrabold text-white shadow-2xs">
+            GMB 100
+          </span>
+        </button>
+
+        {/* 3. Lead Import */}
         <button
           onClick={() => onNavigate('import')}
           className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
@@ -96,6 +144,7 @@ export function Sidebar({
               ? 'bg-brand-50 text-brand-700 font-semibold'
               : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
           }`}
+          title="Bulk CSV / Text Ingestion & Manual Entry"
         >
           <Upload
             size={18}
@@ -104,7 +153,7 @@ export function Sidebar({
           <span>Lead Import</span>
         </button>
 
-        {/* 2. Campaign Builder */}
+        {/* 4. Create Campaign */}
         <button
           onClick={() => onNavigate('builder')}
           className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
@@ -112,36 +161,13 @@ export function Sidebar({
               ? 'bg-brand-50 text-brand-700 font-semibold'
               : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
           }`}
+          title="Build & Schedule Multi-Channel Campaigns"
         >
           <MessageSquarePlus
             size={18}
             className={current === 'builder' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
           />
-          <span>Campaigns</span>
-        </button>
-
-        {/* 3. AI Copilot */}
-        <button
-          onClick={() => onNavigate('copilot')}
-          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'copilot'
-              ? 'bg-indigo-50 text-indigo-700 font-semibold'
-              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Bot
-              size={18}
-              className={current === 'copilot' ? 'text-indigo-600' : 'text-ink-300 group-hover:text-ink-500'}
-            />
-            <div className="flex items-center gap-1.5">
-              <span>AI Copilot</span>
-              <Sparkles size={13} className="text-amber-500 animate-spin-slow" />
-            </div>
-          </div>
-          <span className="rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-2xs">
-            PRO
-          </span>
+          <span>Create Campaign</span>
         </button>
 
         {/* 4. Leads & Clients (With Subitems) */}
@@ -453,20 +479,26 @@ export function Sidebar({
           )}
         </button>
 
-        {/* 5. Sending Health */}
+        {/* 7. Send Tracker & Health (Track sent, received, bounced per day) */}
         <button
           onClick={() => onNavigate('health')}
           className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
             current === 'health'
-              ? 'bg-brand-50 text-brand-700'
+              ? 'bg-brand-50 text-brand-700 font-semibold ring-1 ring-brand-200'
               : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
           }`}
+          title="Daily Send Tracker: View how much sent, received and bounced per day"
         >
           <Activity
             size={18}
             className={current === 'health' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
           />
-          <span className="flex-1 text-left">Sending Health</span>
+          <div className="flex-1 text-left min-w-0">
+            <span className="block truncate">Send Tracker &amp; Health</span>
+            <span className="block text-[10px] text-ink-400 font-normal leading-tight truncate">
+              Daily Sent · Recv · Bounce
+            </span>
+          </div>
           {counts.queue > 0 && (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-700">
               {counts.queue}

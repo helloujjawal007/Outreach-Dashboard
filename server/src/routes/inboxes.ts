@@ -24,8 +24,16 @@ inboxesRouter.get('/', async (_req: Request, res: Response) => {
 // GET /api/inboxes/summary - Get rotation pool summary metrics
 inboxesRouter.get('/summary', async (_req: Request, res: Response) => {
   try {
+    const { fastCache } = await import('../config/cache');
+    const cached = fastCache.get('inbox_pool_summary');
+    if (cached) {
+      return res.json(cached);
+    }
+
     const summary = await inboxRotationService.getPoolSummary();
-    res.json({ success: true, summary });
+    const payload = { success: true, summary };
+    fastCache.set('inbox_pool_summary', payload, 3000);
+    res.json(payload);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to fetch summary';
     res.status(500).json({ success: false, error: msg });

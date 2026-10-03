@@ -5,7 +5,9 @@ import { aiResearchWriterService } from './aiResearchWriterService';
 
 export interface ScheduleListParams {
   listId: string;
-  channel?: 'email' | 'whatsapp' | 'facebook' | 'instagram';
+  channel?: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+  inboxIds?: string[]; // Selected inboxes for 50/50 rotational split sending
+  linkedinAccountId?: string;
   scheduledFor?: string | Date; // If 'now' or undefined, shoots immediately
   intervalSeconds?: number; // Anti-ban pacing between dispatches
   style?: 'conversational' | 'direct' | 'curious';
@@ -15,7 +17,7 @@ export interface ScheduleListParams {
 
 export interface ScheduleSingleDispatchParams {
   leadId: string;
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram';
+  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
   scheduledFor?: string | Date;
   subject?: string;
   body?: string;
@@ -26,9 +28,11 @@ export interface ScheduleSingleDispatchParams {
 
 export interface ScheduleBatchDispatchParams {
   leadIds: string[];
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram';
+  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+  inboxIds?: string[];
+  linkedinAccountId?: string;
   scheduledFor?: string | Date;
-  intervalSeconds?: number; // Pacing delay in seconds between messages (defaults: wa=45s, email=25s, fb=30s, ig=30s)
+  intervalSeconds?: number; // Pacing delay in seconds between messages (defaults: wa=45s, email=25s, li=45s, fb=30s, ig=30s)
   style?: 'conversational' | 'direct' | 'curious';
   stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
   customInstructions?: string;
@@ -36,7 +40,7 @@ export interface ScheduleBatchDispatchParams {
 
 export interface ScheduledDispatchRecord {
   id: string;
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram';
+  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
   list_id?: string;
   list_name: string;
   entity_type: 'lead' | 'client';
@@ -377,6 +381,7 @@ export class EmailSchedulerService {
       whatsapp: string;
       facebook: string;
       instagram: string;
+      linkedin?: string;
       category: string;
       notes: string;
       outreach_stage: string;
@@ -389,6 +394,7 @@ export class EmailSchedulerService {
               l.whatsapp,
               l.facebook,
               l.instagram,
+              l.linkedin,
               l.category,
               l.notes,
               l.outreach_stage
@@ -404,6 +410,7 @@ export class EmailSchedulerService {
     const eligibleLeads = leadsRes.rows.filter((lead) => {
       if (channel === 'email') return !!(lead.email && lead.email.trim());
       if (channel === 'whatsapp') return !!((lead.whatsapp && lead.whatsapp.trim()) || (lead.phone && lead.phone.trim()));
+      if (channel === 'linkedin') return !!((lead.linkedin && lead.linkedin.trim()) || lead.business_name);
       if (channel === 'facebook') return !!(lead.facebook && lead.facebook.trim());
       if (channel === 'instagram') return !!(lead.instagram && lead.instagram.trim());
       return false;
@@ -418,6 +425,21 @@ export class EmailSchedulerService {
         scheduledFor: new Date(),
         message: `No active leads with valid contact information for ${channel.toUpperCase()} were found in "${list.name}".`,
       };
+    }
+
+    // 2b. If email channel and multiple inboxes selected, load inboxes for 50/50 rotational split
+    const inboxMap = new Map<string, string>();
+    if (channel === 'email' && params.inboxIds && params.inboxIds.length > 0) {
+      const inboxesRes = await query<{ id: string; email: string }>(
+        `SELECT id, email FROM connected_inboxes WHERE id = ANY($1::uuid[])`,
+        [params.inboxIds]
+      );
+      for (const row of inboxesRes.rows) {
+        inboxMap.set(row.id, row.email);
+      }
+      console.log(
+        `[Scheduler] Multi-inbox split active across ${inboxMap.size} inboxes for ${eligibleLeads.length} leads (rotational 50/50 distribution).`
+      );
     }
 
     // Determine target schedule time
@@ -443,7 +465,21 @@ export class EmailSchedulerService {
       const recipientEmail = channel === 'email' ? lead.email.trim() : null;
       const recipientPhone = channel === 'whatsapp' ? (lead.whatsapp || lead.phone || '').trim() : null;
       const recipientHandle =
-        channel === 'facebook' ? lead.facebook.trim() : channel === 'instagram' ? lead.instagram.trim() : null;
+        channel === 'facebook'
+          ? (lead.facebook || '').trim()
+          : channel === 'instagram'
+          ? (lead.instagram || '').trim()
+          : channel === 'linkedin'
+          ? (lead.linkedin || lead.business_name || '').trim()
+          : null;
+
+      // Assign rotational inbox for 50/50 distribution
+      let assignedInboxId: string | null = null;
+      let assignedInboxEmail: string | null = null;
+      if (channel === 'email' && params.inboxIds && params.inboxIds.length > 0) {
+        assignedInboxId = params.inboxIds[i % params.inboxIds.length];
+        assignedInboxEmail = inboxMap.get(assignedInboxId) || null;
+      }
 
       try {
         let subject = '';
@@ -479,7 +515,7 @@ export class EmailSchedulerService {
               whatsapp: lead.whatsapp,
               notes: lead.notes,
             },
-            channel,
+            channel === 'linkedin' ? 'linkedin' : channel,
             customInstructions
           );
           subject = aiOutreach.subject || '';
@@ -490,8 +526,9 @@ export class EmailSchedulerService {
           `INSERT INTO scheduled_dispatches (
             channel, list_id, list_name, entity_type, lead_id,
             recipient_email, recipient_phone, recipient_handle, recipient_name,
-            subject, body, stage, style, status, scheduled_for, created_at, updated_at
-          ) VALUES ($1, $2, $3, 'lead', $4, $5, $6, $7, $8, $9, $10, $11, $12, 'scheduled', $13, NOW(), NOW())`,
+            subject, body, stage, style, status, scheduled_for,
+            inbox_id, inbox_email, created_at, updated_at
+          ) VALUES ($1, $2, $3, 'lead', $4, $5, $6, $7, $8, $9, $10, $11, $12, 'scheduled', $13, $14, $15, NOW(), NOW())`,
           [
             channel,
             list.id,
@@ -506,6 +543,8 @@ export class EmailSchedulerService {
             stage,
             style,
             leadTargetTime,
+            assignedInboxId,
+            assignedInboxEmail,
           ]
         );
 
@@ -656,6 +695,8 @@ export class EmailSchedulerService {
             await this.executeFacebookDispatch(dispatch);
           } else if (channel === 'instagram') {
             await this.executeInstagramDispatch(dispatch);
+          } else if (channel === 'linkedin') {
+            await this.executeLinkedInDispatch(dispatch);
           } else {
             throw new Error(`Unsupported channel: ${channel}`);
           }
@@ -935,6 +976,70 @@ export class EmailSchedulerService {
     );
 
     console.log(`[Scheduler] Queued Instagram dispatch for ${handle}`);
+  }
+
+  /**
+   * Dispatches a scheduled LinkedIn outreach message
+   */
+  private async executeLinkedInDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    const jitterMs = 2000 + Math.floor(Math.random() * 1200);
+    await this.sleep(jitterMs);
+
+    // Fetch synced LinkedIn account credentials
+    const { linkedinService } = await import('./linkedinService');
+    const status = await linkedinService.getAccountStatus();
+
+    console.log(
+      `[Scheduler] Dispatching scheduled LinkedIn message to ${dispatch.recipient_name} via account "${status.accountName}"...`
+    );
+
+    // Record in conversations
+    let convId: string;
+    const convRes = await query<{ id: string }>(
+      `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'linkedin' LIMIT 1`,
+      [dispatch.lead_id]
+    );
+    if (convRes.rows.length === 0) {
+      const newConv = await query<{ id: string }>(
+        `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
+         VALUES ('lead', $1, 'linkedin', 'open', NOW()) RETURNING id`,
+        [dispatch.lead_id]
+      );
+      convId = newConv.rows[0].id;
+    } else {
+      convId = convRes.rows[0].id;
+    }
+
+    await query(
+      `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
+       VALUES ($1, 'linkedin', 'outbound', $2, 'delivered', $3, NOW())`,
+      [convId, dispatch.body, `li_${Date.now()}`]
+    );
+
+    await query(`UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`, [convId]);
+
+    if (dispatch.lead_id) {
+      await query(
+        `UPDATE leads SET last_contacted_at = NOW(), outreach_stage = 'initial', updated_at = NOW() WHERE id = $1`,
+        [dispatch.lead_id]
+      );
+    }
+
+    await query(
+      `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
+       VALUES (CURRENT_DATE, 'linkedin', 1, NOW())
+       ON CONFLICT (metric_date, channel)
+       DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
+    );
+
+    await query(
+      `UPDATE scheduled_dispatches
+       SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [dispatch.id]
+    );
+
+    console.log(`[Scheduler] Successfully dispatched scheduled LinkedIn outreach to ${dispatch.recipient_name}`);
   }
 
   /**

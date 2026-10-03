@@ -51,6 +51,7 @@ import type { Store } from '@/store';
 import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter, ScraperProgressStatus } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
 import { api, cleanSiteUrl, type WhatsAppWindowStatus } from '@/services/api';
+import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 
 interface Props {
   store: Store;
@@ -332,6 +333,7 @@ export function CrmPage({
   const [isScrapingLocations, setIsScrapingLocations] = useState(false);
   const [scraperStatus, setScraperStatus] = useState<ScraperProgressStatus | null>(null);
   const [isScrapingSingle, setIsScrapingSingle] = useState(false);
+  const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState(false);
 
   // Polling for gradual location scrape status
   useEffect(() => {
@@ -1804,6 +1806,24 @@ export function CrmPage({
         subtitle="Manage prospects and paying clients. Unified omni-channel tracking with 28-day retention."
         actions={
           <div className="flex items-center gap-2">
+            {/* 24/7 Autopilot Master Button */}
+            <button
+              type="button"
+              onClick={() => setIsAutopilotModalOpen(true)}
+              className="btn-secondary text-xs flex items-center gap-1.5 shadow-sm border-indigo-300 text-indigo-950 bg-gradient-to-r from-indigo-50/90 to-purple-50/90 hover:from-indigo-100 hover:to-purple-100 transition cursor-pointer"
+              title="Autonomous 24/7 Drip Engine, Inbound AI & Contact Enricher"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${store.autopilotStatus?.dripEngine.enabled ? 'bg-emerald-400 animate-ping' : 'bg-slate-400'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${store.autopilotStatus?.dripEngine.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+              </span>
+              <Zap size={14} className="text-amber-500 fill-amber-500" />
+              <span className="font-bold">⚡ Autopilot ({store.autopilotStatus?.dripEngine.leadsDueTotal ?? 0} Due)</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5">
+                {store.autopilotStatus?.dripEngine.enabled ? '24/7 Active' : 'Paused'}
+              </span>
+            </button>
+
             {/* 12-Hour GMB Auto-Sync Status & Trigger */}
             <button
               type="button"
@@ -5216,12 +5236,18 @@ export function CrmPage({
         onDeleteLead={store.deleteLead}
       />
 
-      {/* Automated List Outreach & Humanizer Scheduler Modal */}
       <ScheduleListModal
         open={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
         store={store}
         defaultListId={selectedListFilter}
+      />
+
+      {/* Autonomous 24/7 Outreach Autopilot Master Modal */}
+      <AutopilotControlModal
+        isOpen={isAutopilotModalOpen}
+        onClose={() => setIsAutopilotModalOpen(false)}
+        store={store}
       />
     </div>
   );

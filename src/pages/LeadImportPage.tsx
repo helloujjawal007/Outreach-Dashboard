@@ -28,6 +28,7 @@ import {
   Star,
   ExternalLink,
   MapPin,
+  Compass,
 } from 'lucide-react';
 import { PageHeader, type PageId } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -417,6 +418,21 @@ export function LeadImportPage({ store, onNavigate }: Props) {
               CSV / Paste
             </span>
           </button>
+
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={() => onNavigate('scraper')}
+              className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-amber-900 bg-amber-50/80 border border-amber-200/90 hover:bg-amber-100 transition-all cursor-pointer shadow-2xs"
+              title="Search and scrape leads directly from Google Business Profiles & Maps"
+            >
+              <Compass size={16} className="text-amber-600 animate-spin-slow" />
+              <span>GMB Lead Scraper</span>
+              <span className="ml-0.5 text-[10px] rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-2 py-0.5 font-extrabold shadow-2xs">
+                AI / LIVE
+              </span>
+            </button>
+          )}
         </div>
 
         {activeTab === 'single' ? (

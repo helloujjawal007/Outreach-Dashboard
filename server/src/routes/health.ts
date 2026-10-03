@@ -8,48 +8,134 @@ export const healthRouter = Router();
 // GET /api/health - Get deliverability health, spam signals, warmup limits, and system status
 healthRouter.get('/', async (_req: Request, res: Response) => {
   try {
-    // 1. Fetch 7-day send metrics
+    const { fastCache } = await import('../config/cache');
+    const cached = fastCache.get('system_health');
+    if (cached) {
+      return res.json(cached);
+    }
+    // 1. Fetch 14-day aggregated send metrics (grouped by date across channels)
     const metricsRes = await query<{
       formatted_date: string;
-      metric_date: string;
-      channel: string;
-      sent_count: number;
-      bounced_count: number;
-      complaints_count: number;
-      drafted_count: number;
+      metric_date_str: string;
+      total_sent: string;
+      total_bounced: string;
+      total_complaints: string;
+      total_drafted: string;
     }>(
       `SELECT
          TO_CHAR(metric_date, 'Mon DD') as formatted_date,
-         metric_date,
-         sent_count,
-         bounced_count,
-         complaints_count,
-         drafted_count
+         TO_CHAR(metric_date, 'YYYY-MM-DD') as metric_date_str,
+         COALESCE(SUM(sent_count), 0)::text as total_sent,
+         COALESCE(SUM(bounced_count), 0)::text as total_bounced,
+         COALESCE(SUM(complaints_count), 0)::text as total_complaints,
+         COALESCE(SUM(drafted_count), 0)::text as total_drafted
        FROM daily_send_metrics
-       WHERE metric_date >= CURRENT_DATE - INTERVAL '6 days'
+       WHERE metric_date >= CURRENT_DATE - INTERVAL '13 days'
+       GROUP BY metric_date, TO_CHAR(metric_date, 'Mon DD'), TO_CHAR(metric_date, 'YYYY-MM-DD')
        ORDER BY metric_date ASC`
     );
 
-    // 2. Count active draft queue items
+    // 2. Fetch daily inbound replies received from messages table
+    const repliesRes = await query<{
+      recv_date_str: string;
+      received_count: string;
+    }>(
+      `SELECT
+         TO_CHAR(DATE(created_at), 'YYYY-MM-DD') as recv_date_str,
+         COUNT(*)::text as received_count
+       FROM messages
+       WHERE direction = 'inbound'
+         AND created_at >= CURRENT_DATE - INTERVAL '13 days'
+       GROUP BY DATE(created_at)
+       ORDER BY DATE(created_at) ASC`
+    );
+
+    const repliesByDate = new Map<string, number>();
+    for (const r of repliesRes.rows) {
+      repliesByDate.set(r.recv_date_str, parseInt(r.received_count || '0', 10));
+    }
+
+    // 3. Count active draft queue items
     const queueRes = await query<{ count: string }>(
       `SELECT COUNT(*) FROM send_queue WHERE status = 'draft'`
     );
     const pendingDrafts = parseInt(queueRes.rows[0]?.count || '0', 10);
 
-    const dailyData = metricsRes.rows.map((row) => ({
-      date: row.formatted_date,
-      sent: Number(row.sent_count),
-      bounced: Number(row.bounced_count),
-      complaints: Number(row.complaints_count),
-      drafted: Number(row.drafted_count),
-    }));
+    // Build unified map of dates
+    const metricsByDate = new Map<string, {
+      date: string;
+      metricDate: string;
+      sent: number;
+      bounced: number;
+      complaints: number;
+      drafted: number;
+    }>();
+
+    for (const row of metricsRes.rows) {
+      metricsByDate.set(row.metric_date_str, {
+        date: row.formatted_date,
+        metricDate: row.metric_date_str,
+        sent: parseInt(row.total_sent || '0', 10),
+        bounced: parseInt(row.total_bounced || '0', 10),
+        complaints: parseInt(row.total_complaints || '0', 10),
+        drafted: parseInt(row.total_drafted || '0', 10),
+      });
+    }
+
+    // Ensure today is always present
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayFormatted = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (!metricsByDate.has(todayStr)) {
+      metricsByDate.set(todayStr, {
+        date: todayFormatted,
+        metricDate: todayStr,
+        sent: 0,
+        bounced: 0,
+        complaints: 0,
+        drafted: 0,
+      });
+    }
+
+    // Combine sent, received, bounced into dailyData
+    const dailyData = Array.from(metricsByDate.values())
+      .sort((a, b) => a.metricDate.localeCompare(b.metricDate))
+      .map((item) => {
+        const received = repliesByDate.get(item.metricDate) || 0;
+        const deliverabilityRate = item.sent > 0
+          ? Math.max(0, Math.min(100, Number((((item.sent - item.bounced) / item.sent) * 100).toFixed(1))))
+          : (item.bounced > 0 ? 0 : 100);
+        const replyRate = item.sent > 0
+          ? Number(((received / item.sent) * 100).toFixed(1))
+          : 0;
+
+        return {
+          date: item.date,
+          metricDate: item.metricDate,
+          sent: item.sent,
+          received,
+          bounced: item.bounced,
+          complaints: item.complaints,
+          drafted: item.drafted,
+          deliverabilityRate,
+          replyRate,
+        };
+      });
 
     const totalSent = dailyData.reduce((acc, d) => acc + d.sent, 0);
+    const totalReceived = dailyData.reduce((acc, d) => acc + d.received, 0);
     const totalBounced = dailyData.reduce((acc, d) => acc + d.bounced, 0);
     const totalComplaints = dailyData.reduce((acc, d) => acc + d.complaints, 0);
 
+    const todayItem = dailyData.find((d) => d.metricDate === todayStr) || {
+      sent: 0,
+      received: 0,
+      bounced: 0,
+      complaints: 0,
+    };
+
     const bounceRate = totalSent > 0 ? (totalBounced / totalSent) * 100 : 0;
     const complaintRate = totalSent > 0 ? (totalComplaints / totalSent) * 100 : 0;
+    const overallReplyRate = totalSent > 0 ? (totalReceived / totalSent) * 100 : 0;
 
     let healthLevel: 'green' | 'yellow' | 'red' = 'green';
     let healthLabel = 'Healthy';
@@ -76,18 +162,18 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
       throttleReason = 'Elevated deliverability signals detected. Monitoring closely.';
     }
 
-    // 3. Email Warmup Status
+    // 4. Email Warmup Status
     const warmupStatus = await emailAdapter.getWarmupStatus();
     if (warmupStatus.isThrottled && !isAutoThrottled) {
       isAutoThrottled = true;
       throttleReason = `Daily warm-up limit reached (${warmupStatus.sentToday}/${warmupStatus.dailyLimit} sent today).`;
     }
 
-    // 4. System Infrastructure Status (Postgres & Ollama)
+    // 5. System Infrastructure Status (Postgres & Ollama)
     const dbOk = await testConnection();
     const ollamaStatus = await ollamaService.checkHealth();
 
-    res.json({
+    const responsePayload = {
       success: true,
       health: {
         level: healthLevel,
@@ -97,11 +183,17 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         throttleReason,
         totals: {
           sent: totalSent,
+          received: totalReceived,
           bounced: totalBounced,
           complaints: totalComplaints,
           drafted: pendingDrafts,
           bounceRate: Number(bounceRate.toFixed(1)),
           complaintRate: Number(complaintRate.toFixed(2)),
+          replyRate: Number(overallReplyRate.toFixed(1)),
+          sentToday: todayItem.sent,
+          receivedToday: todayItem.received,
+          bouncedToday: todayItem.bounced,
+          complaintsToday: todayItem.complaints,
         },
         warmup: {
           stage: warmupStatus.stage,
@@ -119,7 +211,10 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
         ollamaModels: ollamaStatus.models,
         ollamaError: ollamaStatus.error,
       },
-    });
+    };
+
+    fastCache.set('system_health', responsePayload, 3000);
+    res.json(responsePayload);
   } catch (error) {
     console.error('[healthRouter.get]', error);
     res.status(500).json({ success: false, error: 'Failed to aggregate health metrics' });

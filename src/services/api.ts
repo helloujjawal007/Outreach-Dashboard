@@ -31,6 +31,12 @@ import type {
   AiCommandHistoryItem,
   AiCommandHistoryResponse,
   ScraperProgressStatus,
+  AutopilotStatus,
+  AutopilotSettingsUpdate,
+  ScrapedLead,
+  GmbSearchParams,
+  GmbImportParams,
+  GmbImportResult,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -170,11 +176,17 @@ export interface HealthResponse {
     throttleReason: string;
     totals: {
       sent: number;
+      received?: number;
       bounced: number;
       complaints: number;
       drafted: number;
       bounceRate: number;
       complaintRate: number;
+      replyRate?: number;
+      sentToday?: number;
+      receivedToday?: number;
+      bouncedToday?: number;
+      complaintsToday?: number;
     };
     warmup?: {
       stage: number;
@@ -1434,6 +1446,30 @@ export const api = {
     await request('/linkedin/disconnect', { method: 'POST' });
   },
 
+  async getLinkedInAccounts(): Promise<LinkedInAccountStatus[]> {
+    const res = await request<{ success: boolean; data: LinkedInAccountStatus[] }>('/linkedin/accounts');
+    return res.data || [];
+  },
+
+  async addLinkedInAccount(params: {
+    accountName?: string;
+    headline?: string;
+    profileUrl?: string;
+    sessionCookie?: string;
+    accessToken?: string;
+    authMethod?: 'cookie' | 'oauth';
+  }): Promise<LinkedInAccountStatus> {
+    const res = await request<{ success: boolean; data: LinkedInAccountStatus }>('/linkedin/accounts', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    return res.data;
+  },
+
+  async deleteLinkedInAccount(id: string): Promise<void> {
+    await request(`/linkedin/accounts/${id}`, { method: 'DELETE' });
+  },
+
   async generateLinkedInPost(params: {
     topic?: string;
     tone?: string;
@@ -1583,7 +1619,91 @@ export const api = {
   async clearAiCommandHistory(): Promise<void> {
     await request('/ai/history', { method: 'DELETE' });
   },
+
+  // 24/7 Autopilot, Autonomous Drip Engine & Lead Enricher
+  async getAutopilotStatus(): Promise<AutopilotStatus> {
+    const res = await request<{ success: boolean; status: AutopilotStatus }>('/autopilot/status');
+    return res.status;
+  },
+
+  async toggleAutopilot(
+    enabled?: boolean,
+    target: 'drip_engine' | 'inbound_agent' = 'drip_engine'
+  ): Promise<{ success: boolean; enabled: boolean; message: string }> {
+    return request('/autopilot/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ enabled, target }),
+    });
+  },
+
+  async updateAutopilotSettings(settings: AutopilotSettingsUpdate): Promise<{
+    success: boolean;
+    status: AutopilotStatus;
+  }> {
+    return request('/autopilot/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  async triggerAutopilotCycle(): Promise<{
+    success: boolean;
+    dispatchedCount: number;
+    skippedCount: number;
+    status: AutopilotStatus;
+    message: string;
+  }> {
+    return request('/autopilot/trigger-cycle', {
+      method: 'POST',
+    });
+  },
+
+  async enrichLeadsNow(limit: number = 30): Promise<{
+    success: boolean;
+    message: string;
+    result: {
+      totalLeadsScanned: number;
+      emailsDiscoveredCount: number;
+      socialsDiscoveredCount: number;
+      locationsResolvedCount: number;
+      phoneNormalizedCount: number;
+      details: any[];
+    };
+  }> {
+    return request('/autopilot/enrich-now', {
+      method: 'POST',
+      body: JSON.stringify({ limit }),
+    });
+  },
+
+  async searchGmbLeads(params: GmbSearchParams): Promise<{
+    success: boolean;
+    count: number;
+    leads: ScrapedLead[];
+    query: any;
+  }> {
+    return request('/scraper/search', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  async importScrapedLeads(params: GmbImportParams): Promise<GmbImportResult> {
+    return request('/scraper/import', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  async getScraperPresets(): Promise<{
+    success: boolean;
+    categories: string[];
+    countries: Array<{ code: string; name: string; flag: string; defaultState: string }>;
+  }> {
+    return request('/scraper/presets');
+  },
 };
+
 
 
 

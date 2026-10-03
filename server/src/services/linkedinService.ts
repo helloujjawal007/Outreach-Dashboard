@@ -159,7 +159,7 @@ export class LinkedInService {
   }
 
   /**
-   * Disconnect LinkedIn account
+   * Disconnect the default or primary LinkedIn account
    */
   public async disconnectAccount(): Promise<void> {
     await query(`
@@ -167,6 +167,99 @@ export class LinkedInService {
       SET is_connected = false, session_cookie = '', access_token = '', updated_at = NOW()
       WHERE id = 'default_account';
     `);
+  }
+
+  /**
+   * Get all connected/synced LinkedIn accounts
+   */
+  public async getAllAccounts(): Promise<LinkedInAccountStatus[]> {
+    const res = await query(`
+      SELECT id, account_name, headline, profile_url, auth_method, is_connected,
+             session_cookie, access_token,
+             daily_comments_used, daily_posts_used, quota_reset_at
+      FROM linkedin_accounts
+      ORDER BY created_at ASC;
+    `);
+
+    if (res.rows.length === 0) {
+      const defaultStatus = await this.getAccountStatus();
+      return [defaultStatus];
+    }
+
+    return res.rows.map((row) => {
+      const hasCookie = Boolean(row.session_cookie && row.session_cookie.trim());
+      const hasToken = Boolean(row.access_token && row.access_token.trim());
+      return {
+        id: row.id,
+        accountName: row.account_name,
+        headline: row.headline,
+        profileUrl: row.profile_url || `https://linkedin.com/in/${row.account_name.toLowerCase().replace(/\s+/g, '')}`,
+        authMethod: row.auth_method,
+        isConnected: hasCookie || hasToken || Boolean(row.is_connected),
+        hasSessionCookie: hasCookie,
+        hasAccessToken: hasToken,
+        dailyCommentsUsed: row.daily_comments_used || 0,
+        dailyPostsUsed: row.daily_posts_used || 0,
+        dailySafeCommentLimit: this.DAILY_SAFE_COMMENT_LIMIT,
+        dailySafePostLimit: this.DAILY_SAFE_POST_LIMIT,
+        quotaResetAt: row.quota_reset_at || new Date(Date.now() + 86400000).toISOString(),
+      };
+    });
+  }
+
+  /**
+   * Add a new synced LinkedIn account
+   */
+  public async addAccount(params: {
+    accountName: string;
+    headline?: string;
+    profileUrl?: string;
+    sessionCookie?: string;
+    accessToken?: string;
+    authMethod?: 'cookie' | 'oauth';
+  }): Promise<LinkedInAccountStatus> {
+    const id = 'li_' + Date.now().toString(36);
+    const accountName = params.accountName.trim();
+    const headline = (params.headline || 'Growth Strategist & Outbound Lead Generation').trim();
+    const profileUrl = (params.profileUrl || '').trim();
+    const authMethod = params.authMethod || 'cookie';
+    const sessionCookie = (params.sessionCookie || '').trim();
+    const accessToken = (params.accessToken || '').trim();
+    const isConnected = Boolean(sessionCookie || accessToken);
+
+    await query(
+      `INSERT INTO linkedin_accounts (id, account_name, headline, profile_url, auth_method, session_cookie, access_token, is_connected, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+      [id, accountName, headline, profileUrl, authMethod, sessionCookie, accessToken, isConnected]
+    );
+
+    return {
+      id,
+      accountName,
+      headline,
+      profileUrl,
+      authMethod,
+      isConnected,
+      hasSessionCookie: Boolean(sessionCookie),
+      hasAccessToken: Boolean(accessToken),
+      dailyCommentsUsed: 0,
+      dailyPostsUsed: 0,
+      dailySafeCommentLimit: this.DAILY_SAFE_COMMENT_LIMIT,
+      dailySafePostLimit: this.DAILY_SAFE_POST_LIMIT,
+      quotaResetAt: new Date(Date.now() + 86400000).toISOString(),
+    };
+  }
+
+  /**
+   * Delete a synced LinkedIn account
+   */
+  public async deleteAccount(id: string): Promise<boolean> {
+    if (id === 'default_account') {
+      await this.disconnectAccount();
+      return true;
+    }
+    const res = await query(`DELETE FROM linkedin_accounts WHERE id = $1 RETURNING id`, [id]);
+    return res.rows.length > 0;
   }
 
   // Stateful tracking of recently used frameworks to guarantee consecutive calls write completely different posts

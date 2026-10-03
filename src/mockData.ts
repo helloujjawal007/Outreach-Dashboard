@@ -316,11 +316,11 @@ export const mockQueue: QueueItem[] = [
 ];
 
 export const mockSendHealth: SendHealthDay[] = [
-  { date: 'Sep 2', sent: 142, bounced: 3, drafted: 8 },
-  { date: 'Sep 3', sent: 98, bounced: 1, drafted: 5 },
-  { date: 'Sep 4', sent: 187, bounced: 7, drafted: 12 },
-  { date: 'Sep 5', sent: 203, bounced: 2, drafted: 9 },
-  { date: 'Sep 6', sent: 76, bounced: 0, drafted: 3 },
-  { date: 'Sep 7', sent: 154, bounced: 5, drafted: 11 },
-  { date: 'Sep 8', sent: 121, bounced: 4, drafted: 7 },
+  { date: 'Sep 2', sent: 142, received: 18, bounced: 3, drafted: 8 },
+  { date: 'Sep 3', sent: 98, received: 14, bounced: 1, drafted: 5 },
+  { date: 'Sep 4', sent: 187, received: 25, bounced: 7, drafted: 12 },
+  { date: 'Sep 5', sent: 203, received: 29, bounced: 2, drafted: 9 },
+  { date: 'Sep 6', sent: 76, received: 9, bounced: 0, drafted: 3 },
+  { date: 'Sep 7', sent: 154, received: 21, bounced: 5, drafted: 11 },
+  { date: 'Sep 8', sent: 121, received: 16, bounced: 4, drafted: 7 },
 ];

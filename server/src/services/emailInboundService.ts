@@ -506,17 +506,34 @@ export class EmailInboundService {
               }
 
               // Insert inbound message into messages table
-              await query(
+              const msgInsertRes = await query<{ id: string }>(
                 `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, created_at)
-                 VALUES ($1, 'email', 'inbound', $2, 'delivered', $3, $3)`,
+                 VALUES ($1, 'email', 'inbound', $2, 'delivered', $3, $3) RETURNING id`,
                 [convId, finalReplyText, emailDate]
               );
+              const insertedMsgId = msgInsertRes.rows[0]?.id;
 
               // Update conversation thread timestamp
               await query(
                 `UPDATE conversations SET last_message_at = $1, status = 'open' WHERE id = $2`,
                 [emailDate, convId]
               );
+
+              // Extreme Automation: Trigger Autonomous Inbound Agent (Sentiment, Auto-Draft & Hot Lead Auto-Conversion)
+              try {
+                const { autonomousInboundAgent } = await import('./autonomousInboundAgent');
+                await autonomousInboundAgent.processInboundMessage({
+                  messageId: insertedMsgId,
+                  conversationId: convId,
+                  entityType: 'lead',
+                  entityId: matchedLead.id,
+                  senderEmail: senderAddress,
+                  subject: parsed.subject || 'Email Reply',
+                  replyText: finalReplyText,
+                });
+              } catch (agentErr) {
+                console.error('[EmailInboundService] Inbound agent processing warning:', agentErr);
+              }
 
               newReplies.push({
                 senderEmail: senderAddress,

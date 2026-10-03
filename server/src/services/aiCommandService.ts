@@ -24,7 +24,9 @@ export interface BusinessSuggestion {
     | 'target_ecom_leads'
     | 'view_inbound_replies'
     | 'run_lead_diagnostic'
-    | 'scrape_lead_locations';
+    | 'scrape_lead_locations'
+    | 'run_full_autopilot'
+    | 'reset_completed_sequences';
   actionPayload?: Record<string, unknown>;
   badgeText: string;
   badgeVariant: 'red' | 'amber' | 'emerald' | 'indigo';

@@ -15,6 +15,8 @@ import type {
   ScheduleListRequest,
   ScheduleSingleRequest,
   ScheduleBatchRequest,
+  AutopilotStatus,
+  AutopilotSettingsUpdate,
 } from './types';
 import { api, type HealthResponse, type SendReplyResult } from './services/api';
 
@@ -27,6 +29,7 @@ export function useStore() {
   const [inboundReplies, setInboundReplies] = useState<InboundReplyMessage[]>([]);
   const [latestReplyNotification, setLatestReplyNotification] = useState<InboundReplyMessage | null>(null);
   const [dispatches, setDispatches] = useState<ScheduledDispatch[]>([]);
+  const [autopilotStatus, setAutopilotStatus] = useState<AutopilotStatus | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse['health'] | null>(null);
@@ -40,7 +43,7 @@ export function useStore() {
       setLoading(true);
       setError(null);
 
-      const [leadsData, clientsData, campaignsData, queueData, healthData, listsData, batchesData, trashData, inboundData, dispatchesData] = await Promise.all([
+      const [leadsData, clientsData, campaignsData, queueData, healthData, listsData, batchesData, trashData, inboundData, dispatchesData, autoStatusData] = await Promise.all([
         api.getLeads(listId, batchId).catch((err) => {
           console.error('Failed to load leads:', err);
           return [] as Lead[];
@@ -81,7 +84,15 @@ export function useStore() {
           console.error('Failed to load scheduled dispatches:', err);
           return [] as ScheduledDispatch[];
         }),
+        api.getAutopilotStatus().catch((err) => {
+          console.error('Failed to load autopilot status:', err);
+          return null;
+        }),
       ]);
+
+      if (autoStatusData) {
+        setAutopilotStatus(autoStatusData);
+      }
 
       // If a specific list or batch is selected, only show leads matching that filter
       if ((listId && listId !== 'all') || (batchId && batchId !== 'all')) {
@@ -1183,9 +1194,76 @@ export function useStore() {
     [refreshAll]
   );
 
+  // 24/7 Autopilot, Autonomous Drip Engine & Lead Enricher Handlers
+  const fetchAutopilotStatus = useCallback(async () => {
+    try {
+      const data = await api.getAutopilotStatus();
+      setAutopilotStatus(data);
+      return data;
+    } catch (err) {
+      console.error('[Store] fetchAutopilotStatus error:', err);
+      return null;
+    }
+  }, []);
+
+  const toggleAutopilot = useCallback(
+    async (enabled?: boolean, target: 'drip_engine' | 'inbound_agent' = 'drip_engine') => {
+      try {
+        await api.toggleAutopilot(enabled, target);
+        await fetchAutopilotStatus();
+      } catch (err) {
+        console.error('[Store] toggleAutopilot error:', err);
+        throw err;
+      }
+    },
+    [fetchAutopilotStatus]
+  );
+
+  const updateAutopilotSettings = useCallback(async (settings: AutopilotSettingsUpdate) => {
+    try {
+      const res = await api.updateAutopilotSettings(settings);
+      setAutopilotStatus(res.status);
+    } catch (err) {
+      console.error('[Store] updateAutopilotSettings error:', err);
+      throw err;
+    }
+  }, []);
+
+  const triggerAutopilotCycle = useCallback(async () => {
+    try {
+      const res = await api.triggerAutopilotCycle();
+      setAutopilotStatus(res.status);
+      await refreshAll();
+      return res;
+    } catch (err) {
+      console.error('[Store] triggerAutopilotCycle error:', err);
+      throw err;
+    }
+  }, [refreshAll]);
+
+  const enrichLeadsNow = useCallback(
+    async (limit: number = 30) => {
+      try {
+        const res = await api.enrichLeadsNow(limit);
+        await refreshAll();
+        return res;
+      } catch (err) {
+        console.error('[Store] enrichLeadsNow error:', err);
+        throw err;
+      }
+    },
+    [refreshAll]
+  );
+
   return useMemo(
     () => ({
       leads,
+      autopilotStatus,
+      fetchAutopilotStatus,
+      toggleAutopilot,
+      updateAutopilotSettings,
+      triggerAutopilotCycle,
+      enrichLeadsNow,
       lists,
       batches,
       trashLeads,
@@ -1265,6 +1343,12 @@ export function useStore() {
       retryScheduledDispatch,
     }),
     [
+      autopilotStatus,
+      fetchAutopilotStatus,
+      toggleAutopilot,
+      updateAutopilotSettings,
+      triggerAutopilotCycle,
+      enrichLeadsNow,
       dispatches,
       fetchDispatches,
       scheduleListDispatch,

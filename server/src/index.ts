@@ -18,8 +18,12 @@ import { batchesRouter } from './routes/batches';
 import { schedulerRouter } from './routes/scheduler';
 import { inboxesRouter } from './routes/inboxes';
 import { linkedinRouter } from './routes/linkedin';
+import { autopilotRouter } from './routes/autopilot';
+import { scraperRouter } from './routes/scraper';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
+import { autonomousDripEngine } from './services/autonomousDripEngine';
+import { addExtremeAutomation } from './db/add_extreme_automation';
 import { addInboundEmailSyncTable } from './db/add_inbound_email_sync';
 import { addScheduledDispatchesTable } from './db/add_scheduled_dispatches';
 import { addMultiChannelScheduling } from './db/add_multichannel_scheduling';
@@ -79,6 +83,8 @@ app.use('/api/batches', batchesRouter);
 app.use('/api/scheduler', schedulerRouter);
 app.use('/api/inboxes', inboxesRouter);
 app.use('/api/linkedin', linkedinRouter);
+app.use('/api/autopilot', autopilotRouter);
+app.use('/api/scraper', scraperRouter);
 
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {
@@ -227,6 +233,14 @@ async function startServer() {
     googleEnrichmentService.start12HourGmbSync();
   } catch (err) {
     console.error('[GMB Sync Warning] Failed to initialize 12-hour GMB sync engine:', err);
+  }
+
+  // Initialize Extreme Automation & Autopilot Infrastructure
+  try {
+    await addExtremeAutomation();
+    autonomousDripEngine.startScheduler(30000);
+  } catch (err) {
+    console.error('[Autopilot Warning] Failed to initialize Extreme Automation:', err);
   }
 
   const server = app.listen(env.PORT, () => {

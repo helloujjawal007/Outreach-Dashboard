@@ -33,8 +33,8 @@ schedulerRouter.post('/schedule-single', async (req: Request, res: Response) => 
       return res.status(400).json({ success: false, error: 'leadId is required' });
     }
 
-    if (!['email', 'whatsapp', 'facebook', 'instagram'].includes(channel)) {
-      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, facebook, or instagram.' });
+    if (!['email', 'whatsapp', 'facebook', 'instagram', 'linkedin'].includes(channel)) {
+      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, linkedin, facebook, or instagram.' });
     }
 
     const result = await emailSchedulerService.scheduleSingleDispatch({
@@ -64,6 +64,8 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
     const {
       leadIds,
       channel = 'email',
+      inboxIds,
+      linkedinAccountId,
       scheduledFor,
       intervalSeconds,
       style,
@@ -75,13 +77,15 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'leadIds array is required' });
     }
 
-    if (!['email', 'whatsapp', 'facebook', 'instagram'].includes(channel)) {
-      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, facebook, or instagram.' });
+    if (!['email', 'whatsapp', 'facebook', 'instagram', 'linkedin'].includes(channel)) {
+      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, linkedin, facebook, or instagram.' });
     }
 
     const result = await emailSchedulerService.scheduleBatchDispatch({
       leadIds,
       channel,
+      inboxIds,
+      linkedinAccountId,
       scheduledFor,
       intervalSeconds: intervalSeconds ? Number(intervalSeconds) : undefined,
       style,
@@ -102,7 +106,17 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
 // POST /api/scheduler/schedule-list - Shoot now or schedule dispatch for a list on any channel
 schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
   try {
-    const { listId, channel = 'email', scheduledFor, intervalSeconds, style, stage, customInstructions } = req.body;
+    const {
+      listId,
+      channel = 'email',
+      inboxIds,
+      linkedinAccountId,
+      scheduledFor,
+      intervalSeconds,
+      style,
+      stage,
+      customInstructions,
+    } = req.body;
 
     if (!listId) {
       return res.status(400).json({ success: false, error: 'listId is required' });
@@ -111,6 +125,8 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
     const result = await emailSchedulerService.scheduleListDispatch({
       listId,
       channel,
+      inboxIds,
+      linkedinAccountId,
       scheduledFor,
       intervalSeconds: intervalSeconds ? Number(intervalSeconds) : undefined,
       style,

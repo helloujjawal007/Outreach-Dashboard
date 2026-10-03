@@ -26,6 +26,8 @@ import {
   User,
   AlertTriangle,
   Trash2,
+  Zap,
+  Edit3,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '@/services/api';
@@ -86,6 +88,36 @@ export function InboundRepliesModal({
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [waStatus, setWaStatus] = useState<WhatsAppSessionStatus | null>(null);
+  const [approvingReplyId, setApprovingReplyId] = useState<string | null>(null);
+  const [draftOverrides, setDraftOverrides] = useState<Record<string, string>>({});
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+
+  const handleApproveAndSend = async (msg: InboundReplyMessage) => {
+    const replyText = draftOverrides[msg.id] ?? msg.ai_suggested_reply;
+    if (!replyText || !replyText.trim()) return;
+
+    setApprovingReplyId(msg.id);
+    try {
+      const res = await api.sendReply({
+        leadId: msg.lead_id || undefined,
+        clientId: msg.client_id || undefined,
+        channel: msg.channel,
+        text: replyText.trim(),
+      });
+      if (res.success) {
+        setActionFeedback(`AI reply dispatched to ${msg.business_name} via ${msg.channel}!`);
+        if (onMarkHandled) await onMarkHandled(msg.id);
+        fetchRecentMessages();
+        fetchInboundHistory();
+      } else {
+        setActionFeedback(`Failed to send: ${res.message || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      setActionFeedback(`Error: ${err.message || 'Failed to dispatch reply'}`);
+    } finally {
+      setApprovingReplyId(null);
+    }
+  };
 
   // Fetch recent messages across all channels
   const fetchRecentMessages = useCallback(async () => {
@@ -830,6 +862,32 @@ export function InboundRepliesModal({
                             </>
                           )}
 
+                          {/* AI Intent Classification Badge */}
+                          {msg.inbound_intent && (
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                msg.inbound_intent === 'meeting_request'
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-xs'
+                                  : msg.inbound_intent === 'interested'
+                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-xs'
+                                  : msg.inbound_intent === 'question'
+                                  ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                                  : msg.inbound_intent === 'not_now'
+                                  ? 'bg-slate-100 text-slate-800 border border-slate-300'
+                                  : 'bg-rose-100 text-rose-800 border border-rose-300'
+                              }`}
+                              title={`AI Intent: ${msg.inbound_intent}${msg.inbound_intent_confidence ? ` (${Math.round(msg.inbound_intent_confidence * 100)}% confidence)` : ''}`}
+                            >
+                              <Zap size={10} className={msg.inbound_intent === 'meeting_request' || msg.inbound_intent === 'interested' ? 'text-amber-600 fill-amber-500' : ''} />
+                              {msg.inbound_intent === 'meeting_request' && '🔥 Meeting Request'}
+                              {msg.inbound_intent === 'interested' && '✨ Interested'}
+                              {msg.inbound_intent === 'question' && '❓ Question'}
+                              {msg.inbound_intent === 'not_now' && '⏳ Not Now'}
+                              {msg.inbound_intent === 'opt_out' && '🛑 Opt-Out'}
+                              {msg.inbound_intent_confidence ? ` (${Math.round(msg.inbound_intent_confidence * 100)}%)` : ''}
+                            </span>
+                          )}
+
                           {msg.category && (
                             <span className="flex items-center gap-1 text-[11px] text-slate-500">
                               <Tag size={10} />
@@ -944,6 +1002,67 @@ export function InboundRepliesModal({
                       {msg.text}
                     </p>
                   </div>
+
+                  {/* AI Autonomous Consultative Draft Response */}
+                  {msg.ai_suggested_reply && isInbound && !isReplied && (
+                    <div className="mt-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 via-indigo-50/30 to-purple-50/50 p-3 shadow-2xs">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950">
+                          <Sparkles size={13} className="text-indigo-600" />
+                          <span>AI Autonomous Consultative Draft</span>
+                          <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-indigo-700">
+                            Ready to Dispatch
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingDraftId(editingDraftId === msg.id ? null : msg.id)}
+                          className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer transition"
+                        >
+                          <Edit3 size={11} />
+                          <span>{editingDraftId === msg.id ? 'Done' : 'Edit Draft'}</span>
+                        </button>
+                      </div>
+
+                      {editingDraftId === msg.id ? (
+                        <textarea
+                          value={draftOverrides[msg.id] ?? msg.ai_suggested_reply}
+                          onChange={(e) => setDraftOverrides((prev) => ({ ...prev, [msg.id]: e.target.value }))}
+                          rows={3}
+                          className="w-full rounded-lg border border-indigo-300 bg-white p-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner font-sans"
+                          placeholder="Customize your response before sending..."
+                        />
+                      ) : (
+                        <p className="text-xs text-slate-800 leading-relaxed italic bg-white/85 p-2.5 rounded-lg border border-indigo-100">
+                          "{draftOverrides[msg.id] ?? msg.ai_suggested_reply}"
+                        </p>
+                      )}
+
+                      <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-[10px] text-indigo-700 font-medium">
+                          ✨ Tailored to {msg.category || 'business'} • Zero manual drafting required
+                        </span>
+                        <button
+                          type="button"
+                          disabled={approvingReplyId === msg.id}
+                          onClick={() => handleApproveAndSend(msg)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:shadow transition disabled:opacity-50 cursor-pointer"
+                        >
+                          {approvingReplyId === msg.id ? (
+                            <>
+                              <RefreshCw size={12} className="animate-spin" />
+                              <span>Sending...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Send size={12} />
+                              <span>Approve &amp; Send Reply</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Bottom action toolbar */}
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">

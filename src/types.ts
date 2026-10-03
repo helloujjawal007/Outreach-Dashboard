@@ -54,6 +54,12 @@ export interface Lead {
   whatsappDecisionReason?: string;
   detectedChannels?: string[];
   googleProfile?: GoogleBusinessProfile;
+  discoveredEmails?: string[];
+  discoveredSocials?: Record<string, string>;
+  inboundIntent?: string;
+  inboundIntentConfidence?: number;
+  aiSuggestedReply?: string;
+  aiReplyStatus?: string;
   metadata?: Record<string, any>;
 }
 
@@ -162,6 +168,9 @@ export interface InboundReplyMessage {
   is_replied?: boolean;
   replied_at?: string | null;
   inbox_email?: string;
+  inbound_intent?: string;
+  inbound_intent_confidence?: number;
+  ai_suggested_reply?: string;
   metadata?: Record<string, any>;
   entity_type: 'lead' | 'client';
   lead_id?: string | null;
@@ -210,10 +219,14 @@ export interface QueueItem {
 
 export interface SendHealthDay {
   date: string;
+  metricDate?: string;
   sent: number;
+  received?: number;
   bounced: number;
   complaints?: number;
   drafted: number;
+  deliverabilityRate?: number;
+  replyRate?: number;
 }
 
 export const channelLabels: Record<Channel, string> = {
@@ -252,6 +265,8 @@ export interface ScheduledDispatch {
   recipient_phone?: string;
   recipient_handle?: string;
   recipient_name: string;
+  inbox_id?: string;
+  inbox_email?: string;
   subject: string;
   body: string;
   stage: string;
@@ -267,6 +282,8 @@ export interface ScheduledDispatch {
 export interface ScheduleListRequest {
   listId: string;
   channel?: Channel;
+  inboxIds?: string[];
+  linkedinAccountId?: string;
   scheduledFor?: string;
   intervalSeconds?: number;
   style?: 'conversational' | 'direct' | 'curious';
@@ -521,6 +538,103 @@ export interface AiCommandHistoryResponse {
   lastCommand: AiCommandHistoryItem | null;
   history: AiCommandHistoryItem[];
 }
+
+export interface AutopilotStatus {
+  dripEngine: {
+    enabled: boolean;
+    isRunning: boolean;
+    sentToday: number;
+    dailyLimit: number;
+    remainingCapacityToday: number;
+    activeInboxesCount: number;
+    leadsDueTotal: number;
+    initialDueCount: number;
+    followup1DueCount: number;
+    followup2DueCount: number;
+    lastCycleRunAt: string | null;
+    nextCycleScheduledAt: string | null;
+  };
+  inboundAgent: {
+    enabled: boolean;
+    autoConvertHotLeads: boolean;
+    autoDraftReplies: boolean;
+    autoSendReplies: boolean;
+  };
+  enrichmentEngine: {
+    autoDiscoverEmails: boolean;
+    autoResolveLocations: boolean;
+  };
+}
+
+export interface AutopilotSettingsUpdate {
+  dripSettings?: {
+    enabled?: boolean;
+    daily_limit?: number;
+    batch_size?: number;
+    cycle_interval_seconds?: number;
+    followup_1_delay_days?: number;
+    followup_2_delay_days?: number;
+    pacing_delay_min_seconds?: number;
+    pacing_delay_max_seconds?: number;
+  };
+  inboundSettings?: {
+    enabled?: boolean;
+    auto_convert_hot_leads?: boolean;
+    auto_draft_replies?: boolean;
+    auto_send_replies?: boolean;
+    confidence_threshold?: number;
+  };
+}
+
+export interface ScrapedLead {
+  businessName: string;
+  category: string;
+  phone: string;
+  email: string;
+  website: string;
+  address: string;
+  city?: string;
+  state?: string;
+  country: string;
+  rating: number;
+  reviewsCount: number;
+  googleMapsUrl: string;
+  placeId?: string;
+  emailDiscovered: boolean;
+  emailSource?: string;
+  discoveredSocials?: {
+    facebook?: string;
+    instagram?: string;
+    linkedin?: string;
+    whatsapp?: string;
+  };
+}
+
+export interface GmbSearchParams {
+  category: string;
+  continent?: string;
+  country: string;
+  state: string;
+  city?: string;
+  limit: number;
+}
+
+export interface GmbImportParams {
+  leads: ScrapedLead[];
+  listId?: string;
+  batchName?: string;
+}
+
+export interface GmbImportResult {
+  success: boolean;
+  importedCount: number;
+  duplicateCount: number;
+  batchId?: string;
+  batchName?: string;
+  leads: any[];
+}
+
+
 
 
 

@@ -3,6 +3,7 @@ import { query } from '../config/db';
 import { whatsappValidator } from '../services/whatsappValidator';
 import { googleEnrichmentService } from '../services/googleEnrichmentService';
 import { leadScraperService, cleanSiteUrl } from '../services/leadScraperService';
+import { autonomousLeadEnricher } from '../services/autonomousLeadEnricher';
 
 export const leadsRouter = Router();
 
@@ -1170,6 +1171,11 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
       );
     }
 
+    // Extreme Automation: background auto-enrich contact info if missing email
+    if (!trimmedEmail && website) {
+      autonomousLeadEnricher.runEnrichmentCycle(1).catch((err: any) => console.error('[AutonomousEnricher] Error:', err));
+    }
+
     res.status(201).json({ success: true, lead: newLead, message: 'Lead added successfully' });
   } catch (error) {
     console.error('[leadsRouter.post]', error);
@@ -1455,6 +1461,14 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       incompleteCount,
       leads: insertedLeads,
     });
+
+    // Extreme Automation: background auto-enrich all newly imported leads missing email
+    const leadsNeedingEmail = insertedLeads.filter((l: any) => !l.email && l.website).map((l: any) => l.id);
+    if (leadsNeedingEmail.length > 0) {
+      autonomousLeadEnricher
+        .runEnrichmentCycle(leadsNeedingEmail.length)
+        .catch((err: any) => console.error('[AutonomousEnricher:Batch] Error:', err));
+    }
   } catch (error) {
     console.error('[leadsRouter.import]', error);
     res.status(500).json({

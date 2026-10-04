@@ -39,8 +39,11 @@ export interface Lead {
   entityType: LeadEntity;
   createdAt: string;
   lastContactedAt: string | null;
+  firstContactedAt?: string | null;
+  emailVerified?: boolean;
+  emailVerificationStatus?: string;
   batchId?: string;
-  outreachStage?: 'initial' | 'followup_1' | 'followup_2' | 'completed';
+  outreachStage?: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
   stage?: string;
   deletedAt?: string | null;
   daysRemaining?: number;
@@ -114,7 +117,7 @@ export interface AutoSendNextResult {
   leadId: string;
   businessName: string;
   email: string;
-  stage: 'initial' | 'followup_1' | 'followup_2' | 'completed';
+  stage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
   stageLabel: string;
   subject: string;
   success: boolean;
@@ -133,7 +136,7 @@ export interface CustomList {
 }
 
 
-export type CrmSubFilter = 'all' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'trash';
+export type CrmSubFilter = 'all' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'trash';
 
 export interface ConversationMessage {
   id: string;
@@ -287,7 +290,7 @@ export interface ScheduleListRequest {
   scheduledFor?: string;
   intervalSeconds?: number;
   style?: 'conversational' | 'direct' | 'curious';
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
 }
 
@@ -298,7 +301,7 @@ export interface ScheduleSingleRequest {
   subject?: string;
   body?: string;
   style?: 'conversational' | 'direct' | 'curious';
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
 }
 
@@ -308,7 +311,7 @@ export interface ScheduleBatchRequest {
   scheduledFor?: string;
   intervalSeconds?: number;
   style?: 'conversational' | 'direct' | 'curious';
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
 }
 
@@ -551,6 +554,7 @@ export interface AutopilotStatus {
     initialDueCount: number;
     followup1DueCount: number;
     followup2DueCount: number;
+    followup3DueCount?: number;
     lastCycleRunAt: string | null;
     nextCycleScheduledAt: string | null;
   };
@@ -574,6 +578,7 @@ export interface AutopilotSettingsUpdate {
     cycle_interval_seconds?: number;
     followup_1_delay_days?: number;
     followup_2_delay_days?: number;
+    followup_3_delay_days?: number;
     pacing_delay_min_seconds?: number;
     pacing_delay_max_seconds?: number;
   };
@@ -611,7 +616,8 @@ export interface ScrapedLead {
 }
 
 export interface GmbSearchParams {
-  category: string;
+  category?: string;
+  categories?: string[];
   continent?: string;
   country: string;
   state: string;

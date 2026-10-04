@@ -88,10 +88,13 @@ export interface BackendLead {
   whatsapp: string;
   consent_status: ConsentStatus;
   last_contacted_at: string | null;
+  first_contacted_at?: string | null;
+  email_verified?: boolean;
+  email_verification_status?: string;
   created_at: string;
   updated_at: string;
   batch_id?: string;
-  outreach_stage?: 'initial' | 'followup_1' | 'followup_2' | 'completed';
+  outreach_stage?: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
   deleted_at?: string | null;
   days_remaining?: number;
   notes?: string;
@@ -287,6 +290,9 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     entityType: 'lead',
     createdAt: b.created_at,
     lastContactedAt: b.last_contacted_at,
+    firstContactedAt: b.first_contacted_at,
+    emailVerified: b.email_verified,
+    emailVerificationStatus: b.email_verification_status,
     batchId: b.batch_id,
     outreachStage: b.outreach_stage || 'initial',
     deletedAt: b.deleted_at,
@@ -661,7 +667,7 @@ export const api = {
     sentCount: number;
     skippedCount: number;
     failedCount: number;
-    breakdown: { initial: number; followup_1: number; followup_2: number };
+    breakdown: { initial: number; followup_1: number; followup_2: number; followup_3?: number };
     results: AutoSendNextResult[];
   }> {
     return request(`/batches/${batchId}/shoot-emails`, { method: 'POST' });
@@ -682,7 +688,7 @@ export const api = {
 
   // Condition-Based Stage Outreach & Auto-Send
   async getLeadStage(leadId: string): Promise<{
-    stage: 'initial' | 'followup_1' | 'followup_2' | 'completed';
+    stage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
     stageLabel: string;
     nextStepLabel: string;
     sentCount: number;
@@ -699,7 +705,7 @@ export const api = {
     sentCount?: number;
     skippedCount?: number;
     failedCount?: number;
-    breakdown?: { initial: number; followup_1: number; followup_2: number };
+    breakdown?: { initial: number; followup_1: number; followup_2: number; followup_3?: number };
     results?: AutoSendNextResult[];
   }> {
     const body = Array.isArray(leadIdOrIds)

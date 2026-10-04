@@ -1,6 +1,7 @@
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanizerService } from './humanizerService';
+import { humanCopywriterService } from './humanCopywriterService';
 import { whatsappValidator } from './whatsappValidator';
 import { whatsappSessionService } from './whatsappSessionService';
 
@@ -9,7 +10,7 @@ export interface StageDispatchResult {
   businessName: string;
   email?: string;
   phone?: string;
-  stage: 'initial' | 'followup_1' | 'followup_2' | 'completed';
+  stage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
   stageLabel: string;
   subject: string;
   success: boolean;
@@ -45,7 +46,7 @@ export class StageOutreachService {
    * Determine a lead's current outreach stage based on prior outbound touches and stored stage
    */
   async getLeadStage(leadId: string): Promise<{
-    stage: 'initial' | 'followup_1' | 'followup_2' | 'completed';
+    stage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
     stageLabel: string;
     nextStepLabel: string;
     sentCount: number;
@@ -83,16 +84,17 @@ export class StageOutreachService {
       initial: 0,
       followup_1: 1,
       followup_2: 2,
-      completed: 3,
+      followup_3: 3,
+      completed: 4,
     };
     const leadStageNum = lead.outreach_stage ? (stageMap[lead.outreach_stage] ?? 0) : 0;
     const effectiveTouchCount = Math.max(messageSentCount, leadStageNum);
 
-    if (effectiveTouchCount >= 3 || lead.outreach_stage === 'completed') {
+    if (effectiveTouchCount >= 4 || lead.outreach_stage === 'completed') {
       return {
         stage: 'completed',
         stageLabel: 'Sequence Completed',
-        nextStepLabel: 'Sequence Completed (3 touches sent)',
+        nextStepLabel: 'Sequence Completed (4 touches sent)',
         sentCount: effectiveTouchCount,
         outboundCount: effectiveTouchCount,
         subject: `Sequence Completed`,
@@ -100,31 +102,40 @@ export class StageOutreachService {
       };
     }
 
-    const resolvedStage: 'initial' | 'followup_1' | 'followup_2' =
-      effectiveTouchCount === 0 ? 'initial' : effectiveTouchCount === 1 ? 'followup_1' : 'followup_2';
+    const resolvedStage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' =
+      effectiveTouchCount === 0
+        ? 'initial'
+        : effectiveTouchCount === 1
+        ? 'followup_1'
+        : effectiveTouchCount === 2
+        ? 'followup_2'
+        : 'followup_3';
 
     const stageLabel =
       resolvedStage === 'initial'
         ? 'First Message Needed'
         : resolvedStage === 'followup_1'
-        ? 'Follow-up 1 Due'
-        : 'Follow-up 2 Due';
+        ? 'Follow-up 1 Due (Day 2.5)'
+        : resolvedStage === 'followup_2'
+        ? 'Follow-up 2 Due (Day 5.5)'
+        : 'Final Message Due (Day 10)';
 
     const nextStepLabel =
       resolvedStage === 'initial'
         ? 'Shoot First Message (Intro)'
         : resolvedStage === 'followup_1'
-        ? 'Shoot Follow-up 1 (Check-in)'
-        : 'Shoot Follow-up 2 (Final Nudge)';
+        ? 'Shoot Follow-up 1 (Day 2.5 Check-in)'
+        : resolvedStage === 'followup_2'
+        ? 'Shoot Follow-up 2 (Day 5.5 Value Nudge)'
+        : 'Shoot Follow-up 3 (Day 10 Permission Close)';
 
-    const generated = await humanizerService.generateEmail(
+    const generated = humanCopywriterService.getEmailCopy(
       {
         id: lead.id,
-        business_name: lead.business_name,
+        businessName: lead.business_name,
         category: lead.category,
-        entity_type: 'lead',
       },
-      { stage: resolvedStage, style: 'conversational' }
+      resolvedStage
     );
 
     return {
@@ -436,11 +447,14 @@ export class StageOutreachService {
           ? 'followup_1'
           : stageInfo.stage === 'followup_1'
           ? 'followup_2'
+          : stageInfo.stage === 'followup_2'
+          ? 'followup_3'
           : 'completed';
 
       await query(
         `UPDATE leads 
-         SET last_contacted_at = NOW(), 
+         SET first_contacted_at = COALESCE(first_contacted_at, NOW()),
+             last_contacted_at = NOW(), 
              outreach_stage = $1, 
              updated_at = NOW() 
          WHERE id = $2`,

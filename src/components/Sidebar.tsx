@@ -18,6 +18,7 @@ import {
   Globe,
   Trash2,
   Compass,
+  MailX,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 
@@ -52,6 +53,7 @@ interface SidebarProps {
     notAddedLeads: number;
     clients: number;
     manualReview: number;
+    invalidList?: number;
     trash?: number;
     queue: number;
     unreadMessages: number;
@@ -288,6 +290,31 @@ export function Sidebar({
                 )}
               </button>
 
+              {/* Invalid List (Flagged invalid before outreach) */}
+              <button
+                onClick={() => onNavigate('crm', 'invalid_list', activeCountryFilter)}
+                className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
+                  current === 'crm' && activeSubFilter === 'invalid_list'
+                    ? 'bg-rose-50 text-rose-800 font-bold ring-1 ring-rose-200'
+                    : 'text-ink-500 hover:bg-slate-50 hover:text-ink-800'
+                }`}
+                title="Leads with invalid, disposable, or unresolvable email addresses flagged before sending"
+              >
+                <div className="flex items-center gap-2">
+                  <MailX size={13} className={counts.invalidList && counts.invalidList > 0 ? 'text-rose-600' : 'text-slate-400'} />
+                  <span>Invalid List</span>
+                </div>
+                {counts.invalidList && counts.invalidList > 0 ? (
+                  <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700">
+                    {counts.invalidList}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-600">
+                    0
+                  </span>
+                )}
+              </button>
+
               {/* Trash Bin (28-day Soft Retention) */}
               <button
                 onClick={() => onNavigate('crm', 'trash', 'all')}
@@ -348,7 +375,7 @@ export function Sidebar({
                             onClick={() =>
                               onNavigate(
                                 'crm',
-                                activeSubFilter === 'trash' || activeSubFilter === 'manual_review'
+                                activeSubFilter === 'trash' || activeSubFilter === 'manual_review' || activeSubFilter === 'invalid_list'
                                   ? 'all'
                                   : activeSubFilter,
                                 isCountryActive ? 'all' : country
@@ -416,7 +443,7 @@ export function Sidebar({
                             onClick={() =>
                               onNavigate(
                                 'crm',
-                                activeSubFilter === 'trash' || activeSubFilter === 'manual_review'
+                                activeSubFilter === 'trash' || activeSubFilter === 'manual_review' || activeSubFilter === 'invalid_list'
                                   ? 'all'
                                   : activeSubFilter,
                                 activeCountryFilter,

@@ -162,6 +162,22 @@ export function LeadImportPage({ store, onNavigate }: Props) {
     imported: number;
     duplicates: number;
     incomplete: number;
+    automatedIntake?: {
+      hasEmailCount?: number;
+      verifiedEmailCount?: number;
+      invalidEmailCount?: number;
+      scheduledTodayCount?: number;
+      rolledOverCount?: number;
+      rolloverScheduleByDate?: Record<string, number>;
+      channelAssignments?: {
+        addedToEmailList: number;
+        addedToWhatsAppList: number;
+        addedToLinkedInList: number;
+        addedToInstagramList: number;
+        addedToFacebookList: number;
+        addedToCustomList: number;
+      };
+    };
   } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
@@ -295,6 +311,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
         imported: res.importedCount,
         duplicates: res.duplicateCount,
         incomplete: res.incompleteCount,
+        automatedIntake: (res as any).automatedIntake,
       });
 
       setRows([]);
@@ -1052,20 +1069,108 @@ export function LeadImportPage({ store, onNavigate }: Props) {
           </div>
 
           {importResult && (
-            <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 animate-fade-in">
-              <CheckCircle2 size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-emerald-800">
-                <span className="font-semibold">
-                  Successfully imported {importResult.imported}{' '}
-                  {importResult.imported === 1 ? 'new lead' : 'new leads'} into CRM.
-                </span>
-                {importResult.duplicates > 0 && (
-                  <span className="ml-2 text-xs text-amber-800 font-medium">
-                    ({importResult.duplicates} existing/duplicate{' '}
-                    {importResult.duplicates === 1 ? 'lead was' : 'leads were'} ignored and not added again)
-                  </span>
-                )}
+            <div className="rounded-xl border border-emerald-300 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 p-4 shadow-sm animate-fade-in space-y-3">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 size={22} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-emerald-900 space-y-1">
+                  <div className="font-bold text-base text-emerald-950">
+                    Successfully imported {importResult.imported}{' '}
+                    {importResult.imported === 1 ? 'new lead' : 'new leads'} into CRM!
+                  </div>
+                  {importResult.duplicates > 0 && (
+                    <div className="text-xs text-amber-800 font-medium">
+                      ℹ️ {importResult.duplicates} existing/duplicate{' '}
+                      {importResult.duplicates === 1 ? 'lead was' : 'leads were'} automatically detected and ignored.
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Automatic Platform Channel Lists Aggregation */}
+              {importResult.automatedIntake?.channelAssignments && (
+                <div className="rounded-lg bg-white/80 border border-emerald-200/80 p-3 text-xs text-slate-700 space-y-2">
+                  <div className="font-semibold text-emerald-900 flex items-center gap-1.5">
+                    <FolderPlus size={14} className="text-emerald-600" />
+                    <span>Automatically Organized into Contact Channel Lists:</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-0.5">
+                    {importResult.automatedIntake.channelAssignments.addedToEmailList > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 text-blue-800 font-semibold border border-blue-200">
+                        <Mail size={12} className="text-blue-600" />
+                        <span>Email Leads List ({importResult.automatedIntake.channelAssignments.addedToEmailList})</span>
+                      </span>
+                    )}
+                    {importResult.automatedIntake.channelAssignments.addedToWhatsAppList > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200">
+                        <Phone size={12} className="text-emerald-600" />
+                        <span>WhatsApp Leads List ({importResult.automatedIntake.channelAssignments.addedToWhatsAppList})</span>
+                      </span>
+                    )}
+                    {importResult.automatedIntake.channelAssignments.addedToLinkedInList > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-sky-50 text-sky-800 font-semibold border border-sky-200">
+                        <Linkedin size={12} className="text-sky-600" />
+                        <span>LinkedIn Leads List ({importResult.automatedIntake.channelAssignments.addedToLinkedInList})</span>
+                      </span>
+                    )}
+                    {importResult.automatedIntake.channelAssignments.addedToInstagramList > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-800 font-semibold border border-purple-200">
+                        <Instagram size={12} className="text-purple-600" />
+                        <span>Instagram Leads List ({importResult.automatedIntake.channelAssignments.addedToInstagramList})</span>
+                      </span>
+                    )}
+                    {importResult.automatedIntake.channelAssignments.addedToFacebookList > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 font-semibold border border-indigo-200">
+                        <Globe size={12} className="text-indigo-600" />
+                        <span>Facebook Leads List ({importResult.automatedIntake.channelAssignments.addedToFacebookList})</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Automated Outreach & Rollover Cadence */}
+              {importResult.automatedIntake && (importResult.automatedIntake.verifiedEmailCount || 0) > 0 && (
+                <div className="rounded-lg bg-indigo-50/90 border border-indigo-200 p-3 text-xs text-indigo-950 space-y-2">
+                  <div className="font-bold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-indigo-900">
+                      <Sparkles size={14} className="text-indigo-600" />
+                      <span>Automated Human-Written Outreach Activated:</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white font-bold text-[10px]">
+                      {importResult.automatedIntake.verifiedEmailCount} Verified
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-800">
+                      <CheckCircle2 size={13} className="text-emerald-600" />
+                      <span>{importResult.automatedIntake.scheduledTodayCount || 0} scheduled for Today (25-35s pacing)</span>
+                    </span>
+                    {(importResult.automatedIntake.rolledOverCount || 0) > 0 && (
+                      <span className="inline-flex items-center gap-1 font-semibold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded border border-amber-300">
+                        <Clock size={13} className="text-amber-700" />
+                        <span>
+                          {importResult.automatedIntake.rolledOverCount} rolled over to Tomorrow (Daily 200 Limit Adhered)
+                        </span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="pt-1 border-t border-indigo-100/80 text-[11px] text-indigo-800/90 flex items-center gap-1.5 flex-wrap">
+                    <span className="font-bold">Automated Human Cadence:</span>
+                    <span>Touch 1 (Intro)</span>
+                    <span>➔</span>
+                    <span>Touch 2 (Day 2.5)</span>
+                    <span>➔</span>
+                    <span>Touch 3 (Day 5.5)</span>
+                    <span>➔</span>
+                    <span>Touch 4 (Day 10 Final Close)</span>
+                    <span className="text-[10px] text-slate-500 italic ml-1">
+                      (Auto-stops instantly upon lead reply)
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

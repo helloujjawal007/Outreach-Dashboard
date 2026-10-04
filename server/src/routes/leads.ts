@@ -4,6 +4,7 @@ import { whatsappValidator } from '../services/whatsappValidator';
 import { googleEnrichmentService } from '../services/googleEnrichmentService';
 import { leadScraperService, cleanSiteUrl } from '../services/leadScraperService';
 import { autonomousLeadEnricher } from '../services/autonomousLeadEnricher';
+import { automatedIntakeEngine } from '../services/automatedIntakeEngine';
 
 export const leadsRouter = Router();
 
@@ -1163,12 +1164,15 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
 
     const newLead = result.rows[0];
 
-    // If listId provided, add membership
-    if (listId && typeof listId === 'string' && listId !== 'all' && listId !== 'none') {
-      await query(
-        `INSERT INTO lead_list_memberships (lead_id, list_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [newLead.id, listId]
-      );
+    // Auto-assign to platform channel lists (Email, WhatsApp, LinkedIn, IG, FB) and execute automated outreach intake
+    let intakeResult = null;
+    try {
+      intakeResult = await automatedIntakeEngine.processImportedLeads([newLead as any], {
+        customListId: listId,
+        autoSend: leadStatus === 'active',
+      });
+    } catch (intakeErr) {
+      console.error('[leadsRouter.post] Automated intake error:', intakeErr);
     }
 
     // Extreme Automation: background auto-enrich contact info if missing email
@@ -1176,7 +1180,12 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
       autonomousLeadEnricher.runEnrichmentCycle(1).catch((err: any) => console.error('[AutonomousEnricher] Error:', err));
     }
 
-    res.status(201).json({ success: true, lead: newLead, message: 'Lead added successfully' });
+    res.status(201).json({
+      success: true,
+      lead: newLead,
+      message: 'Lead added successfully',
+      automatedIntake: intakeResult,
+    });
   } catch (error) {
     console.error('[leadsRouter.post]', error);
     res.status(500).json({ success: false, error: 'Failed to create lead' });
@@ -1236,7 +1245,7 @@ leadsRouter.post('/batch-enrich-google', async (req: Request, res: Response) => 
 // POST /api/leads/import - Bulk import with deduplication, validation, and batch tracking (28 days)
 leadsRouter.post('/import', async (req: Request, res: Response) => {
   try {
-    const { leads: rawLeads, batchName } = req.body;
+    const { leads: rawLeads, batchName, listId } = req.body;
 
     if (!Array.isArray(rawLeads) || rawLeads.length === 0) {
       return res.status(400).json({ success: false, error: 'Array of leads required' });
@@ -1452,6 +1461,19 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       [insertedCount, duplicateCount, incompleteCount, batchId]
     );
 
+    // 4. Auto-assign to platform channel lists (Email, WhatsApp, LinkedIn, IG, FB) and execute automated intake & outreach
+    let intakeResult = null;
+    if (insertedLeads.length > 0) {
+      try {
+        intakeResult = await automatedIntakeEngine.processImportedLeads(insertedLeads as any[], {
+          customListId: listId,
+          autoSend: true,
+        });
+      } catch (intakeErr) {
+        console.error('[leadsRouter.import] Automated intake error:', intakeErr);
+      }
+    }
+
     res.json({
       success: true,
       batchId,
@@ -1460,6 +1482,7 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       duplicateCount,
       incompleteCount,
       leads: insertedLeads,
+      automatedIntake: intakeResult,
     });
 
     // Extreme Automation: background auto-enrich all newly imported leads missing email

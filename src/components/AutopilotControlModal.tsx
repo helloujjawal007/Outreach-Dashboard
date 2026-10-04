@@ -14,6 +14,7 @@ import {
   Sliders,
   AlertCircle,
   TrendingUp,
+  Clock,
 } from 'lucide-react';
 import type { Store } from '@/store';
 
@@ -38,9 +39,10 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
   const dripEngine = status?.dripEngine;
   const inboundAgent = status?.inboundAgent;
 
-  const [f1Days, setF1Days] = useState(3);
-  const [f2Days, setF2Days] = useState(5);
-  const [dailyLimit, setDailyLimit] = useState(dripEngine?.dailyLimit || 50);
+  const [f1Days, setF1Days] = useState(2.5);
+  const [f2Days, setF2Days] = useState(5.5);
+  const [f3Days, setF3Days] = useState(10);
+  const [dailyLimit, setDailyLimit] = useState(dripEngine?.dailyLimit || 200);
   const [autoConvert, setAutoConvert] = useState(inboundAgent?.autoConvertHotLeads ?? true);
   const [autoDraft, setAutoDraft] = useState(inboundAgent?.autoDraftReplies ?? true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -49,7 +51,7 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
 
   const isDripActive = dripEngine?.enabled ?? true;
   const sentToday = dripEngine?.sentToday || 0;
-  const maxToday = dripEngine?.dailyLimit || 50;
+  const maxToday = dripEngine?.dailyLimit || 200;
   const capacityPct = Math.min(100, Math.round((sentToday / Math.max(1, maxToday)) * 100));
 
   const handleToggleDrip = async () => {
@@ -110,6 +112,7 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
           daily_limit: Number(dailyLimit),
           followup_1_delay_days: Number(f1Days),
           followup_2_delay_days: Number(f2Days),
+          followup_3_delay_days: Number(f3Days),
         },
         inboundSettings: {
           auto_convert_hot_leads: autoConvert,
@@ -278,12 +281,16 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
                         <span className="font-semibold text-slate-900">{dripEngine?.initialDueCount || 0}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Follow-up 1 Due:</span>
+                        <span>Follow-up 1 Due (Day 2.5):</span>
                         <span className="font-semibold text-slate-900">{dripEngine?.followup1DueCount || 0}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Follow-up 2 Due:</span>
+                        <span>Follow-up 2 Due (Day 5.5):</span>
                         <span className="font-semibold text-slate-900">{dripEngine?.followup2DueCount || 0}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Follow-up 3 Due (Day 10 Final):</span>
+                        <span className="font-semibold text-slate-900">{dripEngine?.followup3DueCount || 0}</span>
                       </div>
                     </div>
                   </div>
@@ -372,6 +379,47 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
                 </div>
               </div>
 
+              {/* 4-Touch Automated Cadence Timeline */}
+              <div className="p-4 border rounded-xl bg-slate-900 text-white shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                      4-Touch Human Email Outreach Cadence
+                    </span>
+                  </div>
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    200 Cap/Day • Rollover Active
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center text-xs">
+                  <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-indigo-300 font-bold uppercase">Shoot 1</div>
+                    <div className="text-sm font-black text-white mt-0.5">Day 0</div>
+                    <div className="text-[10px] text-slate-400 mt-1">Verified on import; excess rolls over to next day 9:15 AM</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-amber-300 font-bold uppercase">Shoot 2</div>
+                    <div className="text-sm font-black text-white mt-0.5">Day 2.5</div>
+                    <div className="text-[10px] text-slate-400 mt-1">Strictly ≥ 48h (60h); gentle business value follow-up</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-cyan-300 font-bold uppercase">Shoot 3</div>
+                    <div className="text-sm font-black text-white mt-0.5">Day 5.5</div>
+                    <div className="text-[10px] text-slate-400 mt-1">132h mark; concise case study & quick question</div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700">
+                    <div className="text-[10px] text-purple-300 font-bold uppercase">Shoot 4</div>
+                    <div className="text-sm font-black text-white mt-0.5">Day 10</div>
+                    <div className="text-[10px] text-slate-400 mt-1">240h mark; polite permission close (sequence complete)</div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 border-t border-slate-800 pt-2">
+                  <span>✨ 100% Human-written conversational copy (no robotic AI phrasing)</span>
+                  <span className="text-amber-300 font-medium">Auto-halts immediately if lead replies</span>
+                </div>
+              </div>
+
               {/* Safety & Compliance Guarantee */}
               <div className="p-4 border rounded-xl bg-indigo-50/50 border-indigo-100 flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
@@ -391,7 +439,7 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
                   <Mail className="w-4 h-4 text-indigo-600" />
                   Drip Sequence Pacing
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Daily Email Cap
@@ -404,37 +452,55 @@ export const AutopilotControlModal: React.FC<AutopilotControlModalProps> = ({
                       onChange={(e) => setDailyLimit(Number(e.target.value))}
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">Safe max per day across inboxes</p>
+                    <p className="text-[11px] text-slate-500 mt-1">Safe max per day (200 limit)</p>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Follow-up 1 Delay (Days)
+                      Shoot 2 Delay (Days)
                     </label>
                     <input
                       type="number"
-                      min={1}
+                      step="0.5"
+                      min={2}
                       max={14}
                       value={f1Days}
                       onChange={(e) => setF1Days(Number(e.target.value))}
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">Days after initial touch</p>
+                    <p className="text-[11px] text-slate-500 mt-1">Min 2 days (2.5d recommended)</p>
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Follow-up 2 Delay (Days)
+                      Shoot 3 Delay (Days)
                     </label>
                     <input
                       type="number"
-                      min={2}
+                      step="0.5"
+                      min={3}
                       max={21}
                       value={f2Days}
                       onChange={(e) => setF2Days(Number(e.target.value))}
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     />
-                    <p className="text-[11px] text-slate-500 mt-1">Days after follow-up 1</p>
+                    <p className="text-[11px] text-slate-500 mt-1">From initial touch (5.5d)</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Shoot 4 Delay (Days)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min={5}
+                      max={30}
+                      value={f3Days}
+                      onChange={(e) => setF3Days(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">Final close touch (10d)</p>
                   </div>
                 </div>
               </div>

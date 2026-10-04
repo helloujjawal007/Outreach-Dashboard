@@ -1,6 +1,7 @@
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanizerService } from './humanizerService';
+import { humanCopywriterService } from './humanCopywriterService';
 import { aiResearchWriterService } from './aiResearchWriterService';
 
 export interface ScheduleListParams {
@@ -11,7 +12,7 @@ export interface ScheduleListParams {
   scheduledFor?: string | Date; // If 'now' or undefined, shoots immediately
   intervalSeconds?: number; // Anti-ban pacing between dispatches
   style?: 'conversational' | 'direct' | 'curious';
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
 }
 
@@ -22,7 +23,7 @@ export interface ScheduleSingleDispatchParams {
   subject?: string;
   body?: string;
   style?: 'conversational' | 'direct' | 'curious';
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
 }
 
@@ -34,7 +35,7 @@ export interface ScheduleBatchDispatchParams {
   scheduledFor?: string | Date;
   intervalSeconds?: number; // Pacing delay in seconds between messages (defaults: wa=45s, email=25s, li=45s, fb=30s, ig=30s)
   style?: 'conversational' | 'direct' | 'curious';
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
 }
 
@@ -826,6 +827,41 @@ export class EmailSchedulerService {
       return false;
     }
 
+    // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
+    if (dispatch.lead_id) {
+      const checkRes = await query<{ consent_status: string; deleted_at: string | null }>(
+        `SELECT consent_status, deleted_at FROM leads WHERE id = $1`,
+        [dispatch.lead_id]
+      );
+      const leadRow = checkRes.rows[0];
+      if (leadRow) {
+        if (leadRow.consent_status === 'replied') {
+          console.log(`[Scheduler] Lead ${dispatch.lead_id} has replied. Suppressing future automated outreach.`);
+          await query(
+            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead already replied to outreach', updated_at = NOW() WHERE lead_id = $1 AND status = 'scheduled'`,
+            [dispatch.lead_id]
+          );
+          await query(
+            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead already replied', updated_at = NOW() WHERE id = $1`,
+            [dispatch.id]
+          );
+          return false;
+        }
+
+        if (leadRow.consent_status === 'opted_out' || leadRow.consent_status === 'unsubscribed' || leadRow.deleted_at) {
+          await query(
+            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead opted out or deleted', updated_at = NOW() WHERE lead_id = $1 AND status = 'scheduled'`,
+            [dispatch.lead_id]
+          );
+          await query(
+            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead opted out or deleted', updated_at = NOW() WHERE id = $1`,
+            [dispatch.id]
+          );
+          return false;
+        }
+      }
+    }
+
     const jitterMs = 2000 + Math.floor(Math.random() * 1200);
     await this.sleep(jitterMs);
 
@@ -861,17 +897,137 @@ export class EmailSchedulerService {
       );
 
       if (dispatch.lead_id) {
-        const nextStage =
-          dispatch.stage === 'initial' ? 'followup_1' : dispatch.stage === 'followup_1' ? 'followup_2' : 'completed';
-
-        await query(
-          `UPDATE leads
-           SET last_contacted_at = NOW(),
-               outreach_stage = $1,
-               updated_at = NOW()
-           WHERE id = $2`,
-          [nextStage, dispatch.lead_id]
+        const leadDataRes = await query<{
+          id: string;
+          business_name: string;
+          category: string;
+          first_contacted_at: Date | null;
+          last_contacted_at: Date | null;
+          outreach_stage: string;
+        }>(
+          `SELECT id, business_name, category, first_contacted_at, last_contacted_at, outreach_stage FROM leads WHERE id = $1`,
+          [dispatch.lead_id]
         );
+        const currentLead = leadDataRes.rows[0];
+
+        if (dispatch.stage === 'initial') {
+          // Touch 1 Delivered! Update lead state
+          await query(
+            `UPDATE leads
+             SET first_contacted_at = COALESCE(first_contacted_at, NOW()),
+                 last_contacted_at = NOW(),
+                 outreach_stage = 'followup_1',
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [dispatch.lead_id]
+          );
+
+          // Automated Schedule: Touch 2 goes on 2.5th day (60 hours from first shoot; strictly >= 2 days delay)
+          const followup1Time = new Date(Date.now() + 60 * 3600 * 1000);
+          const copy2 = humanCopywriterService.getEmailCopy(
+            {
+              id: dispatch.lead_id,
+              businessName: dispatch.recipient_name || currentLead?.business_name || 'Business',
+              category: currentLead?.category,
+            },
+            'followup_1'
+          );
+
+          await query(
+            `INSERT INTO scheduled_dispatches (
+              entity_type, lead_id, channel, recipient_email, recipient_name,
+              subject, body, stage, style, status, scheduled_for, created_at, updated_at
+            ) VALUES (
+              'lead', $1, 'email', $2, $3, $4, $5, 'followup_1', 'conversational', 'scheduled', $6, NOW(), NOW()
+            )`,
+            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy2.subject, copy2.body, followup1Time]
+          );
+
+          console.log(`[Scheduler] 📅 Auto-scheduled Touch 2 (Follow-up 1) for "${dispatch.recipient_name}" at Day 2.5 (${followup1Time.toISOString()})`);
+        } else if (dispatch.stage === 'followup_1') {
+          // Touch 2 Delivered! Update lead state
+          await query(
+            `UPDATE leads
+             SET last_contacted_at = NOW(),
+                 outreach_stage = 'followup_2',
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [dispatch.lead_id]
+          );
+
+          // Automated Schedule: Touch 3 goes on 5.5th day (132 hours from first shoot, or 72 hours / 3 days after touch 2)
+          const anchorTime = currentLead?.first_contacted_at ? new Date(currentLead.first_contacted_at).getTime() : Date.now() - 60 * 3600 * 1000;
+          const followup2Time = new Date(anchorTime + 132 * 3600 * 1000);
+          const safeF2Time = followup2Time.getTime() > Date.now() + 24 * 3600 * 1000 ? followup2Time : new Date(Date.now() + 72 * 3600 * 1000);
+
+          const copy3 = humanCopywriterService.getEmailCopy(
+            {
+              id: dispatch.lead_id,
+              businessName: dispatch.recipient_name || currentLead?.business_name || 'Business',
+              category: currentLead?.category,
+            },
+            'followup_2'
+          );
+
+          await query(
+            `INSERT INTO scheduled_dispatches (
+              entity_type, lead_id, channel, recipient_email, recipient_name,
+              subject, body, stage, style, status, scheduled_for, created_at, updated_at
+            ) VALUES (
+              'lead', $1, 'email', $2, $3, $4, $5, 'followup_2', 'conversational', 'scheduled', $6, NOW(), NOW()
+            )`,
+            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy3.subject, copy3.body, safeF2Time]
+          );
+
+          console.log(`[Scheduler] 📅 Auto-scheduled Touch 3 (Follow-up 2) for "${dispatch.recipient_name}" at Day 5.5 (${safeF2Time.toISOString()})`);
+        } else if (dispatch.stage === 'followup_2') {
+          // Touch 3 Delivered! Update lead state
+          await query(
+            `UPDATE leads
+             SET last_contacted_at = NOW(),
+                 outreach_stage = 'followup_3',
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [dispatch.lead_id]
+          );
+
+          // Automated Schedule: Touch 4 (Final Close) goes on 10th day (240 hours from first shoot, or 108 hours / 4.5 days after touch 3)
+          const anchorTime = currentLead?.first_contacted_at ? new Date(currentLead.first_contacted_at).getTime() : Date.now() - 132 * 3600 * 1000;
+          const followup3Time = new Date(anchorTime + 240 * 3600 * 1000);
+          const safeF3Time = followup3Time.getTime() > Date.now() + 24 * 3600 * 1000 ? followup3Time : new Date(Date.now() + 108 * 3600 * 1000);
+
+          const copy4 = humanCopywriterService.getEmailCopy(
+            {
+              id: dispatch.lead_id,
+              businessName: dispatch.recipient_name || currentLead?.business_name || 'Business',
+              category: currentLead?.category,
+            },
+            'followup_3'
+          );
+
+          await query(
+            `INSERT INTO scheduled_dispatches (
+              entity_type, lead_id, channel, recipient_email, recipient_name,
+              subject, body, stage, style, status, scheduled_for, created_at, updated_at
+            ) VALUES (
+              'lead', $1, 'email', $2, $3, $4, $5, 'followup_3', 'conversational', 'scheduled', $6, NOW(), NOW()
+            )`,
+            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy4.subject, copy4.body, safeF3Time]
+          );
+
+          console.log(`[Scheduler] 📅 Auto-scheduled Touch 4 (Final Close) for "${dispatch.recipient_name}" at Day 10 (${safeF3Time.toISOString()})`);
+        } else if (dispatch.stage === 'followup_3') {
+          // Touch 4 Delivered! Sequence completed (all 4 touches delivered)
+          await query(
+            `UPDATE leads
+             SET last_contacted_at = NOW(),
+                 outreach_stage = 'completed',
+                 updated_at = NOW()
+             WHERE id = $1`,
+            [dispatch.lead_id]
+          );
+          console.log(`[Scheduler] 🏁 Outreach sequence completed for "${dispatch.recipient_name}" (all 4 touches delivered)`);
+        }
 
         // Also trigger website contact form submission if available
         try {

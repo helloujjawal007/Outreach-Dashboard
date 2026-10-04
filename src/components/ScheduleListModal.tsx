@@ -52,7 +52,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
   const [sendMode, setSendMode] = useState<'now' | 'later'>('now');
   const [scheduledDateTime, setScheduledDateTime] = useState<string>('');
   const [style, setStyle] = useState<'conversational' | 'direct' | 'curious'>('conversational');
-  const [stage, setStage] = useState<'auto' | 'initial' | 'followup_1' | 'followup_2'>('auto');
+  const [stage, setStage] = useState<'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3'>('auto');
   const [customInstructions, setCustomInstructions] = useState<string>('');
 
   // Multi-Inbox Rotation State (Email)
@@ -899,13 +899,14 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                   {[
                     { id: 'auto', label: '🔄 Auto-Detect (Checks History)' },
                     { id: 'initial', label: '1️⃣ Force First Outreach' },
-                    { id: 'followup_1', label: '2️⃣ Force Follow-up 1' },
-                    { id: 'followup_2', label: '3️⃣ Force Follow-up 2' },
+                    { id: 'followup_1', label: '2️⃣ Force Follow-up 1 (Day 2.5)' },
+                    { id: 'followup_2', label: '3️⃣ Force Follow-up 2 (Day 5.5)' },
+                    { id: 'followup_3', label: '4️⃣ Force Follow-up 3 (Day 10 Final)' },
                   ].map((st) => (
                     <button
                       key={st.id}
                       type="button"
-                      onClick={() => setStage(st.id as 'auto' | 'initial' | 'followup_1' | 'followup_2')}
+                      onClick={() => setStage(st.id as 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3')}
                       className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                         stage === st.id
                           ? 'bg-ink-900 text-white shadow-sm'

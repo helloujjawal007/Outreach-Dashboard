@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from 'child_process';
 import http from 'http';
+import dns from 'dns/promises';
 import { query } from '../config/db';
 import { whatsappValidator } from './whatsappValidator';
+import { automatedIntakeEngine } from './automatedIntakeEngine';
+import { emailValidatorService } from './emailValidatorService';
 
 export interface ScrapedLeadItem {
   id?: string;
@@ -29,7 +32,9 @@ export interface ScrapedLeadItem {
 }
 
 export interface GmbSearchParams {
-  category: string;
+  category?: string;
+  categories?: string[];
+  continent?: string;
   country: string;
   state: string;
   city?: string;
@@ -49,6 +54,7 @@ export interface GmbImportResult {
   batchId?: string;
   batchName?: string;
   leads: any[];
+  automatedIntake?: any;
 }
 
 export class GmbScraperService {
@@ -56,108 +62,214 @@ export class GmbScraperService {
   private portCounter = 9500;
 
   /**
+   * Actively opens and verifies whether a website URL is genuinely live, resolving, and opening in the backend.
+   * - Performs live DNS resolution to ensure hostname exists.
+   * - Sends an HTTP request with full browser headers and follow redirects.
+   * - If the website returns 200..399 or valid Cloudflare/WAF anti-bot challenge on live domain:
+   *   returns { isLive: true, verifiedUrl: finalUrl }
+   * - If the website fails DNS, returns 404, 500, dead link, connection refused, or timeout:
+   *   returns { isLive: false, verifiedUrl: '', error }
+   */
+  public async verifyWebsiteLive(rawUrl: string): Promise<{ isLive: boolean; verifiedUrl: string; status?: number; error?: string }> {
+    if (!rawUrl || typeof rawUrl !== 'string') {
+      return { isLive: false, verifiedUrl: '', error: 'Empty URL' };
+    }
+
+    let targetUrl = rawUrl.trim();
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = `https://${targetUrl}`;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(targetUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return { isLive: false, verifiedUrl: '', error: 'Unsupported protocol' };
+      }
+      if (parsed.hostname === 'localhost' || parsed.hostname.endsWith('.local') || !parsed.hostname.includes('.')) {
+        return { isLive: false, verifiedUrl: '', error: 'Invalid hostname' };
+      }
+    } catch (e: any) {
+      return { isLive: false, verifiedUrl: '', error: 'Malformed URL' };
+    }
+
+    // 1. Live DNS Verification: check that the domain exists and resolves to an IP address
+    try {
+      await dns.lookup(parsed.hostname);
+    } catch (dnsErr: any) {
+      return { isLive: false, verifiedUrl: '', error: `DNS resolution failed: ${dnsErr.code || dnsErr.message}` };
+    }
+
+    // 2. Live HTTP connection check (opening the link in the backend)
+    const browserHeaders = {
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Sec-Ch-Ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"macOS"',
+      'Upgrade-Insecure-Requests': '1',
+    };
+
+    try {
+      const res = await fetch(targetUrl, {
+        method: 'GET',
+        headers: browserHeaders,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+
+      const isLive = res.ok || (res.status >= 200 && res.status < 400) || res.status === 403;
+      if (isLive) {
+        let finalUrl = res.url || targetUrl;
+        try {
+          const u = new URL(finalUrl);
+          u.searchParams.delete('utm_source');
+          u.searchParams.delete('utm_medium');
+          u.searchParams.delete('utm_campaign');
+          u.searchParams.delete('utm_content');
+          u.searchParams.delete('rclk');
+          finalUrl = u.toString().replace(/\/$/, '') || finalUrl;
+        } catch (_) {}
+
+        return { isLive: true, verifiedUrl: finalUrl, status: res.status };
+      }
+
+      return { isLive: false, verifiedUrl: '', status: res.status, error: `HTTP ${res.status}` };
+    } catch (err: any) {
+      return { isLive: false, verifiedUrl: '', error: err.message || 'Connection failed' };
+    }
+  }
+
+  /**
    * Searches Google Maps & Google Business Profiles for matching businesses
    */
   public async searchGmb(params: GmbSearchParams): Promise<ScrapedLeadItem[]> {
-    const { category, country, state, city = '', limit = 10 } = params;
-    const cleanCategory = (category || 'Business').trim();
+    const { category, categories, country, state, city = '', limit = 10 } = params;
     const cleanCity = (city || '').trim();
     const cleanState = (state || '').trim();
     const cleanCountry = (country || 'USA').trim();
 
-    const locationQuery = [cleanCity, cleanState, cleanCountry].filter(Boolean).join(', ');
-    const primaryQuery = `${cleanCategory} in ${locationQuery}`;
+    let targetCategories: string[] = [];
+    if (Array.isArray(categories) && categories.length > 0) {
+      targetCategories = categories.map((c) => String(c).trim()).filter(Boolean);
+    } else if (category && typeof category === 'string' && category.trim()) {
+      targetCategories = category.split(',').map((c) => c.trim()).filter(Boolean);
+    }
+    if (targetCategories.length === 0) {
+      targetCategories = ['Business'];
+    }
 
-    console.log(`[GmbScraperService] Initiating search for: "${primaryQuery}" (Target limit: ${limit})`);
+    const locationQuery = [cleanCity, cleanState, cleanCountry].filter(Boolean).join(', ');
+    console.log(`[GmbScraperService] Initiating multi-niche search for [${targetCategories.join(', ')}] in "${locationQuery}" (Target limit: ${limit})`);
 
     const rawList: ScrapedLeadItem[] = [];
     const existingNames = new Set<string>();
     const existingPhones = new Set<string>();
 
-    const queryVariations = [
-      primaryQuery,
-      `${cleanCategory} services in ${locationQuery}`,
-      `best ${cleanCategory} in ${locationQuery}`,
-      `${cleanCategory} contractors in ${locationQuery}`,
-      `${cleanCategory} company in ${locationQuery}`,
-      `${cleanCategory} specialists in ${locationQuery}`,
-      `${cleanCategory} near ${cleanCity || cleanState}, ${cleanCountry}`,
-    ];
-
-    // Attempt Chrome CDP search across variations until target limit fulfilled
-    for (const q of queryVariations) {
+    // Attempt Chrome CDP search across all selected categories and query variations
+    for (const cat of targetCategories) {
       if (rawList.length >= limit) break;
-      try {
-        const batchResults = await this.scrapeWithCdp(q, limit - rawList.length, cleanCountry);
-        for (const r of batchResults) {
-          const normName = this.cleanBizName(r.businessName);
-          const pDigits = (r.phone || '').replace(/\D/g, '');
-          if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
-            existingNames.add(normName);
-            if (pDigits) existingPhones.add(pDigits);
-            rawList.push(r);
-            if (rawList.length >= limit) break;
+      const cleanCat = cat.trim();
+
+      const queryVariations = [
+        `${cleanCat} in ${locationQuery}`,
+        `${cleanCat} services in ${locationQuery}`,
+        `best ${cleanCat} in ${locationQuery}`,
+        cleanCity ? `${cleanCat} in Downtown ${cleanCity}, ${cleanState}` : '',
+        cleanCity ? `${cleanCat} near ${cleanCity}, ${cleanState}` : '',
+      ].filter(Boolean);
+
+      for (const q of queryVariations) {
+        if (rawList.length >= limit) break;
+        try {
+          const batchResults = await this.scrapeWithCdp(q, limit - rawList.length, cleanCountry);
+          for (const r of batchResults) {
+            const normName = this.cleanBizName(r.businessName);
+            const pDigits = (r.phone || '').replace(/\D/g, '');
+            if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
+              existingNames.add(normName);
+              if (pDigits) existingPhones.add(pDigits);
+              rawList.push(r);
+              if (rawList.length >= limit) break;
+            }
           }
-        }
-      } catch (err: any) {
-        console.warn(`[GmbScraperService] CDP query variation "${q}" error:`, err?.message);
-      }
-    }
-
-    // If still need more results to satisfy target limit (up to 100), supplement from verified directory generator
-    if (rawList.length < limit) {
-      console.log(`[GmbScraperService] Supplementing ${limit - rawList.length} leads via local directory resolver...`);
-      const fallbackItems = await this.fallbackDirectorySearch(
-        cleanCategory,
-        cleanCity,
-        cleanState,
-        cleanCountry,
-        limit - rawList.length
-      );
-      for (const f of fallbackItems) {
-        const normName = this.cleanBizName(f.businessName);
-        if (!existingNames.has(normName)) {
-          existingNames.add(normName);
-          rawList.push(f);
-          if (rawList.length >= limit) break;
+        } catch (err: any) {
+          console.warn(`[GmbScraperService] CDP query variation "${q}" error:`, err?.message);
         }
       }
     }
 
-    // Limit to requested count
+    // Limit to requested count (strictly authentic leads from Google Maps)
     const selected = rawList.slice(0, limit);
 
-    // Parallel website email & social discovery with concurrency batching
-    console.log(`[GmbScraperService] Crawling websites for ${selected.length} listings to discover emails & socials...`);
+    // Backend verification of websites & genuine contact discovery
+    console.log(`[GmbScraperService] Verifying website reachability & extracting contacts for ${selected.length} listings...`);
     const enriched: ScrapedLeadItem[] = [];
-    const chunkSize = 8;
+    const chunkSize = 5;
 
     for (let i = 0; i < selected.length; i += chunkSize) {
       const chunk = selected.slice(i, i + chunkSize);
       const processedChunk = await Promise.all(
         chunk.map(async (item) => {
-          if (!item.website) return item;
-          try {
-            const { email, socials } = await this.crawlWebsiteForContact(item.website);
-            return {
-              ...item,
-              email: email || item.email,
-              emailDiscovered: Boolean(email || item.email),
-              emailSource: email ? 'website_crawl' : item.emailSource,
-              discoveredSocials: {
-                ...item.discoveredSocials,
-                ...socials,
-              },
-            };
-          } catch (_) {
-            return item;
+          let verifiedWebsite = '';
+
+          // Only test URL if one was genuinely provided by GMB
+          if (item.website) {
+            try {
+              const liveCheck = await this.verifyWebsiteLive(item.website);
+              if (liveCheck.isLive && liveCheck.verifiedUrl) {
+                verifiedWebsite = liveCheck.verifiedUrl;
+                console.log(`[GmbScraperService] Verified live website for "${item.businessName}": ${verifiedWebsite} (Status: ${liveCheck.status || 'OK'})`);
+              } else {
+                console.log(`[GmbScraperService] Website not opening for "${item.businessName}": ${item.website} (${liveCheck.error || 'unreachable'}). Setting website to empty.`);
+              }
+            } catch (err: any) {
+              console.warn(`[GmbScraperService] Website check exception for ${item.website}:`, err.message);
+            }
           }
+
+          let discoveredEmail = '';
+          let discoveredSocials = { ...item.discoveredSocials };
+          let emailDiscovered = false;
+          let emailSource: string | undefined = undefined;
+
+          // ONLY crawl website if it was verified live and opening in the backend!
+          if (verifiedWebsite) {
+            try {
+              const { email, socials } = await this.crawlWebsiteForContact(verifiedWebsite);
+              if (email) {
+                // Check email format & MX record
+                const emailValidation = await emailValidatorService.validateEmail(email);
+                if (emailValidation.isValid) {
+                  discoveredEmail = email;
+                  emailDiscovered = true;
+                  emailSource = 'website_crawl';
+                } else {
+                  console.log(`[GmbScraperService] Email ${email} from ${verifiedWebsite} failed validation (${emailValidation.reason}). Discarded.`);
+                }
+              }
+              discoveredSocials = { ...discoveredSocials, ...socials };
+            } catch (err: any) {
+              console.warn(`[GmbScraperService] Error crawling website ${verifiedWebsite}:`, err.message);
+            }
+          }
+
+          return {
+            ...item,
+            website: verifiedWebsite, // Only added if URL is opening in backend!
+            email: discoveredEmail || (item.email && this.isValidBusinessEmail(item.email) ? item.email : ''),
+            emailDiscovered,
+            emailSource,
+            discoveredSocials,
+          };
         })
       );
       enriched.push(...processedChunk);
     }
 
-    console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} businesses ready.`);
+    console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} genuine businesses ready.`);
     return enriched;
   }
 
@@ -267,26 +379,26 @@ export class GmbScraperService {
 
             let name = '';
             // Business name
-            if (b[90]?.[0]?.[0]?.[1]?.[0]?.[0]) {
-              name = b[90][0][0][1][0][0];
-            } else if (typeof b[11] === 'string' && b[11].trim()) {
+            if (typeof b[11] === 'string' && b[11].trim()) {
               name = b[11].trim();
+            } else if (b[90]?.[0]?.[0]?.[1]?.[0]?.[0]) {
+              name = b[90][0][0][1][0][0];
             }
 
-            if (!name || name.toLowerCase() === 'results') continue;
+            if (!name || name === 'undefined' || name.toLowerCase() === 'results') continue;
 
             // Address
-            let address = '';
+            let address = b[39] || '';
             let cityVal = '';
             let stateVal = '';
             let countryVal = '';
 
-            if (b[90]?.[0]) {
-              const parts = b[90][0].map((p: any) => p?.[1]?.[0]?.[0]).filter(Boolean);
-              address = parts.slice(1).join(', ');
-            }
             if (!address && Array.isArray(b[2])) {
               address = b[2].join(', ');
+            }
+            if (!address && b[90]?.[0]) {
+              const parts = b[90][0].map((p: any) => p?.[1]?.[0]?.[0]).filter(Boolean);
+              address = parts.slice(1).join(', ');
             }
 
             // Structured location tokens
@@ -313,9 +425,16 @@ export class GmbScraperService {
               }
               return null;
             }
-            phone = findPhone(b[87]) || findPhone(b) || '';
 
-            // Website
+            if (b[178]?.[0]?.[0] && typeof b[178][0][0] === 'string') {
+              phone = b[178][0][0];
+            } else if (b[178]?.[0]?.[1]?.[0]?.[0] && typeof b[178][0][1][0][0] === 'string') {
+              phone = b[178][0][1][0][0];
+            } else {
+              phone = findPhone(b[87]) || findPhone(b) || '';
+            }
+
+            // Website: directly from b[7][0] (actual URL) or b[7][1] (domain)
             let website = '';
             function findWebsite(node: any): string | null {
               if (!node) return null;
@@ -337,16 +456,29 @@ export class GmbScraperService {
               }
               return null;
             }
-            website = findWebsite(b[8]) || findWebsite(b) || '';
+
+            if (b[7]?.[0] && typeof b[7][0] === 'string') {
+              website = b[7][0];
+            } else if (b[7]?.[1] && typeof b[7][1] === 'string') {
+              website = `https://${b[7][1]}`;
+            } else {
+              website = findWebsite(b[8]) || findWebsite(b) || '';
+            }
 
             // Clean website URL
-            let cleanWeb = website;
+            let cleanWeb = website.trim();
             try {
               if (cleanWeb) {
                 const u = new URL(cleanWeb);
-                cleanWeb = `${u.protocol}//${u.host}${u.pathname}`;
+                if (!['http:', 'https:'].includes(u.protocol) || u.hostname.includes('google.') || u.hostname.includes('gstatic.') || u.hostname.includes('schema.org')) {
+                  cleanWeb = '';
+                } else {
+                  cleanWeb = `${u.protocol}//${u.host}${u.pathname}${u.search}`;
+                }
               }
-            } catch (_) {}
+            } catch (_) {
+              cleanWeb = '';
+            }
 
             // Rating & Reviews
             let rating = 4.8;
@@ -354,11 +486,42 @@ export class GmbScraperService {
             if (typeof b[4]?.[7] === 'number') rating = b[4][7];
             if (typeof b[4]?.[8] === 'number') reviewsCount = b[4][8];
 
-            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
+            function findReviewCount(node: any): number | null {
+              if (!node) return null;
+              if (Array.isArray(node)) {
+                for (let idx = 0; idx < node.length; idx++) {
+                  const item = node[idx];
+                  if (typeof item === 'number' && item >= 1 && item <= 5 && typeof node[idx + 1] === 'number' && node[idx + 1] > 5) {
+                    return node[idx + 1];
+                  }
+                  if (typeof item === 'number' && item >= 1 && item <= 5 && Array.isArray(node[idx + 1])) {
+                    const innerNum = node[idx + 1].find((x: any) => typeof x === 'number');
+                    if (innerNum) return innerNum;
+                  }
+                  const found = findReviewCount(item);
+                  if (found) return found;
+                }
+              }
+              return null;
+            }
+
+            if (!reviewsCount && b[4]) {
+              const foundRev = findReviewCount(b[4]);
+              if (foundRev) reviewsCount = foundRev;
+            }
+
+            const placeId = typeof b[78] === 'string' ? b[78] : '';
+            const mapsUrl = placeId
+              ? `https://www.google.com/maps/place/?q=place_id:${placeId}`
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
+
+            const category = Array.isArray(b[13]) && typeof b[13][0] === 'string'
+              ? b[13][0]
+              : (queryStr.split(' in ')[0] || 'Local Services');
 
             results.push({
               businessName: name,
-              category: queryStr.split(' in ')[0] || 'Local Services',
+              category,
               phone,
               email: '',
               website: cleanWeb,
@@ -369,9 +532,80 @@ export class GmbScraperService {
               rating: Number(rating.toFixed(1)),
               reviewsCount,
               googleMapsUrl: mapsUrl,
+              placeId: placeId || undefined,
               emailDiscovered: false,
             });
           }
+        }
+      }
+
+      // Layer 2: DOM fallback if network listener didn't catch tbm=map
+      if (results.length === 0) {
+        try {
+          const domCards = await send('Runtime.evaluate', {
+            expression: `(() => {
+              const cards = document.querySelectorAll('div.Nv2PK, div[role="feed"] > div, div[role="article"]');
+              const items = [];
+              cards.forEach(card => {
+                const nameEl = card.querySelector('div.qBF1Pd, div.fontHeadlineSmall, [aria-label]');
+                const name = nameEl ? (nameEl.innerText || nameEl.getAttribute('aria-label') || '').trim() : '';
+                if (!name || name.toLowerCase() === 'results' || name === 'undefined' || name.length < 2) return;
+                
+                const webEl = card.querySelector('a[data-value="Website"], a[aria-label*="website" i], a.lcr4fd, a[data-item-id="authority"]');
+                const website = webEl ? webEl.href : '';
+                
+                const phoneEl = card.querySelector('button[data-item-id*="phone"], span.UsdlK');
+                const phone = phoneEl ? phoneEl.innerText.trim() : '';
+                
+                const addressEl = card.querySelector('button[data-item-id="address"], div.W4Efsb');
+                const address = addressEl ? addressEl.innerText.trim() : '';
+
+                const ratingEl = card.querySelector('span.MW4etd, span.ceNzKf');
+                const rating = ratingEl ? parseFloat(ratingEl.innerText.trim()) : 4.8;
+
+                const reviewsEl = card.querySelector('span.UY7F9');
+                const reviewsCount = reviewsEl ? parseInt(reviewsEl.innerText.replace(/[^0-9]/g, ''), 10) : 0;
+
+                const placeLink = card.querySelector('a.hfpxzc');
+                const mapsUrl = placeLink ? placeLink.href : '';
+
+                items.push({
+                  businessName: name,
+                  phone,
+                  website,
+                  address,
+                  rating: isNaN(rating) ? 4.8 : rating,
+                  reviewsCount: isNaN(reviewsCount) ? 0 : reviewsCount,
+                  googleMapsUrl: mapsUrl,
+                });
+              });
+              return items;
+            })()`,
+            returnByValue: true,
+          });
+
+          const extracted = domCards?.result?.value;
+          if (Array.isArray(extracted)) {
+            for (const item of extracted) {
+              if (results.length >= limit) break;
+              if (!item.businessName) continue;
+              results.push({
+                businessName: item.businessName,
+                category: queryStr.split(' in ')[0] || 'Local Services',
+                phone: item.phone || '',
+                email: '',
+                website: item.website || '',
+                address: item.address || queryStr.split(' in ')[1] || '',
+                country: targetCountry || 'USA',
+                rating: item.rating || 4.8,
+                reviewsCount: item.reviewsCount || 0,
+                googleMapsUrl: item.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.businessName)}`,
+                emailDiscovered: false,
+              });
+            }
+          }
+        } catch (domErr: any) {
+          console.warn(`[GmbScraperService] DOM extraction error:`, domErr?.message);
         }
       }
 
@@ -516,96 +750,6 @@ export class GmbScraperService {
       .trim();
   }
 
-  /**
-   * Fallback directory resolver when Google Maps CDP is unavailable
-   */
-  private async fallbackDirectorySearch(
-    category: string,
-    city: string,
-    state: string,
-    country: string,
-    limit: number
-  ): Promise<ScrapedLeadItem[]> {
-    // Verified directory data and realistic business profile generator
-    const location = [city, state, country].filter(Boolean).join(', ');
-    const prefixes = [
-      'Prime', 'Apex', 'Summit', 'Pinnacle', 'Vanguard', 'Elite', 'Metro', 'Precision',
-      'Crown', 'Silverline', 'Frontier', 'BlueSky', 'Titan', 'Benchmark', 'GoldCoast',
-      'Alpha', 'Evergreen', 'Starlight', 'Proactive', 'Urban', 'Coastal', 'Beacon',
-      'Dynamic', 'Paramount', 'Heritage', 'Optima', 'Crest', 'Sterling', 'Horizon', 'Nexus'
-    ];
-    const suffixes = [
-      'Solutions', 'Services', 'Group', 'Associates', 'Co.', 'Partners', 'Specialists',
-      'Enterprises', 'Hub', 'Care', 'Pros', 'Studio', 'Contractors', 'Agency', 'Consultants'
-    ];
-    const streets = [
-      'Main St', 'Commerce Way', 'Broadway', 'Oak Ave', 'Park Blvd', 'Industrial Pkwy',
-      'Market St', 'Center St', 'First Ave', 'Heritage Way', 'Lincoln St', 'Highland Ave',
-      'Washington Rd', 'Victoria St', 'Kingsway', 'Church Rd', 'MG Road', 'Station Rd'
-    ];
-
-    const cLower = (country || 'USA').toLowerCase();
-    const cleanCatLower = category.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const cleanCityLower = (city || state || 'local').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    const items: ScrapedLeadItem[] = [];
-
-    for (let i = 0; i < limit; i++) {
-      const p = prefixes[i % prefixes.length];
-      const s = suffixes[(i * 3 + 1) % suffixes.length];
-      const st = streets[(i * 7 + 2) % streets.length];
-      const streetNum = 100 + ((i + 1) * 14) % 890;
-      const bizName = i % 2 === 0
-        ? `${city || state} ${p} ${category}`
-        : `${p} ${category} ${s}`;
-
-      // Country-accurate phone formatting
-      let phone = '';
-      if (cLower.includes('uk') || cLower.includes('united kingdom')) {
-        phone = `+44 20 ${7100 + (i * 17) % 800} ${1000 + (i * 93) % 8900}`;
-      } else if (cLower.includes('australia')) {
-        phone = `+61 2 ${8100 + (i * 19) % 800} ${1000 + (i * 97) % 8900}`;
-      } else if (cLower.includes('india')) {
-        phone = `+91 ${98000 + (i * 23) % 1900} ${10000 + (i * 87) % 89000}`;
-      } else if (cLower.includes('emirates') || cLower.includes('uae') || cLower.includes('dubai')) {
-        phone = `+971 4 ${200 + (i * 13) % 700} ${1000 + (i * 89) % 8900}`;
-      } else {
-        // North America default +1
-        const areaCode = 200 + ((i * 17 + 312) % 790);
-        phone = `+1 (${areaCode}) 555-${String(1000 + (i * 83) % 8900)}`;
-      }
-
-      const domainSlug = `${cleanCityLower}${p.toLowerCase()}${cleanCatLower}${i > 0 ? i : ''}`;
-      const email = `contact@${domainSlug}.com`;
-      const website = `https://www.${domainSlug}.com`;
-      const rating = Number((4.6 + ((i * 3) % 5) * 0.1).toFixed(1));
-      const reviewsCount = 35 + ((i * 29 + 17) % 280);
-
-      items.push({
-        businessName: bizName,
-        category,
-        phone,
-        email,
-        website,
-        address: `${streetNum} ${st}, ${location}`,
-        city: city || undefined,
-        state: state || undefined,
-        country: country || 'USA',
-        rating,
-        reviewsCount,
-        googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(bizName + ' ' + location)}`,
-        emailDiscovered: true,
-        emailSource: 'directory_resolver',
-        discoveredSocials: {
-          facebook: `https://facebook.com/${domainSlug}`,
-          instagram: `https://instagram.com/${domainSlug}`,
-          linkedin: `https://linkedin.com/company/${domainSlug}`,
-        },
-      });
-    }
-
-    return items;
-  }
 
   /**
    * Imports selected scraped leads into the Outreach Dashboard database
@@ -772,6 +916,19 @@ export class GmbScraperService {
       [importedCount, duplicateCount, batchId]
     );
 
+    // Auto-assign to platform channel lists (Email, WhatsApp, LinkedIn, IG, FB) and execute automated intake & outreach
+    let intakeResult = null;
+    if (insertedLeads.length > 0) {
+      try {
+        intakeResult = await automatedIntakeEngine.processImportedLeads(insertedLeads as any[], {
+          customListId: listId,
+          autoSend: true,
+        });
+      } catch (intakeErr) {
+        console.error('[gmbScraperService.importScrapedLeads] Automated intake error:', intakeErr);
+      }
+    }
+
     return {
       success: true,
       importedCount,
@@ -779,6 +936,7 @@ export class GmbScraperService {
       batchId,
       batchName: formattedBatchName,
       leads: insertedLeads,
+      automatedIntake: intakeResult,
     };
   }
 }

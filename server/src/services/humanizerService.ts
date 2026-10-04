@@ -2,7 +2,7 @@ import { query } from '../config/db';
 import { ollamaService } from './ollamaService';
 
 export interface HumanizerOptions {
-  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
+  stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   style?: 'conversational' | 'direct' | 'curious';
   customInstructions?: string;
 }
@@ -373,8 +373,28 @@ Online Digital Solution
       };
     }
 
-    // 3. Follow-up 2 (Polite permission close)
+    // 3. Follow-up 2 (Day 5.5 Value Check-in)
     if (stage === 'followup_2') {
+      const subjects = [
+        `${business} - quick check-in`,
+        `Quick check-in re: ${business}`,
+        `Customer inquiries at ${business}`,
+      ];
+      const bodies = [
+        `Hi ${salutation},\n\nTouching base briefly regarding ${business}.\n\nA lot of the businesses we speak with were losing ready-to-buy customers simply because their Google listing wasn't visible in the top 3 Maps results, or because website leads took hours to get a response. We put that entire system on autopilot.\n\nDo you have 5 minutes later this week to see if we can do the same for ${business}, or should I circle back next month?\n\n${signoff}`,
+        `Hey ${salutation},\n\nChecking back in to see if optimizing your local Google ranking and modern website conversions for ${business} is something you're focusing on right now.\n\nIf you'd like to see the quick 2-minute competitive breakdown I mentioned earlier, just let me know and I'll send the link right over.\n\n${signoff}`,
+      ];
+      return {
+        subject: this.pick(subjects),
+        body: this.pick(bodies),
+        stage,
+        isAiGenerated: false,
+        modelUsed: 'Humanizer Engine (Follow-up 2)',
+      };
+    }
+
+    // 4. Follow-up 3 (Day 10 Final Permission Close)
+    if (stage === 'followup_3') {
       const subjects = [
         `Final check-in: ${business}`,
         `Permission to close file re: ${business}?`,
@@ -389,7 +409,7 @@ Online Digital Solution
         body: this.pick(bodies),
         stage,
         isAiGenerated: false,
-        modelUsed: 'Humanizer Engine (Follow-up 2)',
+        modelUsed: 'Humanizer Engine (Follow-up 3)',
       };
     }
 

@@ -2,6 +2,7 @@ import { query } from '../config/db';
 import { whatsappValidator } from './whatsappValidator';
 import { googleMapsScraper } from './googleMapsScraper';
 import { cleanSiteUrl } from './leadScraperService';
+import { gmbScraperService } from './gmbScraperService';
 
 export interface GoogleBusinessProfile {
   placeName: string;
@@ -226,6 +227,17 @@ export class GoogleEnrichmentService {
     rating = rating ?? 4.9;
     reviewsCount = reviewsCount ?? 0;
 
+    // Verify website is live and actually opening in backend
+    let verifiedLiveWebsite: string | undefined = undefined;
+    if (finalWebsite) {
+      try {
+        const liveCheck = await gmbScraperService.verifyWebsiteLive(finalWebsite);
+        if (liveCheck.isLive && liveCheck.verifiedUrl) {
+          verifiedLiveWebsite = liveCheck.verifiedUrl;
+        }
+      } catch (_) {}
+    }
+
     const now = new Date().toISOString();
 
     return {
@@ -236,7 +248,7 @@ export class GoogleEnrichmentService {
       formattedAddress,
       category: matchedCategory || 'Local Business',
       status: 'OPERATIONAL',
-      website: cleanSiteUrl(finalWebsite) || undefined,
+      website: verifiedLiveWebsite ? cleanSiteUrl(verifiedLiveWebsite) : undefined,
       phone: verifiedPhone || undefined,
       hasGbpClaimed: true,
       matchedVia: extractedRating !== null ? 'exact_match' : phone ? 'name_and_phone' : 'name_and_category',

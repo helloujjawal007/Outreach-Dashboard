@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
+import { emailValidatorService } from '../services/emailValidatorService';
 
 export const queueRouter = Router();
 
@@ -42,16 +43,47 @@ queueRouter.post('/:id/send', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
+    const itemCheck = await query<{ lead_id: string; channel: string; message_preview: string }>(
+      `SELECT * FROM send_queue WHERE id = $1`,
+      [id]
+    );
+
+    if (itemCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Queue item not found' });
+    }
+
+    const item = itemCheck.rows[0];
+
+    // Pre-send email verification check
+    if (item.channel === 'email' && item.lead_id) {
+      const leadRes = await query<{ id: string; email: string }>(
+        `SELECT id, email FROM leads WHERE id = $1`,
+        [item.lead_id]
+      );
+      const leadEmail = leadRes.rows[0]?.email || '';
+      const validation = await emailValidatorService.verifyEmail(leadEmail);
+      if (!validation.isValid) {
+        await emailValidatorService.flagAndMoveLeadToInvalidList(
+          item.lead_id,
+          leadEmail,
+          validation.reason || 'Invalid email',
+          validation.status
+        );
+        await query(
+          `UPDATE send_queue SET status = 'discarded', error_details = $1, updated_at = NOW() WHERE id = $2`,
+          [`Invalid email (${validation.reason}). Moved to Invalid List.`, id]
+        );
+        return res.status(400).json({
+          success: false,
+          error: `Cannot send: recipient email "${leadEmail}" is invalid (${validation.reason}). Contact has been moved to Invalid List.`,
+        });
+      }
+    }
+
     const qRes = await query<{ lead_id: string; channel: string; message_preview: string }>(
       `UPDATE send_queue SET status = 'sent', updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
-
-    if (qRes.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Queue item not found' });
-    }
-
-    const item = qRes.rows[0];
 
     // If item has a lead_id, create a message record
     if (item.lead_id) {

@@ -39,6 +39,7 @@ import {
   MapPin,
   ExternalLink,
   Compass,
+  MailX,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -66,7 +67,7 @@ interface Props {
   onOpenGlobalMessages?: () => void;
 }
 
-type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'trash';
+type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'trash';
 type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'facebook' | 'instagram' | 'linkedin';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
@@ -133,7 +134,8 @@ export function CrmPage({
         subFilter === 'lead_added' ||
         subFilter === 'lead_not_added' ||
         subFilter === 'client' ||
-        subFilter === 'manual_review'
+        subFilter === 'manual_review' ||
+        subFilter === 'invalid_list'
       ) {
         setCrmViewMode('table');
       }
@@ -434,6 +436,19 @@ export function CrmPage({
   );
   const manualReviewCount = manualReviewLeads.length;
 
+  const invalidLeads = useMemo(
+    () =>
+      store.leads.filter(
+        (l) =>
+          !l.deletedAt &&
+          (l.lists?.some((m) => m.name.toLowerCase() === 'invalid list' || m.name.toLowerCase() === 'invalid leads') ||
+            (l.emailVerificationStatus && l.emailVerificationStatus !== 'verified' && l.emailVerificationStatus !== 'unverified') ||
+            (l.status === 'manual_review' && l.manualReviewReason?.toLowerCase().includes('invalid')))
+      ),
+    [store.leads]
+  );
+  const invalidLeadsCount = invalidLeads.length;
+
   const leadEntities = useMemo(
     () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'lead' && l.status !== 'manual_review'),
     [store.leads]
@@ -562,6 +577,7 @@ export function CrmPage({
     const initial = activeLeads.filter((l) => l.stage === 'initial').length;
     const followup_1 = activeLeads.filter((l) => l.stage === 'followup_1').length;
     const followup_2 = activeLeads.filter((l) => l.stage === 'followup_2').length;
+    const followup_3 = activeLeads.filter((l) => l.stage === 'followup_3').length;
     const replied = activeLeads.filter((l) => l.consentStatus === 'replied').length;
     return {
       all: activeLeads.length,
@@ -569,6 +585,7 @@ export function CrmPage({
       initial,
       followup_1,
       followup_2,
+      followup_3,
       replied,
     };
   }, [store.leads]);
@@ -771,6 +788,49 @@ export function CrmPage({
       });
     }
 
+    if (entityFilter === 'invalid_list') {
+      return store.leads.filter((l) => {
+        if (l.deletedAt) return false;
+        const isInvalid =
+          l.lists?.some((m) => m.name.toLowerCase() === 'invalid list' || m.name.toLowerCase() === 'invalid leads') ||
+          (l.emailVerificationStatus && l.emailVerificationStatus !== 'verified' && l.emailVerificationStatus !== 'unverified') ||
+          (l.status === 'manual_review' && l.manualReviewReason?.toLowerCase().includes('invalid'));
+        if (!isInvalid) return false;
+
+        if (countryFilter !== 'all') {
+          const leadCountry = (l.country || '').trim() || 'Other';
+          if (countryFilter === '(Not identified)') {
+            if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+              return false;
+            }
+          } else if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (cityFilter !== 'all') {
+          const leadLoc = (l.location || '').toLowerCase();
+          if (!leadLoc.includes(cityFilter.toLowerCase())) return false;
+        }
+        if (channelFilter !== 'all' && !matchesLeadChannel(l, channelFilter, channelSubFilter)) {
+          return false;
+        }
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          if (
+            !l.businessName.toLowerCase().includes(q) &&
+            !l.category.toLowerCase().includes(q) &&
+            !l.email.toLowerCase().includes(q) &&
+            !l.phone.toLowerCase().includes(q) &&
+            !(l.location && l.location.toLowerCase().includes(q)) &&
+            !(l.country && l.country.toLowerCase().includes(q)) &&
+            !(l.manualReviewReason && l.manualReviewReason.toLowerCase().includes(q))
+          )
+            return false;
+        }
+        return true;
+      });
+    }
+
     return store.leads.filter((l) => {
       // Exclude soft-deleted leads from active CRM views
       if (l.deletedAt) return false;
@@ -814,6 +874,7 @@ export function CrmPage({
         if (stageFilter === 'initial' && l.stage !== 'initial') return false;
         if (stageFilter === 'followup_1' && l.stage !== 'followup_1') return false;
         if (stageFilter === 'followup_2' && l.stage !== 'followup_2') return false;
+        if (stageFilter === 'followup_3' && l.stage !== 'followup_3') return false;
         if (stageFilter === 'replied' && l.consentStatus !== 'replied') return false;
       }
       if (consentFilter !== 'all' && l.consentStatus !== consentFilter) return false;
@@ -1954,6 +2015,11 @@ export function CrmPage({
               icon: AlertTriangle,
             },
             {
+              key: 'invalid_list',
+              label: `Invalid List (${invalidLeadsCount})`,
+              icon: MailX,
+            },
+            {
               key: 'trash',
               label: `Trash (${store.trashLeads.length})`,
               icon: Trash2,
@@ -1980,6 +2046,8 @@ export function CrmPage({
                     ? 'bg-blue-600 text-white shadow-sm'
                     : key === 'manual_review'
                     ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-400'
+                    : key === 'invalid_list'
+                    ? 'bg-rose-700 text-white shadow-sm ring-1 ring-rose-500'
                     : 'bg-brand-600 text-white shadow-sm'
                   : key === 'lead_added'
                   ? 'text-emerald-700 hover:bg-emerald-50 font-bold'
@@ -1991,6 +2059,8 @@ export function CrmPage({
                   ? 'text-blue-700 hover:bg-blue-50 font-bold'
                   : key === 'manual_review'
                   ? 'text-rose-700 bg-rose-50/80 hover:bg-rose-100 font-bold'
+                  : key === 'invalid_list'
+                  ? 'text-rose-800 bg-rose-50 hover:bg-rose-100 font-bold'
                   : 'text-ink-500 hover:bg-slate-100'
               }`}
             >
@@ -2094,8 +2164,9 @@ export function CrmPage({
             <option value="all">All Stages ({stageCounts.all})</option>
             <option value="cold">❄️ Cold (Uncontacted) ({stageCounts.cold})</option>
             <option value="initial">📤 Initial Outreach ({stageCounts.initial})</option>
-            <option value="followup_1">🔄 Follow-up 1 ({stageCounts.followup_1})</option>
-            <option value="followup_2">⚡ Follow-up 2 ({stageCounts.followup_2})</option>
+            <option value="followup_1">🔄 Follow-up 1 (Day 2.5) ({stageCounts.followup_1})</option>
+            <option value="followup_2">⚡ Follow-up 2 (Day 5.5) ({stageCounts.followup_2})</option>
+            <option value="followup_3">🎯 Final Follow-up (Day 10) ({stageCounts.followup_3})</option>
             <option value="replied">💬 Replied ({stageCounts.replied})</option>
           </select>
 
@@ -2786,6 +2857,70 @@ export function CrmPage({
         </div>
       )}
 
+      {/* Dedicated Invalid List Banner */}
+      {entityFilter === 'invalid_list' && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-gradient-to-r from-rose-50 via-white to-orange-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md shadow-rose-500/20">
+              <MailX size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-ink-900">
+                  Invalid Email List ({filtered.length} contacts)
+                </h3>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-semibold">
+                  Pre-Send Verification Guard
+                </span>
+              </div>
+              <p className="text-xs text-ink-500 mt-0.5">
+                These contacts have invalid syntax, disposable domains, unresolvable mail exchange (MX) servers, or prior hard bounces. Outbound email is blocked before dispatch to prevent domain penalties.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {filtered.length > 0 && (
+              <>
+                <button
+                  onClick={async () => {
+                    const ids = filtered.map((l) => l.id);
+                    await store.bulkApproveLeadReviews(ids);
+                    setBulkActionSuccess(`Re-activated and restored ${ids.length} contacts.`);
+                  }}
+                  className="btn-primary bg-emerald-600 hover:bg-emerald-700 flex items-center gap-1.5 text-xs py-2 px-3.5 shadow-sm"
+                  title="Restore all invalid contacts back to active lead status"
+                >
+                  <CheckCircle2 size={14} />
+                  <span>Restore All ({filtered.length})</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (confirm(`Move all ${filtered.length} invalid contacts to Trash?`)) {
+                      await store.bulkDeleteLeads(filtered.map((l) => l.id));
+                      setBulkActionSuccess(`Moved ${filtered.length} contacts to Trash.`);
+                    }
+                  }}
+                  className="btn-secondary text-rose-700 hover:bg-rose-50 border-rose-300 flex items-center gap-1.5 text-xs py-2 px-3.5 shadow-sm font-semibold transition"
+                  title="Move all invalid contacts to Trash"
+                >
+                  <Trash2 size={14} className="text-rose-600" />
+                  <span>Delete All</span>
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                setEntityFilter('all');
+                setSelectedIds(new Set());
+              }}
+              className="btn-secondary text-xs py-2 px-3"
+            >
+              ← Back to Active CRM
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Dedicated Trash Retention Banner */}
       {entityFilter === 'trash' && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
@@ -2929,7 +3064,7 @@ export function CrmPage({
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Deleted Date</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900 text-right">Actions</th>
                 </tr>
-              ) : entityFilter === 'manual_review' ? (
+              ) : entityFilter === 'manual_review' || entityFilter === 'invalid_list' ? (
                 <tr className="border-b border-rose-200 bg-rose-50/70 text-left">
                   <th className="w-10 px-3 py-3 text-center">
                     <input
@@ -2942,7 +3077,9 @@ export function CrmPage({
                   </th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Contact / Business</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Email & Phone</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Quarantine Reason</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">
+                    {entityFilter === 'invalid_list' ? 'Validation Status / Reason' : 'Quarantine Reason'}
+                  </th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900">Date Quarantined</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-rose-900 text-right">Actions</th>
                 </tr>
@@ -2973,11 +3110,13 @@ export function CrmPage({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={entityFilter === 'trash' ? 7 : entityFilter === 'manual_review' ? 6 : 10}
+                    colSpan={entityFilter === 'trash' ? 7 : (entityFilter === 'manual_review' || entityFilter === 'invalid_list') ? 6 : 10}
                     className="px-4 py-12 text-center text-ink-300"
                   >
                     {entityFilter === 'trash'
                       ? 'Trash is empty. No deleted records found.'
+                      : entityFilter === 'invalid_list'
+                      ? 'Invalid List is empty. All recipient emails are verified and healthy!'
                       : entityFilter === 'manual_review'
                       ? 'No records in manual checking. All emails and messages are healthy!'
                       : 'No records match your filters.'}
@@ -3060,7 +3199,7 @@ export function CrmPage({
                     </td>
                   </tr>
                 ))
-              ) : entityFilter === 'manual_review' ? (
+              ) : entityFilter === 'manual_review' || entityFilter === 'invalid_list' ? (
                 filtered.map((lead) => (
                   <tr
                     key={lead.id}
@@ -3083,8 +3222,12 @@ export function CrmPage({
                       <div>
                         <p className="font-semibold text-ink-900 flex items-center gap-1.5">
                           <span>{lead.businessName}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold border border-rose-200">
-                            Quarantined
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold border ${
+                            entityFilter === 'invalid_list'
+                              ? 'bg-rose-100 text-rose-800 border-rose-300'
+                              : 'bg-rose-100 text-rose-800 border-rose-200'
+                          }`}>
+                            {entityFilter === 'invalid_list' ? 'Invalid Email' : 'Quarantined'}
                           </span>
                         </p>
                         <p className="text-xs text-ink-400">{lead.category || 'General'}</p>
@@ -3099,10 +3242,14 @@ export function CrmPage({
                     <td className="px-4 py-3">
                       <span
                         className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 max-w-md truncate"
-                        title={lead.manualReviewReason || 'Delivery failure / anonymous address'}
+                        title={lead.manualReviewReason || lead.emailVerificationStatus || 'Invalid email format or domain'}
                       >
-                        <AlertTriangle size={12} className="shrink-0 text-rose-500" />
-                        <span className="truncate">{lead.manualReviewReason || 'Delivery failure / anonymous address'}</span>
+                        {entityFilter === 'invalid_list' ? (
+                          <MailX size={12} className="shrink-0 text-rose-500" />
+                        ) : (
+                          <AlertTriangle size={12} className="shrink-0 text-rose-500" />
+                        )}
+                        <span className="truncate">{lead.manualReviewReason || lead.emailVerificationStatus || 'Invalid email format or domain'}</span>
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-ink-500">
@@ -3514,18 +3661,28 @@ export function CrmPage({
               </div>
             )}
 
-            {/* Quarantined for Manual Review Banner */}
-            {selectedLead.status === 'manual_review' && (
+            {/* Quarantined for Manual Review or Invalid List Banner */}
+            {(selectedLead.status === 'manual_review' ||
+              selectedLead.lists?.some((m) => m.name.toLowerCase() === 'invalid list') ||
+              (selectedLead.emailVerificationStatus && selectedLead.emailVerificationStatus !== 'verified' && selectedLead.emailVerificationStatus !== 'unverified')) && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-900 flex items-center justify-between gap-3 animate-in fade-in">
                 <div className="flex items-center gap-2.5">
-                  <AlertTriangle size={18} className="text-rose-600 shrink-0" />
+                  {selectedLead.lists?.some((m) => m.name.toLowerCase() === 'invalid list') || selectedLead.manualReviewReason?.toLowerCase().includes('invalid') ? (
+                    <MailX size={18} className="text-rose-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle size={18} className="text-rose-600 shrink-0" />
+                  )}
                   <div>
-                    <p className="font-bold">Quarantined for Manual Checking</p>
+                    <p className="font-bold">
+                      {selectedLead.lists?.some((m) => m.name.toLowerCase() === 'invalid list') || selectedLead.manualReviewReason?.toLowerCase().includes('invalid')
+                        ? 'Flagged in Invalid List'
+                        : 'Quarantined for Manual Checking'}
+                    </p>
                     <p className="text-rose-700 mt-0.5">
-                      <strong>Reason:</strong> {selectedLead.manualReviewReason || 'Delivery failure / anonymous address'}.
+                      <strong>Reason:</strong> {selectedLead.manualReviewReason || selectedLead.emailVerificationStatus || 'Invalid or unresolvable email address'}.
                     </p>
                     <p className="text-[11px] text-rose-600 mt-0.5">
-                      Automated outreach to this contact is paused to protect email deliverability and sender reputation.
+                      Pre-send validation blocked outbound cold emails to protect your domain sending reputation and avoid bounce spikes.
                     </p>
                   </div>
                 </div>
@@ -3559,9 +3716,11 @@ export function CrmPage({
                         Current Condition:{' '}
                         {leadStageInfo?.stageLabel ||
                           (selectedLead.outreachStage === 'followup_1'
-                            ? 'Follow-up 1 Due'
+                            ? 'Follow-up 1 Due (Day 2.5)'
                             : selectedLead.outreachStage === 'followup_2'
-                            ? 'Follow-up 2 Due'
+                            ? 'Follow-up 2 Due (Day 5.5)'
+                            : selectedLead.outreachStage === 'followup_3'
+                            ? 'Final Message Due (Day 10)'
                             : 'First Message Needed')}
                       </span>
                     </div>

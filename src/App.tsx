@@ -33,6 +33,10 @@ function App() {
     const addedLeads = leadEntities.filter((l) => Boolean(l.lists && l.lists.length > 0) && l.status !== 'manual_review');
     const notAddedLeads = leadEntities.filter((l) => (!l.lists || l.lists.length === 0) && l.status !== 'manual_review');
     const manualReviewLeads = leadEntities.filter((l) => l.status === 'manual_review');
+    const invalidLeads = leadEntities.filter((l) =>
+      l.lists?.some((m) => m.name.toLowerCase() === 'invalid list' || m.name.toLowerCase() === 'invalid leads') ||
+      (l.emailVerificationStatus && l.emailVerificationStatus !== 'verified' && l.emailVerificationStatus !== 'unverified')
+    );
     const unreadMessages = store.inboundReplies.filter((r) => !r.is_read && !r.is_replied).length;
 
     return {
@@ -41,6 +45,7 @@ function App() {
       notAddedLeads: notAddedLeads.length,
       clients: clientEntities.length,
       manualReview: manualReviewLeads.length,
+      invalidList: invalidLeads.length,
       trash: store.trashLeads.length,
       queue: store.queue.length,
       unreadMessages,
@@ -137,6 +142,8 @@ function App() {
         ? 'Leads & Clients • Converted Clients'
         : crmSubFilter === 'manual_review'
         ? 'Leads & Clients • Manual Checking (Bounced & Anonymous)'
+        : crmSubFilter === 'invalid_list'
+        ? 'Leads & Clients • Invalid List (Pre-send Flagged)'
         : crmSubFilter === 'inbound'
         ? 'Leads & Clients • Inbound Replies'
         : crmSubFilter === 'trash'

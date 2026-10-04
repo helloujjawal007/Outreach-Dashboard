@@ -9,6 +9,7 @@ export interface DripEngineSettings {
   cycle_interval_seconds: number;
   followup_1_delay_days: number;
   followup_2_delay_days: number;
+  followup_3_delay_days?: number;
   pacing_delay_min_seconds: number;
   pacing_delay_max_seconds: number;
   preferred_channel: 'email' | 'all';
@@ -27,6 +28,7 @@ export interface AutopilotStatus {
     initialDueCount: number;
     followup1DueCount: number;
     followup2DueCount: number;
+    followup3DueCount: number;
     lastCycleRunAt: string | null;
     nextCycleScheduledAt: string | null;
   };
@@ -63,7 +65,13 @@ export class AutonomousDripEngine {
         `SELECT value FROM autopilot_settings WHERE key = 'drip_engine'`
       );
       if (res.rows.length > 0) {
-        return res.rows[0].value;
+        return {
+          ...res.rows[0].value,
+          daily_limit: res.rows[0].value.daily_limit || 200,
+          followup_1_delay_days: res.rows[0].value.followup_1_delay_days || 2.5,
+          followup_2_delay_days: res.rows[0].value.followup_2_delay_days || 5.5,
+          followup_3_delay_days: res.rows[0].value.followup_3_delay_days || 10.0,
+        };
       }
     } catch (err) {
       console.error('[AutonomousDripEngine] Failed to load settings:', err);
@@ -71,11 +79,12 @@ export class AutonomousDripEngine {
 
     return {
       enabled: true,
-      daily_limit: 150,
+      daily_limit: 200,
       batch_size: 5,
       cycle_interval_seconds: 30,
-      followup_1_delay_days: 3,
-      followup_2_delay_days: 5,
+      followup_1_delay_days: 2.5,
+      followup_2_delay_days: 5.5,
+      followup_3_delay_days: 10.0,
       pacing_delay_min_seconds: 3,
       pacing_delay_max_seconds: 7,
       preferred_channel: 'email',
@@ -97,21 +106,20 @@ export class AutonomousDripEngine {
   }
 
   /**
-   * Counts leads currently due across all drip stages
+   * Counts leads currently due across all 4 drip stages (Day 0, Day 2.5, Day 5.5, Day 10)
    */
   async getLeadsDueCounts(settings: DripEngineSettings): Promise<{
     initialDue: number;
     followup1Due: number;
     followup2Due: number;
+    followup3Due: number;
     totalDue: number;
   }> {
-    const f1Days = settings.followup_1_delay_days || 3;
-    const f2Days = settings.followup_2_delay_days || 5;
-
     const res = await query<{
       initial_due: string;
       followup1_due: string;
       followup2_due: string;
+      followup3_due: string;
     }>(
       `SELECT
         COUNT(*) FILTER (
@@ -127,7 +135,11 @@ export class AutonomousDripEngine {
             AND status = 'active'
             AND consent_status = 'none'
             AND outreach_stage = 'followup_1'
-            AND last_contacted_at <= NOW() - ($1 || ' days')::INTERVAL
+            AND (
+              (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '60 hours')
+              OR last_contacted_at <= NOW() - INTERVAL '60 hours'
+            )
+            AND last_contacted_at <= NOW() - INTERVAL '48 hours'
             AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
         ) AS followup1_due,
         COUNT(*) FILTER (
@@ -135,23 +147,38 @@ export class AutonomousDripEngine {
             AND status = 'active'
             AND consent_status = 'none'
             AND outreach_stage = 'followup_2'
-            AND last_contacted_at <= NOW() - ($2 || ' days')::INTERVAL
+            AND (
+              (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '132 hours')
+              OR last_contacted_at <= NOW() - INTERVAL '72 hours'
+            )
             AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
-        ) AS followup2_due
-       FROM leads`,
-      [f1Days, f2Days]
+        ) AS followup2_due,
+        COUNT(*) FILTER (
+          WHERE deleted_at IS NULL
+            AND status = 'active'
+            AND consent_status = 'none'
+            AND outreach_stage = 'followup_3'
+            AND (
+              (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '240 hours')
+              OR last_contacted_at <= NOW() - INTERVAL '108 hours'
+            )
+            AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
+        ) AS followup3_due
+       FROM leads`
     );
 
     const row = res.rows[0];
     const initialDue = parseInt(row?.initial_due || '0', 10);
     const followup1Due = parseInt(row?.followup1_due || '0', 10);
     const followup2Due = parseInt(row?.followup2_due || '0', 10);
+    const followup3Due = parseInt(row?.followup3_due || '0', 10);
 
     return {
       initialDue,
       followup1Due,
       followup2Due,
-      totalDue: initialDue + followup1Due + followup2Due,
+      followup3Due,
+      totalDue: initialDue + followup1Due + followup2Due + followup3Due,
     };
   }
 
@@ -205,6 +232,7 @@ export class AutonomousDripEngine {
         initialDueCount: dueCounts.initialDue,
         followup1DueCount: dueCounts.followup1Due,
         followup2DueCount: dueCounts.followup2Due,
+        followup3DueCount: dueCounts.followup3Due,
         lastCycleRunAt: this.lastRunAt ? this.lastRunAt.toISOString() : null,
         nextCycleScheduledAt: settings.enabled ? nextCycleAt.toISOString() : null,
       },
@@ -247,13 +275,13 @@ export class AutonomousDripEngine {
     let skippedCount = 0;
 
     try {
-      // 1. Check capacity & throttling
+      // 1. Check capacity & throttling (Strict 200/day default limit)
       const poolSummary = await inboxRotationService.getPoolSummary().catch(() => null);
       const metricRes = await query<{ sent_count: number }>(
         `SELECT sent_count FROM daily_send_metrics WHERE metric_date = CURRENT_DATE AND channel = 'email'`
       );
       const sentToday = metricRes.rows.length > 0 ? Number(metricRes.rows[0].sent_count) : 0;
-      const dailyCap = poolSummary && poolSummary.totalDailyCapacity > 0 ? poolSummary.totalDailyCapacity : settings.daily_limit;
+      const dailyCap = poolSummary && poolSummary.totalDailyCapacity > 0 ? poolSummary.totalDailyCapacity : (settings.daily_limit || 200);
 
       if (sentToday >= dailyCap) {
         console.log(`[AutonomousDripEngine] Daily sending capacity reached (${sentToday}/${dailyCap}). Resting until tomorrow.`);
@@ -265,13 +293,11 @@ export class AutonomousDripEngine {
         return { dispatchedCount: 0, skippedCount: 0, results: [] };
       }
 
-      const f1Days = settings.followup_1_delay_days || 3;
-      const f2Days = settings.followup_2_delay_days || 5;
-
       // 2. Select prioritized leads:
-      // Priority 1: Followup 2 (longest in funnel)
-      // Priority 2: Followup 1
-      // Priority 3: Initial touches
+      // Priority 1: Followup 3 (Day 10 final message)
+      // Priority 2: Followup 2 (Day 5.5 check-in)
+      // Priority 3: Followup 1 (Day 2.5 check-in, strictly >= 48 hours delay)
+      // Priority 4: Initial touches (Day 0)
       const candidateLeads = await query<{ id: string; business_name: string; outreach_stage: string }>(
         `SELECT id, business_name, outreach_stage
          FROM leads
@@ -279,11 +305,23 @@ export class AutonomousDripEngine {
            AND status = 'active'
            AND consent_status = 'none'
            AND (
-             -- Followup 2 Due
-             (outreach_stage = 'followup_2' AND last_contacted_at <= NOW() - ($1 || ' days')::INTERVAL)
+             -- Followup 3 Due (10 days from first shoot or 108 hours after followup 2)
+             (outreach_stage = 'followup_3' AND (
+               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '240 hours')
+               OR last_contacted_at <= NOW() - INTERVAL '108 hours'
+             ))
              OR
-             -- Followup 1 Due
-             (outreach_stage = 'followup_1' AND last_contacted_at <= NOW() - ($2 || ' days')::INTERVAL)
+             -- Followup 2 Due (5.5 days from first shoot or 72 hours after followup 1)
+             (outreach_stage = 'followup_2' AND (
+               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '132 hours')
+               OR last_contacted_at <= NOW() - INTERVAL '72 hours'
+             ))
+             OR
+             -- Followup 1 Due (2.5 days from first shoot, strictly >= 48 hours delay)
+             (outreach_stage = 'followup_1' AND (
+               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '60 hours')
+               OR last_contacted_at <= NOW() - INTERVAL '60 hours'
+             ) AND last_contacted_at <= NOW() - INTERVAL '48 hours')
              OR
              -- Initial Touch Due
              (last_contacted_at IS NULL AND (outreach_stage IS NULL OR outreach_stage = 'initial'))
@@ -295,13 +333,14 @@ export class AutonomousDripEngine {
            )
          ORDER BY 
            CASE 
-             WHEN outreach_stage = 'followup_2' THEN 1
-             WHEN outreach_stage = 'followup_1' THEN 2
-             ELSE 3
+             WHEN outreach_stage = 'followup_3' THEN 1
+             WHEN outreach_stage = 'followup_2' THEN 2
+             WHEN outreach_stage = 'followup_1' THEN 3
+             ELSE 4
            END ASC,
            created_at ASC
-         LIMIT $3`,
-        [f2Days, f1Days, batchLimit]
+         LIMIT $1`,
+        [batchLimit]
       );
 
       if (candidateLeads.rows.length === 0) {

@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { query } from '../config/db';
 import { env } from '../config/env';
+import { emailValidatorService } from '../services/emailValidatorService';
 import { inboxRotationService, type ConnectedInboxRecord, type InboxPoolSummary } from '../services/inboxRotationService';
 
 export interface DnsRecord {
@@ -135,54 +136,28 @@ export class EmailAdapter {
     liveDelivery?: string;
     inboxUsed?: { id: string; email: string; name: string };
   }> {
-    // 0. Validate recipient address - if anonymous, missing, or malformed, move to manual review
+    // 0. Rigorous Pre-Send Email Validation: check validity before dispatching
     const cleanTo = (params.to || '').trim().toLowerCase();
-    const isAnonymousOrInvalid =
-      !cleanTo ||
-      cleanTo.startsWith('anonymous') ||
-      cleanTo.startsWith('noreply@') ||
-      cleanTo.startsWith('no-reply@') ||
-      cleanTo.startsWith('donotreply@') ||
-      cleanTo.includes('@privacy') ||
-      cleanTo.includes('@whois') ||
-      cleanTo.includes('@example.com') ||
-      /\b[a-f0-9]{24,}@/i.test(cleanTo) ||
-      !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(cleanTo);
+    const validation = await emailValidatorService.verifyEmail(cleanTo);
 
-    if (isAnonymousOrInvalid) {
-      const reason = !cleanTo
-        ? 'Missing or empty email address'
-        : cleanTo.startsWith('noreply') || cleanTo.startsWith('no-reply') || cleanTo.startsWith('donotreply')
-        ? 'No-reply email address (cannot receive outreach)'
-        : 'Anonymous or unverified email address pattern';
+    if (!validation.isValid) {
+      const failureReason = validation.reason || 'Invalid or non-deliverable email address';
 
       if (params.leadId) {
-        await query(
-          `UPDATE leads 
-           SET status = 'manual_review', 
-               manual_review_reason = $1, 
-               manual_review_at = NOW(),
-               updated_at = NOW() 
-           WHERE id = $2`,
-          [reason, params.leadId]
-        );
-
-        await query(
-          `UPDATE send_queue 
-           SET status = 'discarded', 
-               error_details = $1, 
-               updated_at = NOW() 
-           WHERE lead_id = $2 AND status = 'draft'`,
-          [reason, params.leadId]
+        await emailValidatorService.flagAndMoveLeadToInvalidList(
+          params.leadId,
+          cleanTo,
+          failureReason,
+          validation.status
         );
       }
 
-      console.warn(`[EmailAdapter] ⚠️ Recipient "${params.to}" flagged as anonymous/invalid. Moved lead to Manual Checking.`);
+      console.warn(`[EmailAdapter] ⚠️ Recipient "${cleanTo}" failed pre-send email validation (${failureReason}). Moved contact to Invalid List.`);
       return {
         success: false,
         throttled: false,
-        liveDelivery: 'failed_anonymous',
-        reason: `Email address "${params.to}" is anonymous or invalid. Contact moved to Manual Checking section.`,
+        liveDelivery: 'failed_invalid_email',
+        reason: `Email address "${cleanTo}" is invalid (${failureReason}). Contact has been moved to Invalid List.`,
       };
     }
 

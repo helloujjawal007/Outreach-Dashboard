@@ -6,10 +6,17 @@ export const scraperRouter = Router();
 // POST /api/scraper/search - Search Google Business Profiles with live email & website crawling
 scraperRouter.post('/search', async (req: Request, res: Response) => {
   try {
-    const { category, country, state, city, limit, continent } = req.body;
+    const { category, categories, country, state, city, limit, continent } = req.body;
 
-    if (!category || typeof category !== 'string' || !category.trim()) {
-      return res.status(400).json({ success: false, error: 'Category is required (e.g., Dentist, Plumber, Real Estate)' });
+    let targetCategories: string[] = [];
+    if (Array.isArray(categories) && categories.length > 0) {
+      targetCategories = categories.map((c) => String(c).trim()).filter(Boolean);
+    } else if (category && typeof category === 'string' && category.trim()) {
+      targetCategories = category.split(',').map((c) => c.trim()).filter(Boolean);
+    }
+
+    if (targetCategories.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one category or niche is required (e.g., Dentist, Plumber, Real Estate)' });
     }
 
     if (!state || typeof state !== 'string' || !state.trim()) {
@@ -19,7 +26,8 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
     const parsedLimit = Math.min(100, Math.max(1, parseInt(String(limit || 10), 10)));
 
     const leads = await gmbScraperService.searchGmb({
-      category: category.trim(),
+      categories: targetCategories,
+      category: targetCategories.join(', '),
       country: (country || 'USA').trim(),
       state: state.trim(),
       city: (city || '').trim(),
@@ -29,7 +37,8 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
     res.json({
       success: true,
       query: {
-        category,
+        category: targetCategories.join(', '),
+        categories: targetCategories,
         continent: continent || undefined,
         country: country || 'USA',
         state,

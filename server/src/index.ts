@@ -24,6 +24,7 @@ import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { autonomousDripEngine } from './services/autonomousDripEngine';
 import { addExtremeAutomation } from './db/add_extreme_automation';
+import { addAutomatedCadenceAndChannelLists } from './db/add_automated_cadence_and_channel_lists';
 import { addInboundEmailSyncTable } from './db/add_inbound_email_sync';
 import { addScheduledDispatchesTable } from './db/add_scheduled_dispatches';
 import { addMultiChannelScheduling } from './db/add_multichannel_scheduling';
@@ -238,9 +239,10 @@ async function startServer() {
   // Initialize Extreme Automation & Autopilot Infrastructure
   try {
     await addExtremeAutomation();
+    await addAutomatedCadenceAndChannelLists();
     autonomousDripEngine.startScheduler(30000);
   } catch (err) {
-    console.error('[Autopilot Warning] Failed to initialize Extreme Automation:', err);
+    console.error('[Autopilot Warning] Failed to initialize Extreme Automation & Cadence:', err);
   }
 
   const server = app.listen(env.PORT, () => {

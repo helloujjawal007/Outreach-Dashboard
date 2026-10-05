@@ -622,7 +622,7 @@ conversationsRouter.post('/messages/:id/unread', async (req: Request, res: Respo
 // POST /api/conversations/entity/:entityType/:id/read - Mark all inbound messages for a lead or client as read
 conversationsRouter.post('/entity/:entityType/:id/read', async (req: Request, res: Response) => {
   try {
-    const { entityType, id } = req.params;
+    const { id } = req.params;
     const isRead = req.body.isRead !== false;
 
     await query(

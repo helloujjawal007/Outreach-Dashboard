@@ -306,7 +306,7 @@ leadsRouter.post('/trash/clear', async (_req: Request, res: Response) => {
 
     // Permanently remove from both clients and leads tables
     await query(`DELETE FROM clients WHERE id = ANY($1) OR original_lead_id = ANY($1)`, [allIds]);
-    const result = await query(`DELETE FROM leads WHERE id = ANY($1) RETURNING id`, [allIds]);
+    await query(`DELETE FROM leads WHERE id = ANY($1) RETURNING id`, [allIds]);
 
     res.json({
       success: true,

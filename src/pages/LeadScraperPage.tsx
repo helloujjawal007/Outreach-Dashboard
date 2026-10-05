@@ -20,16 +20,14 @@ import {
   Sparkles,
   UserPlus,
   Layers,
-  Building2,
-  Sliders,
   Edit3,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { PageHeader, type PageId } from '@/components/Sidebar';
-import { Badge } from '@/components/Badge';
-import { EmptyState } from '@/components/EmptyState';
 import { api } from '@/services/api';
 import type { Store } from '@/store';
-import type { ScrapedLead } from '@/types';
+import type { ScrapedLead, GmbLocationTarget } from '@/types';
 
 interface Props {
   store: Store;
@@ -40,19 +38,7 @@ import {
   CONTINENTS,
   COUNTRIES,
   POPULAR_CATEGORIES,
-  type StateConfig,
-  type CountryConfig,
-  type ContinentConfig,
 } from '@/data/scraperLocations';
-
-export {
-  CONTINENTS,
-  COUNTRIES,
-  POPULAR_CATEGORIES,
-  type StateConfig,
-  type CountryConfig,
-  type ContinentConfig,
-};
 
 export function LeadScraperPage({ store, onNavigate }: Props) {
   // Search Form State
@@ -64,6 +50,19 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [city, setCity] = useState<string>('Austin');
   const [customCity, setCustomCity] = useState<string>('');
   const [limit, setLimit] = useState<number>(10);
+  const [leadsPerCity, setLeadsPerCity] = useState<number>(0);
+
+  // Target Locations Multi-Selection State
+  const [targetLocations, setTargetLocations] = useState<GmbLocationTarget[]>([
+    {
+      country: 'USA',
+      state: 'Texas',
+      city: 'Austin',
+      display: 'Austin, Texas, USA',
+    },
+  ]);
+  const [citySearchFilter, setCitySearchFilter] = useState<string>('');
+  const [customLocationInput, setCustomLocationInput] = useState<string>('');
 
   // Category Multi-Selection Handlers
   const toggleCategory = (cat: string) => {
@@ -207,6 +206,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       setState('custom');
       setCity('');
       setCustomCity('');
+      setCitySearchFilter('');
       return;
     }
     setState(newStateName);
@@ -219,7 +219,242 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       setCity('');
     }
     setCustomCity('');
+    setCitySearchFilter('');
   };
+
+  // Location Multi-Selection Helpers
+  const isCitySelected = (cityName: string) => {
+    return targetLocations.some(
+      (loc) =>
+        loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+        loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+        loc.city?.toLowerCase() === cityName.toLowerCase()
+    );
+  };
+
+  const toggleCity = (cityName: string) => {
+    setTargetLocations((prev) => {
+      const exists = prev.some(
+        (loc) =>
+          loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+          loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+          loc.city?.toLowerCase() === cityName.toLowerCase()
+      );
+      if (exists) {
+        return prev.filter(
+          (loc) =>
+            !(
+              loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+              loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+              loc.city?.toLowerCase() === cityName.toLowerCase()
+            )
+        );
+      } else {
+        return [
+          ...prev,
+          {
+            country: effectiveCountry,
+            state: effectiveState,
+            city: cityName,
+            display: `${cityName}, ${effectiveState}, ${effectiveCountry}`,
+          },
+        ];
+      }
+    });
+  };
+
+  const handleSelectAllCitiesInState = () => {
+    if (!currentStateConfig?.cities) return;
+    setTargetLocations((prev) => {
+      const next = [...prev];
+      for (const cityName of currentStateConfig.cities) {
+        const alreadyExists = next.some(
+          (loc) =>
+            loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+            loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+            loc.city?.toLowerCase() === cityName.toLowerCase()
+        );
+        if (!alreadyExists) {
+          next.push({
+            country: effectiveCountry,
+            state: effectiveState,
+            city: cityName,
+            display: `${cityName}, ${effectiveState}, ${effectiveCountry}`,
+          });
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleSelectTopMetros = () => {
+    if (!currentStateConfig?.cities) return;
+    const topCities = currentStateConfig.cities.slice(0, 5);
+    setTargetLocations((prev) => {
+      const next = [...prev];
+      for (const cityName of topCities) {
+        const alreadyExists = next.some(
+          (loc) =>
+            loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+            loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+            loc.city?.toLowerCase() === cityName.toLowerCase()
+        );
+        if (!alreadyExists) {
+          next.push({
+            country: effectiveCountry,
+            state: effectiveState,
+            city: cityName,
+            display: `${cityName}, ${effectiveState}, ${effectiveCountry}`,
+          });
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleClearCitiesInState = () => {
+    setTargetLocations((prev) =>
+      prev.filter(
+        (loc) =>
+          !(
+            loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+            loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+            Boolean(loc.city)
+          )
+      )
+    );
+  };
+
+  const handleAddEntireState = () => {
+    setTargetLocations((prev) => {
+      const exists = prev.some(
+        (loc) =>
+          loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+          loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+          !loc.city
+      );
+      if (exists) return prev;
+      return [
+        ...prev,
+        {
+          country: effectiveCountry,
+          state: effectiveState,
+          city: undefined,
+          display: `${effectiveState}, ${effectiveCountry} (Entire State)`,
+        },
+      ];
+    });
+  };
+
+  const handleAddCustomCity = () => {
+    const trimmed = customCity.trim();
+    if (!trimmed) return;
+    setTargetLocations((prev) => {
+      const exists = prev.some(
+        (loc) =>
+          loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+          loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+          loc.city?.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (exists) return prev;
+      return [
+        ...prev,
+        {
+          country: effectiveCountry,
+          state: effectiveState,
+          city: trimmed,
+          display: `${trimmed}, ${effectiveState}, ${effectiveCountry}`,
+        },
+      ];
+    });
+    setCustomCity('');
+  };
+
+  const removeLocation = (index: number) => {
+    setTargetLocations((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleClearAllLocations = () => {
+    setTargetLocations([]);
+  };
+
+  const handleAddBulkLocations = () => {
+    const raw = customLocationInput.trim();
+    if (!raw) return;
+    const items = raw.split(/[\n;]+/).map((s) => s.trim()).filter(Boolean);
+    const newItems: GmbLocationTarget[] = [];
+    for (const item of items) {
+      const parts = item.split(',').map((p) => p.trim()).filter(Boolean);
+      let c = effectiveCountry || 'USA';
+      let s = effectiveState || '';
+      let ct = '';
+      if (parts.length === 1) {
+        ct = parts[0];
+      } else if (parts.length === 2) {
+        ct = parts[0];
+        s = parts[1];
+      } else if (parts.length >= 3) {
+        ct = parts[0];
+        s = parts[1];
+        c = parts[2];
+      }
+      newItems.push({
+        country: c,
+        state: s || undefined,
+        city: ct || undefined,
+        display: item,
+      });
+    }
+
+    setTargetLocations((prev) => {
+      const next = [...prev];
+      for (const item of newItems) {
+        const exists = next.some((l) => (l.display || '').toLowerCase() === (item.display || '').toLowerCase());
+        if (!exists) next.push(item);
+      }
+      return next;
+    });
+    setCustomLocationInput('');
+  };
+
+  const handleAddSingleCustomLocation = () => {
+    if (!customCountry.trim() && !effectiveCountry.trim()) return;
+    const c = customCountry.trim() || effectiveCountry;
+    const s = customState.trim();
+    const ct = city.trim();
+    const parts = [ct, s, c].filter(Boolean);
+    const display = parts.join(', ');
+    setTargetLocations((prev) => {
+      const exists = prev.some((l) => (l.display || '').toLowerCase() === display.toLowerCase());
+      if (exists) return prev;
+      return [
+        ...prev,
+        {
+          country: c,
+          state: s || undefined,
+          city: ct || undefined,
+          display,
+        },
+      ];
+    });
+    setCity('');
+  };
+
+  const filteredCities = useMemo(() => {
+    if (!currentStateConfig?.cities) return [];
+    if (!citySearchFilter.trim()) return currentStateConfig.cities;
+    const filter = citySearchFilter.toLowerCase().trim();
+    return currentStateConfig.cities.filter((c) => c.toLowerCase().includes(filter));
+  }, [currentStateConfig, citySearchFilter]);
+
+  const selectedCitiesInCurrentStateCount = useMemo(() => {
+    return targetLocations.filter(
+      (loc) =>
+        loc.country.toLowerCase() === effectiveCountry.toLowerCase() &&
+        loc.state?.toLowerCase() === effectiveState.toLowerCase() &&
+        Boolean(loc.city)
+    ).length;
+  }, [targetLocations, effectiveCountry, effectiveState]);
 
   // Run GMB Scrape
   const handleStartScrape = async (e?: React.FormEvent) => {
@@ -228,12 +463,23 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       setError('Please select at least one business niche / category (e.g. Plumbing, Dentist, Real Estate)');
       return;
     }
-    if (!effectiveState.trim()) {
-      setError('Please provide a State or Region');
-      return;
-    }
-    if (!effectiveCountry.trim()) {
-      setError('Please provide a Country');
+
+    const locationsToSend: GmbLocationTarget[] =
+      targetLocations.length > 0
+        ? targetLocations
+        : [
+            {
+              country: effectiveCountry,
+              state: effectiveState,
+              city: effectiveCity || undefined,
+              display: effectiveCity
+                ? `${effectiveCity}, ${effectiveState}, ${effectiveCountry}`
+                : `${effectiveState}, ${effectiveCountry}`,
+            },
+          ];
+
+    if (locationsToSend.length === 0 || (!locationsToSend[0].country && !effectiveCountry)) {
+      setError('Please select or enter at least one target location.');
       return;
     }
 
@@ -243,12 +489,16 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
     setScrapeStep('Connecting to Google Business Profiles & Maps engine...');
 
     try {
-      const locStr = effectiveCity ? `${effectiveCity}, ${effectiveState}` : effectiveState;
+      const locSummary =
+        locationsToSend.length === 1
+          ? (locationsToSend[0].display || locationsToSend[0].city || locationsToSend[0].state || effectiveState)
+          : `${locationsToSend.length} locations (${locationsToSend.slice(0, 2).map((l) => l.city || l.state || l.display).join(', ')}${locationsToSend.length > 2 ? '...' : ''})`;
+
       const stepTimer1 = setTimeout(() => {
         if (selectedCategories.length === 1) {
-          setScrapeStep(`Searching verified GMB listings for "${selectedCategories[0]}" in ${locStr}...`);
+          setScrapeStep(`Searching verified GMB listings for "${selectedCategories[0]}" across ${locSummary}...`);
         } else {
-          setScrapeStep(`Searching verified GMB listings across ${selectedCategories.length} niches (${selectedCategories.slice(0, 3).join(', ')}${selectedCategories.length > 3 ? '...' : ''}) in ${locStr}...`);
+          setScrapeStep(`Searching verified GMB listings across ${selectedCategories.length} niches in ${locSummary}...`);
         }
       }, 1200);
 
@@ -264,10 +514,12 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         category: selectedCategories.join(', '),
         categories: selectedCategories,
         continent: continent !== 'custom' ? continent : undefined,
-        country: effectiveCountry,
-        state: effectiveState,
-        city: effectiveCity || undefined,
+        country: locationsToSend[0].country || effectiveCountry,
+        state: locationsToSend[0].state || effectiveState || '',
+        city: locationsToSend[0].city || effectiveCity || undefined,
+        locations: locationsToSend,
         limit,
+        leadsPerLocation: leadsPerCity > 0 ? leadsPerCity : undefined,
       });
 
       clearTimeout(stepTimer1);
@@ -281,10 +533,13 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         setSelectedIndices(allIdx);
 
         // Pre-fill suggested batch name
-        const catsDisplay = selectedCategories.length > 2
-          ? `${selectedCategories.slice(0, 2).join(' & ')} +${selectedCategories.length - 2} more`
-          : selectedCategories.join(' & ');
-        setBatchName(`GMB Scrape — ${catsDisplay} in ${locStr} (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`);
+        const catsDisplay =
+          selectedCategories.length > 2
+            ? `${selectedCategories.slice(0, 2).join(' & ')} +${selectedCategories.length - 2} more`
+            : selectedCategories.join(' & ');
+        setBatchName(
+          `GMB Scrape — ${catsDisplay} in ${locSummary} (${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`
+        );
       } else {
         setError('No listings found matching this criteria. Try broadening your location or category.');
       }
@@ -419,10 +674,32 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   // Target query display
   const targetQueryDisplay = useMemo(() => {
     const cat = selectedCategories.length > 0 ? selectedCategories.join(', ') : '...';
-    const loc = [effectiveCity, effectiveState, effectiveCountry].filter(Boolean).join(', ');
+    let locDisplay = '';
+    if (targetLocations.length === 0) {
+      const locParts = [effectiveCity, effectiveState, effectiveCountry].filter(Boolean);
+      locDisplay = locParts.join(', ') || 'No location selected';
+    } else if (targetLocations.length === 1) {
+      locDisplay =
+        targetLocations[0].display ||
+        [targetLocations[0].city, targetLocations[0].state, targetLocations[0].country]
+          .filter(Boolean)
+          .join(', ');
+    } else if (targetLocations.length <= 3) {
+      locDisplay = targetLocations
+        .map((l) => l.city || l.state || l.display)
+        .filter(Boolean)
+        .join('; ');
+    } else {
+      locDisplay = `${targetLocations
+        .slice(0, 2)
+        .map((l) => l.city || l.state || l.display)
+        .filter(Boolean)
+        .join('; ')} +${targetLocations.length - 2} more locations`;
+    }
     const contName = CONTINENTS.find((c) => c.id === continent)?.name;
-    return `"${cat}" in ${loc || '...'} ${contName && continent !== 'custom' ? `(${contName})` : ''} • ${limit} leads/niche`;
-  }, [selectedCategories, effectiveCity, effectiveState, effectiveCountry, continent, limit]);
+    const perCityStr = leadsPerCity > 0 ? ` • ${leadsPerCity} leads/city` : '';
+    return `"${cat}" in ${locDisplay} ${contName && continent !== 'custom' ? `(${contName})` : ''}${perCityStr} • ${limit} leads max`;
+  }, [selectedCategories, targetLocations, effectiveCity, effectiveState, effectiveCountry, continent, limit, leadsPerCity]);
 
   return (
     <div className="space-y-6">
@@ -561,21 +838,44 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                 </button>
               </div>
 
-              <div className="md:col-span-4 flex items-center gap-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap">
-                  Leads / Niche:
-                </label>
-                <select
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer shadow-2xs"
-                >
-                  <option value={10}>10 Leads</option>
-                  <option value={25}>25 Leads</option>
-                  <option value={50}>50 Leads</option>
-                  <option value={75}>75 Leads</option>
-                  <option value={100}>100 Leads (Max)</option>
-                </select>
+              <div className="md:col-span-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 flex items-center gap-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap" title="Maximum total leads to scrape">
+                    Total Cap:
+                  </label>
+                  <select
+                    value={limit}
+                    onChange={(e) => setLimit(Number(e.target.value))}
+                    className="flex-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <option value={10}>10 Leads</option>
+                    <option value={25}>25 Leads</option>
+                    <option value={50}>50 Leads</option>
+                    <option value={75}>75 Leads</option>
+                    <option value={100}>100 Leads (Max)</option>
+                  </select>
+                </div>
+
+                {/* Option to choose leads per city / location */}
+                {(targetLocations.length > 1 || targetLocations.some((l) => !l.city)) && (
+                  <div className="flex-1 flex items-center gap-1.5 bg-amber-50/80 border border-amber-300/80 px-2.5 py-1.5 rounded-xl shadow-2xs">
+                    <label className="text-[11px] font-bold uppercase tracking-wider text-amber-950 whitespace-nowrap" title="Limit how many leads to collect from each city or region">
+                      Per City:
+                    </label>
+                    <select
+                      value={leadsPerCity}
+                      onChange={(e) => setLeadsPerCity(Number(e.target.value))}
+                      className="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-950 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-all cursor-pointer shadow-2xs"
+                    >
+                      <option value={0}>Auto / All (Up to Cap)</option>
+                      <option value={5}>5 leads / city</option>
+                      <option value={10}>10 leads / city</option>
+                      <option value={15}>15 leads / city</option>
+                      <option value={20}>20 leads / city</option>
+                      <option value={25}>25 leads / city</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -735,48 +1035,141 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                       className="mt-1.5 w-full rounded-lg border border-amber-300 bg-amber-50/50 px-2.5 py-1.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
                     />
                   )}
+                  {state !== 'custom' && (
+                    <button
+                      type="button"
+                      onClick={handleAddEntireState}
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 hover:bg-amber-100/90 py-1.5 px-2 text-[11px] font-bold text-amber-800 transition-colors shadow-2xs cursor-pointer"
+                      title={`Queue entire ${state} region`}
+                    >
+                      <Plus size={13} />
+                      <span>+ Add Entire {state}</span>
+                    </button>
+                  )}
                 </div>
 
-                {/* 4. City / Metro */}
+                {/* 4. City / Metro Multi-Select */}
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center justify-between">
-                    <span>4. City / Metro</span>
-                    <span className="text-[10px] text-amber-700 font-semibold lowercase">
-                      {currentStateConfig?.cities?.length || 0} cities available
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                      4. City / Metro
                     </span>
-                  </label>
-                  <select
-                    value={city}
-                    onChange={(e) => {
-                      setCity(e.target.value);
-                      if (e.target.value !== 'custom') {
-                        setCustomCity('');
-                      }
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer shadow-2xs"
-                  >
-                    <option value="">🌐 All Cities / Entire State ({state})</option>
-                    {currentStateConfig?.cities?.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                    <option value="custom">✏️ Enter Custom City...</option>
-                  </select>
-                  {city === 'custom' && (
-                    <input
-                      type="text"
-                      value={customCity}
-                      onChange={(e) => setCustomCity(e.target.value)}
-                      placeholder="Type custom city name..."
-                      className="mt-1.5 w-full rounded-lg border border-amber-300 bg-amber-50/50 px-2.5 py-1.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none"
-                    />
-                  )}
+                    <span className="text-[10px] text-amber-800 font-bold bg-amber-100/80 px-1.5 py-0.5 rounded">
+                      {selectedCitiesInCurrentStateCount > 0
+                        ? `${selectedCitiesInCurrentStateCount} selected in ${state}`
+                        : `${currentStateConfig?.cities?.length || 0} cities`}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={citySearchFilter}
+                        onChange={(e) => setCitySearchFilter(e.target.value)}
+                        placeholder={`Filter ${currentStateConfig?.cities?.length || 0} cities...`}
+                        className="w-full rounded-lg border border-slate-200 bg-white pl-7 pr-7 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-all shadow-2xs"
+                      />
+                      {citySearchFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setCitySearchFilter('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={handleSelectAllCitiesInState}
+                        className="px-1.5 py-0.5 rounded text-amber-700 font-semibold hover:bg-amber-100/70 transition-colors cursor-pointer"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-slate-300">•</span>
+                      <button
+                        type="button"
+                        onClick={handleSelectTopMetros}
+                        className="px-1.5 py-0.5 rounded text-amber-700 font-semibold hover:bg-amber-100/70 transition-colors cursor-pointer"
+                      >
+                        Top 5 Metros
+                      </button>
+                      <span className="text-slate-300">•</span>
+                      <button
+                        type="button"
+                        onClick={handleClearCitiesInState}
+                        className="px-1.5 py-0.5 rounded text-slate-500 hover:text-rose-600 transition-colors cursor-pointer"
+                      >
+                        Clear State
+                      </button>
+                    </div>
+
+                    {/* Interactive scrollable city selection box */}
+                    <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 space-y-0.5 shadow-2xs">
+                      {filteredCities.length === 0 ? (
+                        <div className="p-3 text-center text-[11px] text-slate-400">
+                          No cities match &ldquo;{citySearchFilter}&rdquo;
+                        </div>
+                      ) : (
+                        filteredCities.map((cityName) => {
+                          const isSelected = isCitySelected(cityName);
+                          return (
+                            <button
+                              key={cityName}
+                              type="button"
+                              onClick={() => toggleCity(cityName)}
+                              className={`w-full flex items-center justify-between px-2 py-1 text-xs rounded-lg transition-colors text-left cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-100 text-amber-950 font-bold border border-amber-300/80'
+                                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                              }`}
+                            >
+                              <span className="truncate">{cityName}</span>
+                              {isSelected ? (
+                                <Check size={12} className="text-amber-700 shrink-0 ml-1" />
+                              ) : (
+                                <Plus size={11} className="text-slate-300 opacity-60 shrink-0 ml-1" />
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Add Custom City to Current State */}
+                    <div className="flex gap-1 pt-0.5">
+                      <input
+                        type="text"
+                        value={customCity}
+                        onChange={(e) => setCustomCity(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCustomCity();
+                          }
+                        }}
+                        placeholder="Other city name..."
+                        className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomCity}
+                        disabled={!customCity.trim()}
+                        className="rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white px-2.5 py-1 text-xs font-bold transition-colors cursor-pointer shrink-0"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
               /* Custom / "Use My Own" Freeform Mode */
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
@@ -804,21 +1197,19 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                       value={customCountry}
                       onChange={(e) => setCustomCountry(e.target.value)}
                       placeholder="e.g. Poland, Switzerland, India, UAE..."
-                      required
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all shadow-2xs"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                      3. Custom State / Region <span className="text-rose-500">*</span>
+                      3. Custom State / Region
                     </label>
                     <input
                       type="text"
                       value={customState}
                       onChange={(e) => setCustomState(e.target.value)}
                       placeholder="e.g. Mazovia, Canton Zurich, Maharashtra..."
-                      required
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all shadow-2xs"
                     />
                   </div>
@@ -827,20 +1218,146 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                       4. City / Metro / District
                     </label>
-                    <input
-                      type="text"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. Warsaw, Zurich Central, Bandra..."
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all shadow-2xs"
-                    />
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddSingleCustomLocation();
+                          }
+                        }}
+                        placeholder="e.g. Warsaw, Zurich Central..."
+                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all shadow-2xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddSingleCustomLocation}
+                        disabled={!city.trim() && !customState.trim()}
+                        className="rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white px-3 py-2 text-xs font-bold transition-colors cursor-pointer shrink-0"
+                      >
+                        + Add
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[11px] text-amber-800 bg-amber-50/80 px-3 py-1.5 rounded-lg border border-amber-200/80 font-medium">
-                  💡 <strong>Custom Mode Active:</strong> You can enter any country, province, territory, or city across the globe. Google Maps natively resolves specific localities and auto-crawls matching websites.
-                </p>
+
+                {/* Bulk Paste Custom Locations */}
+                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles size={13} className="text-amber-500" />
+                      <span>Bulk Add Multiple Locations</span>
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Separate by commas, semicolons, or new lines
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customLocationInput}
+                      onChange={(e) => setCustomLocationInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddBulkLocations();
+                        }
+                      }}
+                      placeholder="e.g. Austin, TX; Dallas, TX; Miami, FL; Denver, CO"
+                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/20 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddBulkLocations}
+                      disabled={!customLocationInput.trim()}
+                      className="rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white px-3.5 py-2 text-xs font-bold transition-colors cursor-pointer shrink-0"
+                    >
+                      + Add All
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
+
+            {/* Active Selected Locations Tray */}
+            <div className="pt-3 border-t border-slate-200">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <MapPin size={13} className="text-amber-600" />
+                    <span>Selected Target Locations</span>
+                  </span>
+                  <span className="rounded-full bg-amber-500 text-white px-2 py-0.2 text-[10px] font-bold">
+                    {targetLocations.length}
+                  </span>
+                  <span className="text-[11px] text-slate-400 hidden sm:inline">
+                    (Scraper will search across each selected location)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(targetLocations.length > 1 || targetLocations.some((l) => !l.city)) && (
+                    <div className="flex items-center gap-1.5 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-lg shadow-2xs">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 whitespace-nowrap">
+                        Leads / City:
+                      </span>
+                      <select
+                        value={leadsPerCity}
+                        onChange={(e) => setLeadsPerCity(Number(e.target.value))}
+                        className="bg-transparent text-xs font-bold text-amber-950 focus:outline-none cursor-pointer"
+                      >
+                        <option value={0}>Auto (up to cap)</option>
+                        <option value={5}>5 / city</option>
+                        <option value={10}>10 / city</option>
+                        <option value={15}>15 / city</option>
+                        <option value={20}>20 / city</option>
+                        <option value={25}>25 / city</option>
+                      </select>
+                    </div>
+                  )}
+                  {targetLocations.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllLocations}
+                      className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Trash2 size={12} />
+                      <span>Clear All ({targetLocations.length})</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {targetLocations.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-white rounded-xl border border-slate-200">
+                  {targetLocations.map((loc, idx) => (
+                    <span
+                      key={`${loc.display || loc.city || loc.state}-${idx}`}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 text-amber-950 border border-amber-300 px-2.5 py-1 text-xs font-semibold shadow-2xs"
+                    >
+                      <MapPin size={11} className="text-amber-600 shrink-0" />
+                      <span className="max-w-[220px] truncate">
+                        {loc.display || [loc.city, loc.state, loc.country].filter(Boolean).join(', ')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeLocation(idx)}
+                        className="text-amber-700 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 transition-colors cursor-pointer ml-0.5"
+                        title="Remove location"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-amber-300/80 bg-amber-50/50 p-2.5 text-center text-xs text-amber-900">
+                  📍 No specific cities queued yet. Click any city pill above or &ldquo;+ Add Entire State&rdquo; to target multiple locations, or search will default to <strong className="font-semibold">{effectiveState}, {effectiveCountry}</strong>.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Search Trigger Button & Live Target Preview */}

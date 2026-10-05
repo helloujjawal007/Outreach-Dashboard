@@ -12,8 +12,8 @@ import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import type { CrmSubFilter } from '@/types';
-import { getCountryFlag } from '@/pages/CrmPage';
-import { MessageSquare, RefreshCw, Layers, Zap } from 'lucide-react';
+import { getCountryFlag } from '@/utils/countryFlag';
+import { MessageSquare, RefreshCw, Zap } from 'lucide-react';
 
 function App() {
   const [page, setPage] = useState<PageId>('import');

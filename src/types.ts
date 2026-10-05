@@ -189,12 +189,10 @@ export interface InboundReplyMessage {
   consent_status?: string;
 }
 
-export type SequenceChannel = Channel;
-
 export interface SequenceStep {
   id: string;
   name: string;
-  channel: SequenceChannel;
+  channel: Channel;
   delayDays: number;
   body: string;
 }
@@ -241,14 +239,6 @@ export const channelLabels: Record<Channel, string> = {
   website_form: 'Website Form',
 };
 
-export const channelColors: Record<Channel, string> = {
-  email: 'blue',
-  whatsapp: 'emerald',
-  instagram: 'pink',
-  facebook: 'indigo',
-  linkedin: 'blue',
-  website_form: 'amber',
-};
 
 export const consentLabels: Record<ConsentStatus, string> = {
   none: 'No response',
@@ -501,13 +491,13 @@ export interface BusinessSuggestion {
   metricLabel: string;
   actionTitle: string;
   actionType:
-    | 'shoot_all_outreach'
-    | 'shoot_due_followups'
-    | 'scan_website_forms'
-    | 'sync_gmb_data'
-    | 'target_ecom_leads'
-    | 'view_inbound_replies'
-    | 'run_lead_diagnostic';
+  | 'shoot_all_outreach'
+  | 'shoot_due_followups'
+  | 'scan_website_forms'
+  | 'sync_gmb_data'
+  | 'target_ecom_leads'
+  | 'view_inbound_replies'
+  | 'run_lead_diagnostic';
   actionPayload?: Record<string, unknown>;
   badgeText: string;
   badgeVariant: 'red' | 'amber' | 'emerald' | 'indigo';
@@ -615,14 +605,23 @@ export interface ScrapedLead {
   };
 }
 
+export interface GmbLocationTarget {
+  country: string;
+  state?: string;
+  city?: string;
+  display?: string;
+}
+
 export interface GmbSearchParams {
   category?: string;
   categories?: string[];
   continent?: string;
-  country: string;
-  state: string;
+  country?: string;
+  state?: string;
   city?: string;
+  locations?: Array<GmbLocationTarget | string>;
   limit: number;
+  leadsPerLocation?: number;
 }
 
 export interface GmbImportParams {
@@ -637,10 +636,5 @@ export interface GmbImportResult {
   duplicateCount: number;
   batchId?: string;
   batchName?: string;
-  leads: any[];
+  leads: Lead[] | Record<string, unknown>[];
 }
-
-
-
-
-

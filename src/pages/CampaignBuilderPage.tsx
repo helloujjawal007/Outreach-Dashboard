@@ -8,7 +8,6 @@ import {
   Facebook,
   Linkedin,
   Clock,
-  Send,
   Save,
   Layers,
   Sparkles,
@@ -17,7 +16,6 @@ import {
   ChevronUp,
   ChevronDown,
   ArrowUpRight,
-  HelpCircle,
   CheckCircle2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';

@@ -29,7 +29,6 @@ import {
   Users,
   Facebook,
   Eye,
-  EyeOff,
   Check,
   Phone,
   Globe,
@@ -51,7 +50,8 @@ import { ChannelOutreachHub } from '@/components/ChannelOutreachHub';
 import type { Store } from '@/store';
 import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter, ScraperProgressStatus } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
-import { api, cleanSiteUrl, type WhatsAppWindowStatus } from '@/services/api';
+import { api, cleanSiteUrl } from '@/services/api';
+import { getCountryFlag } from '@/utils/countryFlag';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 
 interface Props {
@@ -71,27 +71,6 @@ type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'clie
 type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'facebook' | 'instagram' | 'linkedin';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
-export const getCountryFlag = (countryName?: string) => {
-  if (!countryName) return '🌐';
-  const c = countryName.toLowerCase().trim();
-  if (c.includes('canada')) return '🇨🇦';
-  if (c.includes('united states') || c.includes('usa') || c === 'us') return '🇺🇸';
-  if (c.includes('india')) return '🇮🇳';
-  if (c.includes('australia')) return '🇦🇺';
-  if (c.includes('united kingdom') || c.includes('uk') || c.includes('britain') || c.includes('england')) return '🇬🇧';
-  if (c.includes('germany') || c.includes('deutschland')) return '🇩🇪';
-  if (c.includes('france')) return '🇫🇷';
-  if (c.includes('italy')) return '🇮🇹';
-  if (c.includes('spain')) return '🇪🇸';
-  if (c.includes('brazil')) return '🇧🇷';
-  if (c.includes('mexico')) return '🇲🇽';
-  if (c.includes('japan')) return '🇯🇵';
-  if (c.includes('china')) return '🇨🇳';
-  if (c.includes('netherlands')) return '🇳🇱';
-  if (c.includes('new zealand')) return '🇳🇿';
-  return '📍';
-};
-
 export function CrmPage({
   store,
   autoOpenContact,
@@ -102,7 +81,7 @@ export function CrmPage({
   onCountryFilterChange,
   channelFilter: channelFilterProp,
   onChannelFilterChange,
-  onOpenGlobalMessages,
+  onOpenGlobalMessages: _onOpenGlobalMessages,
 }: Props) {
   const [crmViewMode, setCrmViewMode] = useState<'channels' | 'table'>('channels');
   const [entityFilter, setEntityFilter] = useState<EntityTypeFilter>('all');
@@ -169,7 +148,6 @@ export function CrmPage({
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [replyText, setReplyText] = useState('');
   const [replyChannel, setReplyChannel] = useState<Channel>('email');
-  const [waWindow, setWaWindow] = useState<WhatsAppWindowStatus | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [alsoSubmitWebsiteForm, setAlsoSubmitWebsiteForm] = useState(true);
   const [detectingFormLeadId, setDetectingFormLeadId] = useState<string | null>(null);
@@ -223,7 +201,6 @@ export function CrmPage({
   const [isTrashOpen, setIsTrashOpen] = useState(false);
 
   // Google Profile Enrichment & Direct Edit state
-  const [isEnrichingGoogle, setIsEnrichingGoogle] = useState(false);
   const [isSyncingMaps, setIsSyncingMaps] = useState(false);
   const [mapsUrlInput, setMapsUrlInput] = useState('');
   const [googleFeedback, setGoogleFeedback] = useState<string | null>(null);
@@ -927,13 +904,6 @@ export function CrmPage({
       setReplyChannel(lead.email ? 'email' : lead.whatsapp ? 'whatsapp' : (lead.website || lead.googleProfile?.website) ? 'website_form' : 'instagram');
       await store.fetchConversationsForEntity(lead.id, lead.entityType === 'client');
       // NOTE: Received messages remain UNREAD until user explicitly clicks "Mark as Read" or sends a reply back!
-      try {
-        const win = await api.getWhatsAppWindowStatus(lead.id, lead.entityType === 'client');
-        setWaWindow(win);
-      } catch (err) {
-        console.error('Failed to get WhatsApp window:', err);
-        setWaWindow(null);
-      }
 
       if (lead.entityType === 'lead') {
         api.getLeadStage(lead.id)
@@ -1074,9 +1044,10 @@ export function CrmPage({
       gp.formattedAddress?.includes('Suite, Commercial District') ||
       (selectedLead.businessName.toLowerCase().includes('rooter') && gp.rating === 4.8 && gp.reviewsCount === 40);
 
-    if (hasPlaceholder && !isEnrichingGoogle) {
+    if (hasPlaceholder && !isSyncingMaps) {
       handleEnrichLeadFromGoogle(selectedLead.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead?.id]);
 
   useEffect(() => {
@@ -1689,8 +1660,6 @@ export function CrmPage({
       setReplyText('');
 
       await store.fetchConversationsForEntity(selectedLead.id, selectedLead.entityType === 'client');
-      const updatedWindow = await api.getWhatsAppWindowStatus(selectedLead.id, selectedLead.entityType === 'client');
-      setWaWindow(updatedWindow);
     } catch (err) {
       console.error('Send reply failed:', err);
       setSendFeedback({
@@ -4176,12 +4145,12 @@ export function CrmPage({
                   <button
                     type="button"
                     onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
-                    disabled={isEnrichingGoogle}
+                    disabled={isSyncingMaps}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-amber-300 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-50 transition shadow-2xs disabled:opacity-50"
                     title="Update ratings, reviews, and address live from Google"
                   >
-                    <RefreshCw size={12} className={isEnrichingGoogle ? 'animate-spin text-amber-600' : 'text-amber-600'} />
-                    <span>{isEnrichingGoogle ? 'Updating...' : '🔄 Update Info from Google'}</span>
+                    <RefreshCw size={12} className={isSyncingMaps ? 'animate-spin text-amber-600' : 'text-amber-600'} />
+                    <span>{isSyncingMaps ? 'Updating...' : '🔄 Update Info from Google'}</span>
                   </button>
                   {selectedLead.googleProfile?.googleMapsUrl && (
                     <a
@@ -4396,10 +4365,10 @@ export function CrmPage({
                   <button
                     type="button"
                     onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
-                    disabled={isEnrichingGoogle}
+                    disabled={isSyncingMaps}
                     className="btn-primary bg-amber-600 hover:bg-amber-700 text-xs py-1 px-3 shadow-2xs"
                   >
-                    {isEnrichingGoogle ? 'Fetching...' : '🔍 Fetch Google Profile'}
+                    {isSyncingMaps ? 'Fetching...' : '🔍 Fetch Google Profile'}
                   </button>
                 </div>
               )}
@@ -4680,11 +4649,11 @@ export function CrmPage({
                     <button
                       type="button"
                       onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
-                      disabled={isEnrichingGoogle}
+                      disabled={isSyncingMaps}
                       className="text-[11px] text-amber-800 hover:text-amber-950 font-semibold p-1 hover:bg-amber-100 rounded transition"
                       title="Update latest info from Google"
                     >
-                      <RefreshCw size={11} className={isEnrichingGoogle ? 'animate-spin' : ''} />
+                      <RefreshCw size={11} className={isSyncingMaps ? 'animate-spin' : ''} />
                     </button>
                   </div>
                 </div>
@@ -4694,11 +4663,11 @@ export function CrmPage({
                   <button
                     type="button"
                     onClick={() => handleEnrichLeadFromGoogle(selectedLead.id)}
-                    disabled={isEnrichingGoogle}
+                    disabled={isSyncingMaps}
                     className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-800 bg-white px-2.5 py-0.5 rounded border border-brand-200 shadow-2xs transition"
                   >
-                    <RefreshCw size={10} className={isEnrichingGoogle ? 'animate-spin' : ''} />
-                    <span>{isEnrichingGoogle ? 'Syncing...' : 'Fetch Google Info'}</span>
+                    <RefreshCw size={10} className={isSyncingMaps ? 'animate-spin' : ''} />
+                    <span>{isSyncingMaps ? 'Syncing...' : 'Fetch Google Info'}</span>
                   </button>
                 </div>
               )}

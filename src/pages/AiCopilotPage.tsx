@@ -8,7 +8,6 @@ import {
   Zap,
   RefreshCw,
   CheckCircle2,
-  AlertTriangle,
   TrendingUp,
   Globe,
   MapPin,
@@ -23,7 +22,6 @@ import {
   Trash2,
   History,
   Clock,
-  Check,
   X,
 } from 'lucide-react';
 
@@ -766,7 +764,12 @@ export function AiCopilotPage() {
 
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
-              {history.length === 0 ? (
+              {loadingHistory ? (
+                <div className="flex flex-col items-center justify-center p-12 text-center text-slate-500">
+                  <RefreshCw size={24} className="animate-spin text-indigo-600 mb-2" />
+                  <p className="text-xs font-semibold">Loading command history...</p>
+                </div>
+              ) : history.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center text-slate-500">
                   <History size={36} className="mx-auto text-slate-400 mb-3" />
                   <h3 className="text-sm font-bold text-slate-800">No Commands Recorded Yet</h3>

@@ -3,6 +3,7 @@ import { query } from '../config/db';
 import { env } from '../config/env';
 import { emailValidatorService } from '../services/emailValidatorService';
 import { inboxRotationService, type ConnectedInboxRecord, type InboxPoolSummary } from '../services/inboxRotationService';
+import { emailSentSyncService } from '../services/emailSentSyncService';
 
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
@@ -227,6 +228,17 @@ export class EmailAdapter {
         liveDelivery = 'sent_live';
         await inboxRotationService.recordDispatch(activeInbox.id, true);
         console.log(`[EmailAdapter] Dispatched via Rotating Inbox [${activeInbox.name} (${activeInbox.email})] to ${params.to}`);
+
+        // Sync sent message to IMAP Sent Mail so it appears in user's Gmail client
+        emailSentSyncService.appendSentEmail({
+          from: fromAddress,
+          to: params.to,
+          subject: params.subject || `Outreach Follow-up`,
+          text: plainText,
+          html: htmlBody,
+          inboxEmail: activeInbox.email,
+          inboxId: activeInbox.id,
+        }).catch((err) => console.warn('[EmailAdapter] Sent mail sync warning:', err?.message));
       } catch (smtpErr: unknown) {
         liveDelivery = 'smtp_failed';
         const rawError = smtpErr instanceof Error ? smtpErr.message : 'SMTP delivery failed';
@@ -262,6 +274,16 @@ export class EmailAdapter {
           },
         });
         liveDelivery = 'sent_live';
+
+        // Sync sent message to IMAP Sent Mail
+        emailSentSyncService.appendSentEmail({
+          from: fromAddress,
+          to: params.to,
+          subject: params.subject || `Outreach Follow-up`,
+          text: plainText,
+          html: htmlBody,
+          inboxEmail: env.SMTP_USER,
+        }).catch((err) => console.warn('[EmailAdapter] Sent mail sync warning:', err?.message));
       } catch (smtpErr: unknown) {
         liveDelivery = 'smtp_failed';
         liveError = smtpErr instanceof Error ? smtpErr.message : 'SMTP delivery failed';
@@ -360,8 +382,10 @@ export class EmailAdapter {
         await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [params.leadId]);
       }
 
+      const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
+
       return {
-        success: true,
+        success: isSuccess,
         throttled: false,
         messageId: msgRes.rows[0].id,
         liveDelivery,
@@ -371,16 +395,18 @@ export class EmailAdapter {
               ? `Live email sent via rotating inbox "${activeInbox.name}" (${activeInbox.email}) to ${params.to}`
               : `Live email sent via SMTP to ${params.to}`)
           : liveDelivery === 'smtp_failed'
-          ? `Email recorded in timeline, but SMTP server returned: ${liveError}`
+          ? `SMTP delivery failed: ${liveError}`
           : `Email recorded in timeline (Simulation mode: SMTP credentials not set)`,
       };
     }
 
+    const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
     return {
-      success: true,
+      success: isSuccess,
       throttled: false,
       liveDelivery,
       inboxUsed: activeInbox ? { id: activeInbox.id, email: activeInbox.email, name: activeInbox.name } : undefined,
+      reason: liveDelivery === 'smtp_failed' ? `SMTP delivery failed: ${liveError}` : undefined,
     };
   }
 }

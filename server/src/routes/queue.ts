@@ -80,7 +80,7 @@ queueRouter.post('/:id/send', async (req: Request, res: Response) => {
       }
     }
 
-    const qRes = await query<{ lead_id: string; channel: string; message_preview: string }>(
+    await query<{ lead_id: string; channel: string; message_preview: string }>(
       `UPDATE send_queue SET status = 'sent', updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );

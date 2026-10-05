@@ -1,6 +1,5 @@
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
-import { humanizerService } from './humanizerService';
 import { humanCopywriterService } from './humanCopywriterService';
 import { whatsappValidator } from './whatsappValidator';
 import { whatsappSessionService } from './whatsappSessionService';

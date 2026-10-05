@@ -20,11 +20,7 @@ import {
   Plus,
   Server,
   Check,
-  RotateCcw,
-  Key,
   Globe,
-  Settings,
-  ShieldAlert,
   Power,
   RefreshCw,
   Zap,
@@ -444,7 +440,6 @@ export function SendingHealthPage({ store }: Props) {
     };
   }, [store.health, totals.bounceRate, totals.complaintRate]);
 
-  const maxSent = Math.max(...healthData.map((d) => d.sent), 1);
 
   const statusColors = {
     green: {
@@ -1246,7 +1241,6 @@ export function SendingHealthPage({ store }: Props) {
                 const bRate = day.sent > 0 ? (day.bounced / day.sent) * 100 : 0;
                 const rRate = day.sent > 0 ? ((day.received || 0) / day.sent) * 100 : 0;
                 const delivRate = day.sent > 0 ? Math.max(0, 100 - bRate) : 100;
-                const isHealthy = bRate <= 2;
                 const isWarning = bRate > 2 && bRate <= 5;
                 const isCritical = bRate > 5;
 

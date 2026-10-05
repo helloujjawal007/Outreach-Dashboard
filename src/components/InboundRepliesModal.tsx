@@ -15,7 +15,6 @@ import {
   Sparkles,
   Inbox,
   History,
-  Eye,
   EyeOff,
   Smartphone,
   ExternalLink,

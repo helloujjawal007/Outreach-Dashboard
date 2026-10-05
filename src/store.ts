@@ -9,7 +9,6 @@ import type {
   CustomList,
   UploadBatch,
   Client,
-  AutoSendNextResult,
   InboundReplyMessage,
   ScheduledDispatch,
   ScheduleListRequest,

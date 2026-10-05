@@ -13,13 +13,10 @@ import {
   Search,
   Filter,
   RefreshCw,
-  Send,
   Loader2,
   Copy,
   Check,
   Phone,
-  Building2,
-  Clock,
   ShieldCheck,
   ChevronRight,
   ChevronLeft,
@@ -28,28 +25,20 @@ import {
   Info,
   QrCode,
   Smartphone,
-  Link2,
   Unlink,
   Pencil,
   Trash2,
   ListPlus,
-  FolderPlus,
-  CheckSquare,
-  Square,
-  Layers,
   X,
-  Calendar,
   CalendarClock,
   Maximize2,
   Minus,
   Globe,
-  MapPin,
 } from 'lucide-react';
-import { Badge } from '@/components/Badge';
 import { Modal } from '@/components/Modal';
 import { ScheduleOutreachModal } from '@/components/ScheduleOutreachModal';
 import { LinkedInOutreachHub } from '@/components/LinkedInOutreachHub';
-import { getCountryFlag } from '@/pages/CrmPage';
+import { getCountryFlag } from '@/utils/countryFlag';
 import { api, cleanSiteUrl } from '@/services/api';
 import type {
   Lead,
@@ -57,7 +46,6 @@ import type {
   Channel,
   GeneratedOutreachMessage,
   BatchShootResponse,
-  BatchShootResult,
   WhatsAppSessionStatus,
   InboxPoolSummary,
 } from '@/types';
@@ -87,9 +75,9 @@ export function ChannelOutreachHub({
   onBulkDeleteLeads,
   onAddLeadsToList,
   onCreateList,
-  onOpenConversation,
-  onOpenInboundInbox,
-  inboundRepliesCount,
+  onOpenConversation: _onOpenConversation,
+  onOpenInboundInbox: _onOpenInboundInbox,
+  inboundRepliesCount: _inboundRepliesCount,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ActiveChannelTab>('whatsapp');
   const [search, setSearch] = useState('');
@@ -100,7 +88,7 @@ export function ChannelOutreachHub({
   const [channelListFilter, setChannelListFilter] = useState<string>('all');
   const [channelStatusFilter, setChannelStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [channelConsentFilter, setChannelConsentFilter] = useState<'all' | 'none' | 'replied' | 'opted_out'>('all');
-  const [alsoSubmitWebsiteForm, setAlsoSubmitWebsiteForm] = useState(true);
+  const alsoSubmitWebsiteForm = true;
 
   // Edit Lead Modal state
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
@@ -1066,7 +1054,7 @@ export function ChannelOutreachHub({
     } finally {
       setIsShooting(false);
     }
-  }, [currentChannelLeads, selectedLeadIds, activeTab, batchLimit, intervalSeconds, onRefreshLeads]);
+  }, [currentChannelLeads, selectedLeadIds, activeTab, batchLimit, intervalSeconds, onRefreshLeads, alsoSubmitWebsiteForm]);
 
   return (
     <div className="space-y-6">

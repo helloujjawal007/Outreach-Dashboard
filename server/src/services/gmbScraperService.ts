@@ -31,15 +31,25 @@ export interface ScrapedLeadItem {
   };
 }
 
+export interface GmbLocationTarget {
+  country: string;
+  state?: string;
+  city?: string;
+  display?: string;
+}
+
 export interface GmbSearchParams {
   category?: string;
   categories?: string[];
   continent?: string;
-  country: string;
-  state: string;
+  country?: string;
+  state?: string;
   city?: string;
+  locations?: Array<GmbLocationTarget | string>;
   limit: number;
+  leadsPerLocation?: number;
 }
+
 
 export interface GmbImportParams {
   leads: ScrapedLeadItem[];
@@ -146,7 +156,7 @@ export class GmbScraperService {
    * Searches Google Maps & Google Business Profiles for matching businesses
    */
   public async searchGmb(params: GmbSearchParams): Promise<ScrapedLeadItem[]> {
-    const { category, categories, country, state, city = '', limit = 10 } = params;
+    const { category, categories, country, state, city = '', limit = 10, leadsPerLocation } = params;
     const cleanCity = (city || '').trim();
     const cleanState = (state || '').trim();
     const cleanCountry = (country || 'USA').trim();
@@ -161,42 +171,76 @@ export class GmbScraperService {
       targetCategories = ['Business'];
     }
 
-    const locationQuery = [cleanCity, cleanState, cleanCountry].filter(Boolean).join(', ');
-    console.log(`[GmbScraperService] Initiating multi-niche search for [${targetCategories.join(', ')}] in "${locationQuery}" (Target limit: ${limit})`);
+    const locationQueries: string[] = [];
+    if (Array.isArray(params.locations) && params.locations.length > 0) {
+      for (const loc of params.locations) {
+        if (typeof loc === 'string') {
+          const s = loc.trim();
+          if (s && !locationQueries.includes(s)) locationQueries.push(s);
+        } else if (loc && typeof loc === 'object') {
+          const parts = [loc.city, loc.state, loc.country].filter(Boolean).map((p) => String(p).trim()).filter(Boolean);
+          const full = parts.join(', ');
+          if (full && !locationQueries.includes(full)) {
+            locationQueries.push(full);
+          } else if (loc.display && !locationQueries.includes(loc.display.trim())) {
+            locationQueries.push(loc.display.trim());
+          }
+        }
+      }
+    }
+    if (locationQueries.length === 0) {
+      const defaultLoc = [cleanCity, cleanState, cleanCountry].filter(Boolean).join(', ');
+      if (defaultLoc) locationQueries.push(defaultLoc);
+    }
+
+    const effectiveLimit = Math.max(1, limit);
+    const perLocationQuota = leadsPerLocation && leadsPerLocation > 0 ? leadsPerLocation : effectiveLimit;
+
+    console.log(
+      `[GmbScraperService] Initiating search for [${targetCategories.join(', ')}] across ${locationQueries.length} location(s): [${locationQueries.join('; ')}] (Target limit: ${effectiveLimit}, Leads/location quota: ${perLocationQuota})`
+    );
 
     const rawList: ScrapedLeadItem[] = [];
     const existingNames = new Set<string>();
     const existingPhones = new Set<string>();
 
-    // Attempt Chrome CDP search across all selected categories and query variations
-    for (const cat of targetCategories) {
-      if (rawList.length >= limit) break;
-      const cleanCat = cat.trim();
+    // Attempt Chrome CDP search across all selected locations, categories and query variations
+    for (const locQuery of locationQueries) {
+      if (rawList.length >= effectiveLimit) break;
+      let leadsInCurrentLocation = 0;
 
-      const queryVariations = [
-        `${cleanCat} in ${locationQuery}`,
-        `${cleanCat} services in ${locationQuery}`,
-        `best ${cleanCat} in ${locationQuery}`,
-        cleanCity ? `${cleanCat} in Downtown ${cleanCity}, ${cleanState}` : '',
-        cleanCity ? `${cleanCat} near ${cleanCity}, ${cleanState}` : '',
-      ].filter(Boolean);
+      for (const cat of targetCategories) {
+        if (rawList.length >= effectiveLimit || leadsInCurrentLocation >= perLocationQuota) break;
+        const cleanCat = cat.trim();
 
-      for (const q of queryVariations) {
-        if (rawList.length >= limit) break;
-        try {
-          const batchResults = await this.scrapeWithCdp(q, limit - rawList.length, cleanCountry);
-          for (const r of batchResults) {
-            const normName = this.cleanBizName(r.businessName);
-            const pDigits = (r.phone || '').replace(/\D/g, '');
-            if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
-              existingNames.add(normName);
-              if (pDigits) existingPhones.add(pDigits);
-              rawList.push(r);
-              if (rawList.length >= limit) break;
+        const queryVariations = [
+          `${cleanCat} in ${locQuery}`,
+          `${cleanCat} services in ${locQuery}`,
+          `best ${cleanCat} in ${locQuery}`,
+        ];
+
+        for (const q of queryVariations) {
+          if (rawList.length >= effectiveLimit || leadsInCurrentLocation >= perLocationQuota) break;
+          try {
+            const neededForThisLocation = perLocationQuota - leadsInCurrentLocation;
+            const neededTotal = effectiveLimit - rawList.length;
+            const batchSize = Math.min(neededForThisLocation, neededTotal);
+
+            const batchResults = await this.scrapeWithCdp(q, batchSize, cleanCountry);
+            for (const r of batchResults) {
+              const normName = this.cleanBizName(r.businessName);
+              const pDigits = (r.phone || '').replace(/\D/g, '');
+              if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
+                existingNames.add(normName);
+                if (pDigits) existingPhones.add(pDigits);
+                rawList.push(r);
+                leadsInCurrentLocation++;
+                if (rawList.length >= effectiveLimit || leadsInCurrentLocation >= perLocationQuota) break;
+              }
             }
+          } catch (err: any) {
+            console.warn(`[GmbScraperService] CDP query variation "${q}" error:`, err?.message);
           }
-        } catch (err: any) {
-          console.warn(`[GmbScraperService] CDP query variation "${q}" error:`, err?.message);
         }
       }
     }
@@ -367,7 +411,7 @@ export class GmbScraperService {
 
       if (tbmReqId) {
         const res = await send('Network.getResponseBody', { requestId: tbmReqId });
-        const raw = (res?.body || '').replace(/^[^{\[]+/, '');
+        const raw = (res?.body || '').replace(/^[^{[]+/, '');
         if (raw) {
           const json = JSON.parse(raw);
           const rawList = Array.isArray(json[64]) ? json[64] : [];

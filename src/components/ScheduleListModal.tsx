@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar,
   Clock,
-  Send,
   Sparkles,
   Zap,
   ShieldCheck,
@@ -10,10 +9,8 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
-  Layers,
   Check,
   Eye,
-  Sliders,
   Users,
   Mail,
   MessageSquare,
@@ -22,18 +19,14 @@ import {
   Smartphone,
   CheckSquare,
   Square,
-  Building2,
-  Share2,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '@/services/api';
 import type { Store } from '@/store';
 import type {
-  ScheduledDispatch,
   HumanizerPreviewResponse,
   ConnectedInbox,
   LinkedInAccountStatus,
-  Channel,
 } from '@/types';
 
 interface Props {
@@ -632,7 +625,12 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
 
                   {/* Inboxes Checkbox List */}
                   <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                    {inboxes.map((inbox) => {
+                    {isLoadingInboxes ? (
+                      <div className="flex items-center justify-center p-3 text-xs text-slate-500">
+                        <RefreshCw size={12} className="animate-spin text-brand-600 mr-1.5" />
+                        <span>Loading sender inboxes...</span>
+                      </div>
+                    ) : inboxes.map((inbox) => {
                       const isSelected = selectedInboxIds.includes(inbox.id);
                       return (
                         <div
@@ -740,7 +738,12 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                     </span>
                   </div>
 
-                  {linkedInAccounts.length > 0 ? (
+                  {isLoadingLinkedIn ? (
+                    <div className="flex items-center justify-center p-3 text-xs text-slate-500 bg-white rounded border border-sky-100">
+                      <RefreshCw size={12} className="animate-spin text-sky-600 mr-1.5" />
+                      <span>Loading synced LinkedIn accounts...</span>
+                    </div>
+                  ) : linkedInAccounts.length > 0 ? (
                     <div className="space-y-1.5">
                       <label className="text-[11px] font-semibold text-sky-900">
                         Choose sender LinkedIn profile:
@@ -920,6 +923,19 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 <p className="text-[10px] text-slate-400 mt-1">
                   When set to <strong>Auto-Detect</strong>, each lead is individually checked: if they haven't been contacted yet, they receive the initial message; if previously contacted, they receive the appropriate follow-up.
                 </p>
+              </div>
+
+              {/* 6. Custom AI Instructions */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  6. Custom AI Instructions (Optional)
+                </label>
+                <textarea
+                  value={customInstructions}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  placeholder="e.g. Mention our free audit offer, keep under 60 words, reference local market..."
+                  className="input w-full text-xs h-16 py-1.5 resize-none"
+                />
               </div>
 
               {/* Deliverability & Compliance Safe Pacing Banner */}

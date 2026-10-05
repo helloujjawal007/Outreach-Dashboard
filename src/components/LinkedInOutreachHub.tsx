@@ -14,14 +14,11 @@ import {
   MessageSquare,
   ThumbsUp,
   Share2,
-  User,
   Plus,
   Sliders,
   Check,
   Copy,
   Zap,
-  Info,
-  Layers,
   Search,
   Filter,
   X,
@@ -30,15 +27,10 @@ import {
   Italic,
   List,
   ListOrdered,
-  Smile,
-  ArrowRight,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { Modal } from './Modal';
 import {
-  toUnicodeBold,
-  toUnicodeItalic,
-  toPlainText,
   beautifyLinkedInPost,
   applyStyleToSelection,
 } from '@/utils/linkedinBeautifier';
@@ -48,12 +40,11 @@ interface Props {
   leads: Lead[];
 }
 
-export function LinkedInOutreachHub({ leads }: Props) {
+export function LinkedInOutreachHub({ leads: _leads }: Props) {
   const [activeTab, setActiveTab] = useState<'posts' | 'auto_reply'>('posts');
   const [status, setStatus] = useState<LinkedInAccountStatus | null>(null);
   const [posts, setPosts] = useState<LinkedInPost[]>([]);
   const [comments, setComments] = useState<ProspectCommentTask[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
   // Account Connect Modal
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
@@ -138,7 +129,6 @@ export function LinkedInOutreachHub({ leads }: Props) {
 
   // Fetch initial data
   const fetchData = useCallback(async () => {
-    setIsLoading(true);
     try {
       const [statusData, postsData, commentsData] = await Promise.all([
         api.getLinkedInStatus().catch(() => null),
@@ -152,8 +142,8 @@ export function LinkedInOutreachHub({ leads }: Props) {
       }
       setPosts(postsData);
       setComments(commentsData);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // ignore
     }
   }, []);
 

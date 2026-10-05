@@ -69,7 +69,7 @@ export function Sidebar({
   channelCounts = [],
   onNavigate,
   onOpenMessages,
-  onOpenScheduleModal,
+  onOpenScheduleModal: _onOpenScheduleModal,
   counts,
 }: SidebarProps) {
   const [crmExpanded, setCrmExpanded] = useState(true);

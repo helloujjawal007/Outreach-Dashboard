@@ -133,7 +133,6 @@ app.use((_req: Request, res: Response) => {
 });
 
 // Global error handling middleware
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('[Unhandled Server Error]', err);
   res.status(500).json({ success: false, error: 'Internal server error', details: err.message });

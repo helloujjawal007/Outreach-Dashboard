@@ -6,7 +6,7 @@ export const scraperRouter = Router();
 // POST /api/scraper/search - Search Google Business Profiles with live email & website crawling
 scraperRouter.post('/search', async (req: Request, res: Response) => {
   try {
-    const { category, categories, country, state, city, limit, continent } = req.body;
+    const { category, categories, country, state, city, locations, limit, leadsPerLocation, continent } = req.body;
 
     let targetCategories: string[] = [];
     if (Array.isArray(categories) && categories.length > 0) {
@@ -19,19 +19,23 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'At least one category or niche is required (e.g., Dentist, Plumber, Real Estate)' });
     }
 
-    if (!state || typeof state !== 'string' || !state.trim()) {
-      return res.status(400).json({ success: false, error: 'State / Region is required' });
+    const hasLocations = Array.isArray(locations) && locations.length > 0;
+    if (!hasLocations && (!state || typeof state !== 'string' || !state.trim())) {
+      return res.status(400).json({ success: false, error: 'State / Region or at least one Target Location is required' });
     }
 
     const parsedLimit = Math.min(100, Math.max(1, parseInt(String(limit || 10), 10)));
+    const parsedLeadsPerLocation = leadsPerLocation ? Math.min(50, Math.max(1, parseInt(String(leadsPerLocation), 10))) : undefined;
 
     const leads = await gmbScraperService.searchGmb({
       categories: targetCategories,
       category: targetCategories.join(', '),
       country: (country || 'USA').trim(),
-      state: state.trim(),
+      state: (state || '').trim(),
       city: (city || '').trim(),
+      locations: hasLocations ? locations : undefined,
       limit: parsedLimit,
+      leadsPerLocation: parsedLeadsPerLocation,
     });
 
     res.json({
@@ -41,9 +45,11 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
         categories: targetCategories,
         continent: continent || undefined,
         country: country || 'USA',
-        state,
+        state: state || '',
         city: city || undefined,
+        locations: hasLocations ? locations : undefined,
         limit: parsedLimit,
+        leadsPerLocation: parsedLeadsPerLocation,
       },
       count: leads.length,
       leads,

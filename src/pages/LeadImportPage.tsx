@@ -23,11 +23,8 @@ import {
   ArrowRight,
   Clock,
   Search,
-  Filter,
   Linkedin,
   Star,
-  ExternalLink,
-  MapPin,
   Compass,
 } from 'lucide-react';
 import { PageHeader, type PageId } from '@/components/Sidebar';

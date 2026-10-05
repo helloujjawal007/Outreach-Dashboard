@@ -2,18 +2,12 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar,
   Clock,
-  Send,
   Sparkles,
-  Zap,
   ShieldCheck,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
   XCircle,
-  Layers,
-  Check,
-  Sliders,
-  Users,
   MessageCircle,
   Mail,
   Instagram,
@@ -21,14 +15,9 @@ import {
   Linkedin,
   Loader2,
   Smartphone,
-  ExternalLink,
-  ChevronRight,
-  Trash2,
-  Filter,
   Search,
 } from 'lucide-react';
 import { Modal } from './Modal';
-import { Badge } from './Badge';
 import { api } from '@/services/api';
 import type { Lead, ScheduledDispatch, WhatsAppSessionStatus, Channel } from '@/types';
 import { channelLabels } from '@/types';

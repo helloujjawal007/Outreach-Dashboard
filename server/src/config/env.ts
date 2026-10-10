@@ -17,5 +17,8 @@ export const env = {
   SMTP_USER: process.env.SMTP_USER || '',
   SMTP_PASS: process.env.SMTP_PASS || '',
   SMTP_FROM: process.env.SMTP_FROM || '',
+  // IMAP Configuration for inbound / sent sync
+  IMAP_HOST: process.env.IMAP_HOST || 'imap.gmail.com',
+  IMAP_PORT: parseInt(process.env.IMAP_PORT || '993', 10),
 };
 

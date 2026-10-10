@@ -51,6 +51,8 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [customCity, setCustomCity] = useState<string>('');
   const [limit, setLimit] = useState<number>(10);
   const [leadsPerCity, setLeadsPerCity] = useState<number>(0);
+  const [leadsPerCityMode, setLeadsPerCityMode] = useState<'auto' | '10' | '20' | 'custom'>('auto');
+  const [customLeadsPerCityInput, setCustomLeadsPerCityInput] = useState<string>('');
 
   // Target Locations Multi-Selection State
   const [targetLocations, setTargetLocations] = useState<GmbLocationTarget[]>([
@@ -220,6 +222,36 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
     }
     setCustomCity('');
     setCitySearchFilter('');
+  };
+
+  // Leads Per City quota change handlers
+  const handleLeadsPerCityModeChange = (mode: 'auto' | '10' | '20' | 'custom') => {
+    setLeadsPerCityMode(mode);
+    if (mode === 'auto') {
+      setLeadsPerCity(0);
+    } else if (mode === '10') {
+      setLeadsPerCity(10);
+    } else if (mode === '20') {
+      setLeadsPerCity(20);
+    } else if (mode === 'custom') {
+      const parsed = parseInt(customLeadsPerCityInput, 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        setLeadsPerCity(parsed);
+      } else {
+        setCustomLeadsPerCityInput('15');
+        setLeadsPerCity(15);
+      }
+    }
+  };
+
+  const handleCustomLeadsPerCityChange = (val: string) => {
+    setCustomLeadsPerCityInput(val);
+    const parsed = parseInt(val, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      setLeadsPerCity(parsed);
+    } else if (val === '') {
+      setLeadsPerCity(0);
+    }
   };
 
   // Location Multi-Selection Helpers
@@ -811,7 +843,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
 
             {/* Custom Niche Input & Lead Count */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
-              <div className="md:col-span-8 flex gap-2">
+              <div className="md:col-span-5 flex gap-2">
                 <div className="relative flex-1">
                   <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
@@ -838,8 +870,8 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                 </button>
               </div>
 
-              <div className="md:col-span-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <div className="flex-1 flex items-center gap-1.5">
+              <div className="md:col-span-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 flex items-center gap-1.5 min-w-[130px]">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-700 whitespace-nowrap" title="Maximum total leads to scrape">
                     Total Cap:
                   </label>
@@ -849,33 +881,54 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                     className="flex-1 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-bold text-slate-900 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer shadow-2xs"
                   >
                     <option value={10}>10 Leads</option>
-                    <option value={25}>25 Leads</option>
-                    <option value={50}>50 Leads</option>
-                    <option value={75}>75 Leads</option>
-                    <option value={100}>100 Leads (Max)</option>
+                    <option value={20}>20 Leads</option>
+                    <option value={40}>40 Leads</option>
+                    <option value={60}>60 Leads</option>
+                    <option value={80}>80 Leads</option>
+                    <option value={100}>100 Leads</option>
+                    <option value={120}>120 Leads</option>
+                    <option value={140}>140 Leads</option>
+                    <option value={160}>160 Leads</option>
+                    <option value={180}>180 Leads</option>
+                    <option value={200}>200 Leads</option>
+                    <option value={220}>220 Leads</option>
+                    <option value={240}>240 Leads</option>
+                    <option value={260}>260 Leads</option>
+                    <option value={280}>280 Leads</option>
+                    <option value={300}>300 Leads</option>
                   </select>
                 </div>
 
-                {/* Option to choose leads per city / location */}
-                {(targetLocations.length > 1 || targetLocations.some((l) => !l.city)) && (
-                  <div className="flex-1 flex items-center gap-1.5 bg-amber-50/80 border border-amber-300/80 px-2.5 py-1.5 rounded-xl shadow-2xs">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-amber-950 whitespace-nowrap" title="Limit how many leads to collect from each city or region">
-                      Per City:
-                    </label>
-                    <select
-                      value={leadsPerCity}
-                      onChange={(e) => setLeadsPerCity(Number(e.target.value))}
-                      className="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-950 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-all cursor-pointer shadow-2xs"
-                    >
-                      <option value={0}>Auto / All (Up to Cap)</option>
-                      <option value={5}>5 leads / city</option>
-                      <option value={10}>10 leads / city</option>
-                      <option value={15}>15 leads / city</option>
-                      <option value={20}>20 leads / city</option>
-                      <option value={25}>25 leads / city</option>
-                    </select>
-                  </div>
-                )}
+                {/* Option to choose leads per city / location (10, 20, Custom input) */}
+                <div className="flex-1 flex items-center gap-1.5 bg-amber-50/80 border border-amber-300/80 px-2.5 py-1.5 rounded-xl shadow-2xs min-w-[180px]">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-amber-950 whitespace-nowrap" title="Limit how many leads to collect from each city or region">
+                    Per City:
+                  </label>
+                  <select
+                    value={leadsPerCityMode}
+                    onChange={(e) => handleLeadsPerCityModeChange(e.target.value as any)}
+                    className="flex-1 rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs font-bold text-amber-950 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <option value="auto">Auto / All (Up to Cap)</option>
+                    <option value="10">10 leads / city</option>
+                    <option value="20">20 leads / city</option>
+                    <option value="custom">✏️ Custom...</option>
+                  </select>
+                  {leadsPerCityMode === 'custom' && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <input
+                        type="number"
+                        min={1}
+                        max={limit}
+                        value={customLeadsPerCityInput}
+                        onChange={(e) => handleCustomLeadsPerCityChange(e.target.value)}
+                        placeholder="e.g. 15"
+                        className="w-14 rounded-lg border border-amber-400 bg-white px-1.5 py-1 text-xs font-bold text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        title="Type custom leads per city limit"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1298,25 +1351,32 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {(targetLocations.length > 1 || targetLocations.some((l) => !l.city)) && (
-                    <div className="flex items-center gap-1.5 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-lg shadow-2xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 whitespace-nowrap">
-                        Leads / City:
-                      </span>
-                      <select
-                        value={leadsPerCity}
-                        onChange={(e) => setLeadsPerCity(Number(e.target.value))}
-                        className="bg-transparent text-xs font-bold text-amber-950 focus:outline-none cursor-pointer"
-                      >
-                        <option value={0}>Auto (up to cap)</option>
-                        <option value={5}>5 / city</option>
-                        <option value={10}>10 / city</option>
-                        <option value={15}>15 / city</option>
-                        <option value={20}>20 / city</option>
-                        <option value={25}>25 / city</option>
-                      </select>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-lg shadow-2xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 whitespace-nowrap">
+                      Leads / City:
+                    </span>
+                    <select
+                      value={leadsPerCityMode}
+                      onChange={(e) => handleLeadsPerCityModeChange(e.target.value as any)}
+                      className="bg-transparent text-xs font-bold text-amber-950 focus:outline-none cursor-pointer"
+                    >
+                      <option value="auto">Auto (up to cap)</option>
+                      <option value="10">10 / city</option>
+                      <option value="20">20 / city</option>
+                      <option value="custom">✏️ Custom...</option>
+                    </select>
+                    {leadsPerCityMode === 'custom' && (
+                      <input
+                        type="number"
+                        min={1}
+                        max={limit}
+                        value={customLeadsPerCityInput}
+                        onChange={(e) => handleCustomLeadsPerCityChange(e.target.value)}
+                        placeholder="Qty"
+                        className="w-12 rounded border border-amber-400 bg-white px-1 py-0.5 text-xs font-bold text-amber-950 focus:outline-none"
+                      />
+                    )}
+                  </div>
                   {targetLocations.length > 0 && (
                     <button
                       type="button"

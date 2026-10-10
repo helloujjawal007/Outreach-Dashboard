@@ -1,5 +1,5 @@
 import { ImapFlow } from 'imapflow';
-import MailComposer from 'nodemailer/lib/mail-composer/index.js';
+import MailComposer from 'nodemailer/lib/mail-composer';
 import { env } from '../config/env';
 import { inboxRotationService } from './inboxRotationService';
 

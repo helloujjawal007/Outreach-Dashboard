@@ -474,7 +474,13 @@ export class EmailInboundService {
                   `UPDATE send_queue SET status = 'discarded', updated_at = NOW() WHERE lead_id = $1 AND status = 'draft'`,
                   [matchedLead.id]
                 );
-                console.log(`[EmailInboundService] Lead ${matchedLead.id} marked opted_out from inbound email.`);
+                await query(
+                  `UPDATE scheduled_dispatches
+                   SET status = 'cancelled', error_message = 'Cancelled: Prospect opted out via inbound email', updated_at = NOW()
+                   WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2)) AND status IN ('scheduled', 'processing')`,
+                  [matchedLead.id, senderAddress]
+                );
+                console.log(`[EmailInboundService] Lead ${matchedLead.id} marked opted_out. Cancelled all pending scheduled dispatches.`);
               } else {
                 await query(
                   `UPDATE leads SET consent_status = 'replied', last_contacted_at = $2, updated_at = NOW() WHERE id = $1`,
@@ -484,6 +490,13 @@ export class EmailInboundService {
                   `UPDATE send_queue SET status = 'discarded', updated_at = NOW() WHERE lead_id = $1 AND status = 'draft'`,
                   [matchedLead.id]
                 );
+                await query(
+                  `UPDATE scheduled_dispatches
+                   SET status = 'cancelled', error_message = 'Cancelled: Prospect replied to outreach email', updated_at = NOW()
+                   WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2)) AND status IN ('scheduled', 'processing')`,
+                  [matchedLead.id, senderAddress]
+                );
+                console.log(`[EmailInboundService] Lead ${matchedLead.id} replied. Cancelled all pending follow-up scheduled dispatches.`);
               }
 
               // Locate or create conversation thread for this lead

@@ -66,7 +66,7 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
 // POST /api/scraper/import - Import selected scraped leads directly into Outreach Dashboard database
 scraperRouter.post('/import', async (req: Request, res: Response) => {
   try {
-    const { leads, listId, batchName } = req.body;
+    const { leads, listId, batchName, scheduledStartTime } = req.body;
 
     if (!Array.isArray(leads) || leads.length === 0) {
       return res.status(400).json({ success: false, error: 'Array of leads is required' });
@@ -76,6 +76,7 @@ scraperRouter.post('/import', async (req: Request, res: Response) => {
       leads,
       listId: listId || undefined,
       batchName: batchName || undefined,
+      scheduledStartTime: scheduledStartTime || undefined,
     });
 
     res.json(result);

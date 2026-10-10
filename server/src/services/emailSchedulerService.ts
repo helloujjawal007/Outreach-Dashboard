@@ -77,6 +77,30 @@ export class EmailSchedulerService {
   }
 
   /**
+   * Adjusts a target timestamp to respect standard business hours (Mon-Fri, 9:30 AM - 4:30 PM)
+   */
+  private calculateBusinessHoursDispatch(date: Date): Date {
+    const d = new Date(date);
+    const day = d.getDay();
+    if (day === 6) {
+      d.setDate(d.getDate() + 2); // Saturday -> Monday
+    } else if (day === 0) {
+      d.setDate(d.getDate() + 1); // Sunday -> Monday
+    }
+
+    const hour = d.getHours();
+    if (hour < 9) {
+      d.setHours(9, 30 + Math.floor(Math.random() * 20), 0, 0);
+    } else if (hour >= 17) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+      if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+      d.setHours(9, 30 + Math.floor(Math.random() * 20), 0, 0);
+    }
+    return d;
+  }
+
+  /**
    * Schedule a single dispatch for a specific lead on any channel (Email, WhatsApp, FB, IG)
    */
   async scheduleSingleDispatch(params: ScheduleSingleDispatchParams): Promise<{
@@ -732,6 +756,56 @@ export class EmailSchedulerService {
       return;
     }
 
+    // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
+    if (dispatch.lead_id) {
+      const checkRes = await query<{
+        consent_status: string;
+        deleted_at: string | null;
+        has_replied: boolean;
+      }>(
+        `SELECT l.consent_status, l.deleted_at,
+           (
+             l.consent_status = 'replied' OR
+             EXISTS (
+               SELECT 1 FROM messages m
+               JOIN conversations c ON c.id = m.conversation_id
+               WHERE c.lead_id = l.id AND m.direction = 'inbound'
+             )
+           ) as has_replied
+         FROM leads l WHERE l.id = $1`,
+        [dispatch.lead_id]
+      );
+      const leadRow = checkRes.rows[0];
+      if (leadRow) {
+        if (leadRow.has_replied || leadRow.consent_status === 'replied') {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${rawPhone}) has replied. Suppressing WhatsApp outreach.`);
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 error_message = 'Cancelled: Prospect replied to outreach',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR recipient_phone = $2)
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, rawPhone]
+          );
+          return;
+        }
+
+        if (leadRow.consent_status === 'opted_out' || leadRow.consent_status === 'unsubscribed' || leadRow.deleted_at) {
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 error_message = 'Cancelled: Lead opted out or deleted',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR recipient_phone = $2)
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, rawPhone]
+          );
+          return;
+        }
+      }
+    }
+
     const { whatsappValidator } = await import('./whatsappValidator');
     const waEval = whatsappValidator.evaluate({ phone: rawPhone, whatsapp: rawPhone });
     if (!waEval.isEligible || !waEval.cleanNumber) {
@@ -829,33 +903,60 @@ export class EmailSchedulerService {
 
     // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
     if (dispatch.lead_id) {
-      const checkRes = await query<{ consent_status: string; deleted_at: string | null }>(
-        `SELECT consent_status, deleted_at FROM leads WHERE id = $1`,
-        [dispatch.lead_id]
+      const checkRes = await query<{
+        consent_status: string;
+        deleted_at: string | null;
+        has_replied: boolean;
+      }>(
+        `SELECT l.consent_status, l.deleted_at,
+           (
+             l.consent_status = 'replied' OR
+             EXISTS (
+               SELECT 1 FROM messages m
+               JOIN conversations c ON c.id = m.conversation_id
+               WHERE c.lead_id = l.id AND m.direction = 'inbound'
+             ) OR
+             EXISTS (
+               SELECT 1 FROM processed_inbound_emails pie
+               WHERE (pie.matched_entity_id = l.id OR LOWER(pie.sender_email) = LOWER(l.email) OR LOWER(pie.sender_email) = LOWER($2))
+                 AND pie.matched_entity_type = 'lead'
+             )
+           ) as has_replied
+         FROM leads l WHERE l.id = $1`,
+        [dispatch.lead_id, toEmail]
       );
       const leadRow = checkRes.rows[0];
       if (leadRow) {
-        if (leadRow.consent_status === 'replied') {
-          console.log(`[Scheduler] Lead ${dispatch.lead_id} has replied. Suppressing future automated outreach.`);
+        if (leadRow.has_replied || leadRow.consent_status === 'replied') {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) has replied to outreach. Suppressing Shoot stage "${dispatch.stage}".`);
           await query(
-            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead already replied to outreach', updated_at = NOW() WHERE lead_id = $1 AND status = 'scheduled'`,
-            [dispatch.lead_id]
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 error_message = 'Cancelled: Prospect replied to outreach',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, toEmail]
           );
           await query(
-            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead already replied', updated_at = NOW() WHERE id = $1`,
-            [dispatch.id]
+            `UPDATE leads
+             SET consent_status = 'replied', updated_at = NOW()
+             WHERE id = $1 AND consent_status != 'replied'`,
+            [dispatch.lead_id]
           );
           return false;
         }
 
         if (leadRow.consent_status === 'opted_out' || leadRow.consent_status === 'unsubscribed' || leadRow.deleted_at) {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) is opted out or deleted. Suppressing Shoot stage "${dispatch.stage}".`);
           await query(
-            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead opted out or deleted', updated_at = NOW() WHERE lead_id = $1 AND status = 'scheduled'`,
-            [dispatch.lead_id]
-          );
-          await query(
-            `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Lead opted out or deleted', updated_at = NOW() WHERE id = $1`,
-            [dispatch.id]
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 error_message = 'Cancelled: Lead opted out or deleted',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, toEmail]
           );
           return false;
         }
@@ -922,8 +1023,8 @@ export class EmailSchedulerService {
             [dispatch.lead_id]
           );
 
-          // Automated Schedule: Touch 2 goes on 2.5th day (60 hours from first shoot; strictly >= 2 days delay)
-          const followup1Time = new Date(Date.now() + 60 * 3600 * 1000);
+          // Automated Schedule: Touch 2 goes on Day 3 (72 hours from first shoot) during business hours
+          const followup1Time = this.calculateBusinessHoursDispatch(new Date(Date.now() + 72 * 3600 * 1000));
           const copy2 = humanCopywriterService.getEmailCopy(
             {
               id: dispatch.lead_id,
@@ -943,7 +1044,7 @@ export class EmailSchedulerService {
             [dispatch.lead_id, toEmail, dispatch.recipient_name, copy2.subject, copy2.body, followup1Time]
           );
 
-          console.log(`[Scheduler] 📅 Auto-scheduled Touch 2 (Follow-up 1) for "${dispatch.recipient_name}" at Day 2.5 (${followup1Time.toISOString()})`);
+          console.log(`[Scheduler] 📅 Auto-scheduled Touch 2 (Follow-up 1) for "${dispatch.recipient_name}" at Day 3 (${followup1Time.toISOString()})`);
         } else if (dispatch.stage === 'followup_1') {
           // Touch 2 Delivered! Update lead state
           await query(
@@ -955,10 +1056,8 @@ export class EmailSchedulerService {
             [dispatch.lead_id]
           );
 
-          // Automated Schedule: Touch 3 goes on 5.5th day (132 hours from first shoot, or 72 hours / 3 days after touch 2)
-          const anchorTime = currentLead?.first_contacted_at ? new Date(currentLead.first_contacted_at).getTime() : Date.now() - 60 * 3600 * 1000;
-          const followup2Time = new Date(anchorTime + 132 * 3600 * 1000);
-          const safeF2Time = followup2Time.getTime() > Date.now() + 24 * 3600 * 1000 ? followup2Time : new Date(Date.now() + 72 * 3600 * 1000);
+          // Automated Schedule: Touch 3 goes on Day 6 (72 hours after Touch 2) during business hours
+          const followup2Time = this.calculateBusinessHoursDispatch(new Date(Date.now() + 72 * 3600 * 1000));
 
           const copy3 = humanCopywriterService.getEmailCopy(
             {
@@ -976,10 +1075,10 @@ export class EmailSchedulerService {
             ) VALUES (
               'lead', $1, 'email', $2, $3, $4, $5, 'followup_2', 'conversational', 'scheduled', $6, NOW(), NOW()
             )`,
-            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy3.subject, copy3.body, safeF2Time]
+            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy3.subject, copy3.body, followup2Time]
           );
 
-          console.log(`[Scheduler] 📅 Auto-scheduled Touch 3 (Follow-up 2) for "${dispatch.recipient_name}" at Day 5.5 (${safeF2Time.toISOString()})`);
+          console.log(`[Scheduler] 📅 Auto-scheduled Touch 3 (Follow-up 2) for "${dispatch.recipient_name}" at Day 6 (${followup2Time.toISOString()})`);
         } else if (dispatch.stage === 'followup_2') {
           // Touch 3 Delivered! Update lead state
           await query(
@@ -991,10 +1090,8 @@ export class EmailSchedulerService {
             [dispatch.lead_id]
           );
 
-          // Automated Schedule: Touch 4 (Final Close) goes on 10th day (240 hours from first shoot, or 108 hours / 4.5 days after touch 3)
-          const anchorTime = currentLead?.first_contacted_at ? new Date(currentLead.first_contacted_at).getTime() : Date.now() - 132 * 3600 * 1000;
-          const followup3Time = new Date(anchorTime + 240 * 3600 * 1000);
-          const safeF3Time = followup3Time.getTime() > Date.now() + 24 * 3600 * 1000 ? followup3Time : new Date(Date.now() + 108 * 3600 * 1000);
+          // Automated Schedule: Touch 4 (Final Close) goes on Day 10 (96 hours after Touch 3) during business hours
+          const followup3Time = this.calculateBusinessHoursDispatch(new Date(Date.now() + 96 * 3600 * 1000));
 
           const copy4 = humanCopywriterService.getEmailCopy(
             {
@@ -1012,10 +1109,10 @@ export class EmailSchedulerService {
             ) VALUES (
               'lead', $1, 'email', $2, $3, $4, $5, 'followup_3', 'conversational', 'scheduled', $6, NOW(), NOW()
             )`,
-            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy4.subject, copy4.body, safeF3Time]
+            [dispatch.lead_id, toEmail, dispatch.recipient_name, copy4.subject, copy4.body, followup3Time]
           );
 
-          console.log(`[Scheduler] 📅 Auto-scheduled Touch 4 (Final Close) for "${dispatch.recipient_name}" at Day 10 (${safeF3Time.toISOString()})`);
+          console.log(`[Scheduler] 📅 Auto-scheduled Touch 4 (Final Close) for "${dispatch.recipient_name}" at Day 10 (${followup3Time.toISOString()})`);
         } else if (dispatch.stage === 'followup_3') {
           // Touch 4 Delivered! Sequence completed (all 4 touches delivered)
           await query(

@@ -526,21 +526,22 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
           ? (locationsToSend[0].display || locationsToSend[0].city || locationsToSend[0].state || effectiveState)
           : `${locationsToSend.length} locations (${locationsToSend.slice(0, 2).map((l) => l.city || l.state || l.display).join(', ')}${locationsToSend.length > 2 ? '...' : ''})`;
 
+      const estTotalMs = Math.max(2500, limit * 2500);
       const stepTimer1 = setTimeout(() => {
         if (selectedCategories.length === 1) {
           setScrapeStep(`Searching verified GMB listings for "${selectedCategories[0]}" across ${locSummary}...`);
         } else {
           setScrapeStep(`Searching verified GMB listings across ${selectedCategories.length} niches in ${locSummary}...`);
         }
-      }, 1200);
+      }, Math.min(1000, Math.floor(estTotalMs * 0.15)));
 
       const stepTimer2 = setTimeout(() => {
-        setScrapeStep('Interpreting business ratings, phone numbers and official websites...');
-      }, 3000);
+        setScrapeStep('Interpreting business ratings, phone numbers and official websites (~2–3s per lead)...');
+      }, Math.min(2200, Math.floor(estTotalMs * 0.4)));
 
       const stepTimer3 = setTimeout(() => {
         setScrapeStep('Crawling business homepages & contact pages to discover verified emails...');
-      }, 5500);
+      }, Math.min(4200, Math.floor(estTotalMs * 0.7)));
 
       const res = await api.searchGmbLeads({
         category: selectedCategories.join(', '),
@@ -1458,7 +1459,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
               <div className="flex-1">
                 <p className="text-sm font-bold text-amber-950">{scrapeStep}</p>
                 <p className="text-xs text-amber-700 mt-0.5">
-                  Scanning Google Maps, extracting reviews and discovering verified contact details. This takes 4–8 seconds.
+                  Scanning Google Maps, extracting reviews and discovering verified contact details (~2–3 seconds per lead, est. {Math.max(2, limit * 2)}–{Math.max(3, limit * 3)}s for {limit} {limit === 1 ? 'lead' : 'leads'}).
                 </p>
               </div>
             </div>

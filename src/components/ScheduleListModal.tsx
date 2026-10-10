@@ -42,7 +42,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
   // Form Configuration
   const [selectedListId, setSelectedListId] = useState<string>('');
   const [channel, setChannel] = useState<'email' | 'whatsapp' | 'linkedin'>('email');
-  const [sendMode, setSendMode] = useState<'now' | 'later'>('now');
+  const [sendMode, setSendMode] = useState<'now' | 'later'>('later');
   const [scheduledDateTime, setScheduledDateTime] = useState<string>('');
   const [style, setStyle] = useState<'conversational' | 'direct' | 'curious'>('conversational');
   const [stage, setStage] = useState<'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3'>('auto');

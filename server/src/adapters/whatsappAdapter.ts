@@ -222,9 +222,21 @@ export class WhatsAppAdapter {
         `UPDATE send_queue SET status = 'discarded', updated_at = NOW() WHERE lead_id = $1 AND status = 'draft'`,
         [leadId]
       );
-      console.log(`[WhatsAppAdapter] Opt-out keyword detected in WhatsApp message from ${fromPhone}. Contact suppressed.`);
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'cancelled', error_message = 'Cancelled: Lead opted out via WhatsApp', updated_at = NOW()
+         WHERE (lead_id = $1 OR recipient_phone = $2) AND status IN ('scheduled', 'processing')`,
+        [leadId, fromPhone]
+      );
+      console.log(`[WhatsAppAdapter] Opt-out keyword detected from ${fromPhone}. Cancelled all pending scheduled dispatches.`);
     } else {
       await query(`UPDATE leads SET consent_status = 'replied', last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [leadId]);
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'cancelled', error_message = 'Cancelled: Lead replied via WhatsApp', updated_at = NOW()
+         WHERE (lead_id = $1 OR recipient_phone = $2) AND status IN ('scheduled', 'processing')`,
+        [leadId, fromPhone]
+      );
       // Auto-convert to Client and hand off to Conversation Orchestrator (Phase 5)
       clientConversion = await conversationOrchestrator.convertLeadToClient(
         leadId,

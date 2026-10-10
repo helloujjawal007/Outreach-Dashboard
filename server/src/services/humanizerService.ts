@@ -16,21 +16,24 @@ export interface GeneratedHumanEmail {
 }
 
 export class HumanizerService {
+  private readonly agencyName = 'Online Digital Solution';
+
   /**
-   * Cleans corporate suffixes and "The " prefixes so the email reads naturally
+   * Cleans corporate suffixes so the email reads naturally
    */
   public cleanBusinessName(name: string): string {
     if (!name) return 'your team';
     return (
       name
         .replace(/\b(llc|inc|corp|ltd|pvt|co|company|services|solutions|group)\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
         .replace(/[,.-]+$/, '')
         .trim() || name.trim()
     );
   }
 
   /**
-   * Derives a natural human salutation without awkward strings like "Hi The Fitness World team"
+   * Derives a natural salutation without awkward strings like "Hello The Fitness World team"
    */
   public buildSalutation(businessName: string, primaryContactName?: string): string {
     const contactName = (primaryContactName || '').trim();
@@ -43,7 +46,6 @@ export class HumanizerService {
       !contactName.toLowerCase().includes('http') &&
       !contactName.toLowerCase().includes('@')
     ) {
-      // Use first name of primary contact if available
       return contactName.split(' ')[0];
     }
 
@@ -51,18 +53,46 @@ export class HumanizerService {
       return `${bizWithoutThe} team`;
     }
 
-    return 'team';
+    return 'there';
   }
 
   /**
-   * Selects a random item from an array to ensure anti-fingerprinting variation
+   * Random item picker for anti-fingerprinting variation
    */
   private pick<T>(arr: T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
   }
 
   /**
-   * Generates a context-aware, super modern humanized email for a contact
+   * Signature block. Optional env vars: SENDER_NAME, SENDER_PHONE, SENDER_WEBSITE
+   */
+  private buildSignoff(): string {
+    const name = process.env.SENDER_NAME?.trim();
+    const contact = [process.env.SENDER_PHONE?.trim(), process.env.SENDER_WEBSITE?.trim()]
+      .filter(Boolean)
+      .join(' | ');
+    return ['Kind regards,', name, this.agencyName, contact].filter(Boolean).join('\n');
+  }
+
+  /**
+   * Opt-out line (+ optional postal address via BUSINESS_ADDRESS), needed for CAN-SPAM
+   */
+  private buildFooter(): string {
+    const address = process.env.BUSINESS_ADDRESS?.trim();
+    return [
+      address,
+      `If you'd prefer not to receive further emails, simply reply with "unsubscribe" and I will remove you from our list.`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private compose(bodyLines: string[]): string {
+    return `${bodyLines.join('\n')}\n\n${this.buildSignoff()}\n\n${this.buildFooter()}`;
+  }
+
+  /**
+   * Generates a context-aware, professional email for a lead or client
    */
   async generateEmail(
     contact: {
@@ -83,7 +113,7 @@ export class HumanizerService {
       contact.id
     );
 
-    // 1. Determine Stage Context
+    // 1. Determine stage
     let resolvedStage = options.stage || 'auto';
     if (resolvedStage === 'auto') {
       if (isClient) {
@@ -100,7 +130,8 @@ export class HumanizerService {
           const count = Number(msgRes.rows[0]?.count || 0);
           if (count === 0) resolvedStage = 'initial';
           else if (count === 1) resolvedStage = 'followup_1';
-          else resolvedStage = 'followup_2';
+          else if (count === 2) resolvedStage = 'followup_2';
+          else resolvedStage = 'followup_3';
         } catch {
           resolvedStage = 'initial';
         }
@@ -111,7 +142,7 @@ export class HumanizerService {
 
     const style = options.style || 'conversational';
 
-    // 2. Fetch last inbound or outbound message for contextual callbacks if available
+    // 2. Last message snippet for contextual callbacks
     let lastMsgSnippet = '';
     if (isUuid) {
       try {
@@ -131,49 +162,55 @@ export class HumanizerService {
       }
     }
 
-    // 3. Try Local Ollama if available
+    // 3. Try local Ollama if available
     const category = contact.category || 'General Business';
     const ollamaHealth = await ollamaService.checkHealth();
     if (ollamaHealth.online) {
       try {
-        const prompt = `
-Write a super modern, high-converting agency cold email for:
-- Recipient: ${salutation} at ${business}
-- Agency Name: Online Digital Solution
-- Core Capabilities:
-  • Google My Business (GMB) Optimization & Top 3 Google Maps Ranking
-  • Modern Website Development & Redesign (built with ultra-fast modern frameworks)
-  • SEO, GEO (Generative Engine Optimization) & AEO (ranking on Google, ChatGPT, Perplexity & AI search)
-  • E-Commerce Development (Shopify & BigCommerce store builds, speed optimization & e-commerce SEO)
-  • Business Workflow Automations & Done-For-You Outbound Lead Systems
-- Business Category / Niche: ${category}
-- Context/Stage: ${
+        const stageContext =
           resolvedStage === 'initial'
-            ? 'First outreach offering tailored digital growth, modern web dev, SEO/GEO or automations'
+            ? 'First outreach introducing the agency and offering a free, no-obligation audit'
             : resolvedStage === 'followup_1'
-            ? 'First gentle follow-up checking in'
-            : resolvedStage === 'followup_2'
-            ? 'Polite final check-in'
-            : 'Check-in with existing paying client regarding their marketing and automations'
-        }
+              ? 'First polite follow-up (about 3 days after the first email); remind them the audit is ready'
+              : resolvedStage === 'followup_2'
+                ? 'Second follow-up (about 6 days in); share one useful observation and offer a short call'
+                : resolvedStage === 'followup_3'
+                  ? 'Final follow-up (about 10 days in); courteously close the loop and say no more emails will follow'
+                  : 'Check-in with an existing paying client about their marketing, website and automations';
+
+        const prompt = `
+Write a professional, concise outreach email for:
+- Recipient: ${salutation} at ${business}
+- Agency Name: ${this.agencyName}
+- Services (mention only those relevant to the niche):
+  • Google Business Profile optimization and local search visibility
+  • Website development and redesign
+  • SEO, including optimization for AI search tools
+  • E-commerce development (Shopify, BigCommerce)
+  • Business workflow automation and outbound lead systems
+- Business Category / Niche: ${category}
+- Context/Stage: ${stageContext}
 - Style: ${style}
 ${lastMsgSnippet ? `- Previous message reference: "${lastMsgSnippet}"` : ''}
+${options.customInstructions ? `- Extra instructions: ${options.customInstructions}` : ''}
 
 Strict Rules:
-1. NEVER start with "I hope this email finds you well" or "I came across your business in [url]".
-2. Highlight our actual capabilities relevant to their niche (GMB/SEO/GEO, modern website development, Shopify/BigCommerce, or workflow automations).
-3. Sound super modern, clean, crisp, and authentic.
-4. Sign-off MUST strictly be:
-Best regards,
-Online Digital Solution
-5. Provide Subject: on first line, followed by empty line, then Body:.
+1. Formal-friendly tone. Start with "Hello ${salutation},". Do NOT use "Hey", "guys", slang, exclamation marks, or emojis.
+2. NEVER start with "I hope this email finds you well".
+3. Do NOT invent statistics, percentages, rankings, client results or case studies.
+4. Do NOT use "Re:" or "Fwd:" in the subject line.
+5. Keep it under 130 words, with one clear call to action.
+6. Sign-off MUST be exactly:
+Kind regards,
+${this.agencyName}
+7. Output "Subject: ..." on the first line, then an empty line, then the body.
 `.trim();
 
         const aiRes = await ollamaService.generateCompletion({
           prompt,
           system:
-            'You are an expert digital growth & web development consultant for Online Digital Solution. You write modern, highly converting emails that highlight GMB optimization, modern website development, SEO/GEO/AEO, Shopify/BigCommerce, and business automations.',
-          temperature: 0.7,
+            'You are a senior business development writer for Online Digital Solution. You write clear, courteous, professional emails with a single call to action. You never invent facts, statistics or client results.',
+          temperature: 0.6,
         });
 
         if (!aiRes.fallback && aiRes.response) {
@@ -181,15 +218,20 @@ Online Digital Solution
           let subject = `Quick question regarding ${business}`;
           let body = aiRes.response;
 
-          const subjectLine = lines.find((l) => l.toLowerCase().startsWith('subject:'));
+          const subjectLine = lines.find((l) => /^\**\s*subject:/i.test(l.trim()));
           if (subjectLine) {
-            subject = subjectLine.replace(/^subject:\s*/i, '').trim();
-            body = lines.filter((l) => !l.toLowerCase().startsWith('subject:')).join('\n').trim();
+            subject = subjectLine
+              .replace(/^\**\s*subject:\s*\**\s*/i, '')
+              .replace(/^(re|fwd?):\s*/i, '')
+              .trim();
+            body = lines.filter((l) => l !== subjectLine).join('\n').trim();
           }
 
-          // Ensure sign-off is strictly "Online Digital Solution"
-          if (!body.includes('Online Digital Solution')) {
-            body += '\n\nBest regards,\nOnline Digital Solution';
+          if (!body.includes(this.agencyName)) {
+            body += `\n\n${this.buildSignoff()}`;
+          }
+          if (!/unsubscribe/i.test(body)) {
+            body += `\n\n${this.buildFooter()}`;
           }
 
           return {
@@ -205,7 +247,7 @@ Online Digital Solution
       }
     }
 
-    // 4. Deterministic Algorithmic Humanizer Engine (Super Modern Copy + Agency Offerings)
+    // 4. Deterministic fallback
     return this.generateAlgorithmicHumanEmail({
       business,
       salutation,
@@ -217,8 +259,7 @@ Online Digital Solution
   }
 
   /**
-   * Super modern copy engine featuring GMB Optimization, Modern Web Dev, SEO/GEO/AEO, Shopify/BigCommerce, and Automations
-   * Strict sign-off: "Online Digital Solution"
+   * Template engine used when Ollama is offline or fails
    */
   private generateAlgorithmicHumanEmail(params: {
     business: string;
@@ -231,8 +272,9 @@ Online Digital Solution
     const { business, salutation, category = '', stage, style } = params;
     const lowerCat = category.toLowerCase();
     const lowerBiz = business.toLowerCase();
+    const categoryPhrase =
+      category && category !== 'General Business' ? `${lowerCat} businesses` : 'local businesses';
 
-    // Determine business archetype for laser-focused personalization
     const isEcom =
       lowerCat.includes('ecommerce') ||
       lowerCat.includes('retail') ||
@@ -252,180 +294,279 @@ Online Digital Solution
       lowerCat.includes('finance') ||
       lowerCat.includes('logistics');
 
-    // Strict sign-off as requested by user
-    const signoff = 'Best regards,\nOnline Digital Solution';
+    const result = (subjects: string[], bodies: string[], label: string): GeneratedHumanEmail => ({
+      subject: this.pick(subjects),
+      body: this.pick(bodies),
+      stage,
+      isAiGenerated: false,
+      modelUsed: `Humanizer Engine (${label})`,
+    });
 
-    // 1. Initial Outreach (First Message)
+    // 1. Initial outreach
     if (stage === 'initial') {
       if (isEcom) {
-        // E-Commerce (Shopify / BigCommerce focus)
-        const subjects = [
-          `Store speed & SEO ranking for ${business}`,
-          `Quick question regarding ${business}`,
-          `Shopify / BigCommerce growth for ${business}`,
-        ];
-        const bodies = [
-          `Hey ${salutation},\n\nChecked out ${business} online—love your product curation.\n\nWe run Online Digital Solution. We specialize in helping e-commerce brands scale revenue through:\n\n• High-performance Shopify & BigCommerce website development and mobile speed optimization\n• E-Commerce SEO, GEO & AEO to get your products ranked on Google, ChatGPT & Perplexity AI search\n• Automated customer retention, cart recovery & marketing workflow automations\n\nAre you looking to increase your store conversion rate and organic sales this month?\n\nHappy to share a quick 2-minute video audit of your store's speed and search visibility. Open to taking a look?\n\n${signoff}`,
-          `Hi ${salutation},\n\nCame across ${business} and wanted to reach out directly.\n\nAt Online Digital Solution, we build ultra-fast modern e-commerce storefronts (Shopify & BigCommerce) and run advanced SEO/GEO to drive high-intent buyers directly to your collections.\n\nWe also help brands automate their customer follow-ups and abandoned cart workflows so no potential buyers slip through the cracks.\n\nWould you be open to a quick 5-minute chat this week to see how this could work for ${business}?\n\n${signoff}`,
-        ];
-        return {
-          subject: this.pick(subjects),
-          body: this.pick(bodies),
-          stage,
-          isAiGenerated: false,
-          modelUsed: 'Humanizer Engine (E-Commerce & Shopify/BigCommerce)',
-        };
+        return result(
+          [
+            `Store performance and search visibility for ${business}`,
+            `A short store audit for ${business}`,
+            `Shopify / BigCommerce growth for ${business}`,
+          ],
+          [
+            this.compose([
+              `Hello ${salutation},`,
+              ``,
+              `I'm reaching out from ${this.agencyName}. We help e-commerce brands improve revenue through:`,
+              ``,
+              `• Shopify and BigCommerce development, including mobile speed optimization`,
+              `• E-commerce SEO, including visibility in AI search tools such as ChatGPT and Perplexity`,
+              `• Automated cart recovery and customer retention workflows`,
+              ``,
+              `I reviewed ${business} and noted a few opportunities around site speed and search visibility. I'd be glad to share a short audit, free of charge and with no obligation.`,
+              ``,
+              `Would you be open to a brief 10-minute call this week, or would you prefer I send it by email?`,
+            ]),
+            this.compose([
+              `Hello ${salutation},`,
+              ``,
+              `I'm with ${this.agencyName}, where we build fast, conversion-focused Shopify and BigCommerce storefronts and support them with SEO and automated follow-up.`,
+              ``,
+              `Having looked at ${business}, I believe there are practical improvements that could lift your organic traffic and conversion rate. I have summarized them in a brief audit and would be happy to send it across.`,
+              ``,
+              `Would a short call this week suit you?`,
+            ]),
+          ],
+          'E-Commerce'
+        );
       }
 
       if (isB2B) {
-        // B2B, Software, Tech, Consulting & Agency
-        const subjects = [
-          `Workflow automations & outbound for ${business}`,
-          `Quick question re: ${business}`,
-          `Modern web development & pipeline for ${business}`,
-        ];
-        const bodies = [
-          `Hey ${salutation},\n\nChecked out what you guys are building at ${business}—impressive work in ${category || 'your space'}.\n\nWe run Online Digital Solution. We specialize in helping B2B teams scale operations and client acquisition through:\n\n• Modern framework website development (Next.js/React) for ultra-fast, high-converting web presence\n• Custom business workflow automations & CRM integrations to eliminate manual repetitive work\n• Done-for-you outbound lead systems to book qualified discovery calls directly on your calendar\n\nAre you looking to streamline operations or add qualified sales calls this quarter?\n\nOpen to a brief 5-minute conversation to see how we could support ${business}?\n\n${signoff}`,
-          `Hi ${salutation},\n\nReaching out because we help B2B and service companies like ${business} scale their customer acquisition and backend efficiency.\n\nWe build custom workflow automations, modern high-speed websites, and multi-channel cold outbound engines that deliver consistent sales opportunities.\n\nWould you be open to a quick chat this week to see if this could be a fit for ${business}?\n\n${signoff}`,
-        ];
-        return {
-          subject: this.pick(subjects),
-          body: this.pick(bodies),
-          stage,
-          isAiGenerated: false,
-          modelUsed: 'Humanizer Engine (B2B Web Dev & Automations)',
-        };
+        return result(
+          [
+            `Workflow automation and lead generation for ${business}`,
+            `A brief note for ${business}`,
+            `Website and pipeline support for ${business}`,
+          ],
+          [
+            this.compose([
+              `Hello ${salutation},`,
+              ``,
+              `I'm reaching out from ${this.agencyName}. We help B2B teams improve operations and client acquisition through:`,
+              ``,
+              `• Modern website development (Next.js / React) built for speed and conversion`,
+              `• Custom workflow automation and CRM integrations that remove repetitive manual work`,
+              `• Outbound lead systems designed to book qualified discovery calls`,
+              ``,
+              `If streamlining operations or adding qualified sales conversations is a priority at ${business} this quarter, I would welcome a brief 10-minute conversation.`,
+              ``,
+              `Would sometime this week suit you?`,
+            ]),
+            this.compose([
+              `Hello ${salutation},`,
+              ``,
+              `${this.agencyName} works with B2B and service companies on web presence, process automation, and outbound lead generation.`,
+              ``,
+              `I'd like to understand how ${business} currently handles client acquisition and where we might be able to help. Would you be open to a short call this week?`,
+            ]),
+          ],
+          'B2B'
+        );
       }
 
-      // Local Businesses, Clinics, Healthcare & General Services
+      // Local businesses, clinics, healthcare and general services
       if (style === 'direct') {
-        const subjects = [
-          `Google ranking & automations for ${business}`,
-          `Quick question re: ${business}`,
-          `Scaling patient/client inquiries for ${business}`,
-        ];
-        const bodies = [
-          `Hi ${salutation},\n\nQuick question for you guys at ${business}: are you currently taking on new clients or looking to scale your monthly bookings?\n\nAt Online Digital Solution, we help businesses dominate their local market:\n\n• GMB Optimization — getting ${business} ranked in the top 3 on Google Maps so local customers call you first\n• Modern Website Development & Redesign — ultra-fast, mobile-friendly sites built for instant bookings\n• SEO, GEO & AEO — making sure you're ranked and recommended on Google, ChatGPT & AI search\n• Business Workflow Automations — automating inquiry follow-ups so you never miss a prospective client\n\nWould you be open to a brief 5-minute chat this week to see if we can do the same for ${business}?\n\n${signoff}`,
-          `Hey ${salutation},\n\nChecked out ${business} online and wanted to reach out directly.\n\nWe run Online Digital Solution. We specialize in:\n\n• Google My Business (GMB) weekly posting & review acceleration to rank #1 locally\n• Modern web development & redesigns that turn visitors into phone calls\n• High-ROI SEO, GEO & client inquiry automations to outpace competitors\n\nAre you looking to scale your appointments and inbound calls this month?\n\nOpen to seeing a quick 60-second video breakdown of how we'd get ${business} to the top of Google?\n\n${signoff}`,
-        ];
-        return {
-          subject: this.pick(subjects),
-          body: this.pick(bodies),
-          stage,
-          isAiGenerated: false,
-          modelUsed: 'Humanizer Engine (Direct Agency Angle)',
-        };
-      } else if (style === 'curious') {
-        const subjects = [
-          `Idea for ${business}`,
-          `Local Google ranking & web presence for ${business}`,
-          `Customer acquisition at ${business}`,
-        ];
-        const bodies = [
-          `Hey ${salutation},\n\nWas looking into businesses in your area and came across ${business}.\n\nQuick question: how is your team currently handling local Google ranking, website conversions, and client follow-ups?\n\nWe run Online Digital Solution, helping businesses dominate their market with:\n\n• GMB (Google My Business) optimization, review acceleration & top-3 Maps ranking\n• Modern website redesigns built on ultra-fast frameworks\n• SEO, GEO (AI search optimization) & automated inquiry handling\n\nIf increasing qualified customer inquiries is on your radar this quarter, I'd love to share a quick 2-minute overview for ${business}.\n\nMind if I send that over?\n\n${signoff}`,
-          `Hi ${salutation},\n\nSaw what you guys are doing at ${business}—great reputation in the community!\n\nAt Online Digital Solution, we provide end-to-end digital growth: GMB top 3 ranking, modern website development, SEO/GEO, and business workflow automations.\n\nAre you currently exploring ways to get more client bookings and automate your follow-ups?\n\nWould you be open to a quick 5-minute conversation this week?\n\n${signoff}`,
-        ];
-        return {
-          subject: this.pick(subjects),
-          body: this.pick(bodies),
-          stage,
-          isAiGenerated: false,
-          modelUsed: 'Humanizer Engine (Consultative Agency Angle)',
-        };
-      } else {
-        // Conversational (Default & Recommended)
-        const subjects = [
-          `Quick question regarding ${business}`,
-          `Growth & Google ranking for ${business}`,
-          `Digital presence & automations for ${business}`,
-        ];
-        const bodies = [
-          `Hey ${salutation},\n\nChecked out ${business} online—love what you guys are doing.\n\nWe run Online Digital Solution. We specialize in helping businesses like yours bring in a consistent flow of ready-to-buy customers through:\n\n• Google My Business (GMB) optimization & ranking you in the top 3 on Google Maps\n• Modern Website Development & high-performance redesigns for higher conversion\n• SEO, GEO & AEO (getting you recommended on Google and AI search like ChatGPT)\n• Workflow Automations to instantly follow up with new leads and book appointments\n\nAre you currently looking to add more clients and streamline your operations this month?\n\nHappy to share a quick 2-minute video breakdown of how we'd get ${business} ranking #1 in your area. Open to taking a look?\n\n${signoff}`,
-          `Hi ${salutation},\n\nI came across ${business} and wanted to see how you're currently handling your online presence, website conversions, and lead follow-up.\n\nAt Online Digital Solution, we help businesses with:\n\n• Local SEO & GMB Posting (putting you top of Google Maps where 70% of clicks go)\n• Ultra-fast, modern website development and redesigns\n• Advanced SEO, GEO & AEO to ensure you rank on Google and AI answer engines\n• Automations that handle customer inquiries and book appointments on autopilot\n\nWorth a quick 5-minute chat this week to see how this could work for ${business}?\n\n${signoff}`,
-        ];
-        return {
-          subject: this.pick(subjects),
-          body: this.pick(bodies),
-          stage,
-          isAiGenerated: false,
-          modelUsed: 'Humanizer Engine (Conversational Agency)',
-        };
+        return result(
+          [
+            `Improving ${business}'s visibility on Google`,
+            `Local search and enquiries for ${business}`,
+            `Scaling client enquiries for ${business}`,
+          ],
+          [
+            this.compose([
+              `Hello ${salutation},`,
+              ``,
+              `Are you currently looking to grow bookings at ${business}? ${this.agencyName} helps ${categoryPhrase} with:`,
+              ``,
+              `• Google Business Profile optimization, to improve Google Maps visibility`,
+              `• Website development and redesign, built for mobile and enquiries`,
+              `• SEO, including optimization for AI search tools such as ChatGPT`,
+              `• Automated enquiry follow-up, so no prospective client goes unanswered`,
+              ``,
+              `I'd be glad to share a short audit for ${business}, free of charge. Would a brief 10-minute call this week work?`,
+            ]),
+          ],
+          'Direct'
+        );
       }
+
+      if (style === 'curious') {
+        return result(
+          [
+            `A question about ${business}`,
+            `Local Google presence for ${business}`,
+            `Customer enquiries at ${business}`,
+          ],
+          [
+            this.compose([
+              `Hello ${salutation},`,
+              ``,
+              `I'm curious how ${business} currently handles local Google visibility, website enquiries, and client follow-up.`,
+              ``,
+              `I ask because ${this.agencyName} helps ${categoryPhrase} with Google Business Profile optimization, website development, SEO, and automated enquiry handling. I reviewed ${business} and would be happy to share a short audit of what I found.`,
+              ``,
+              `Would you be open to me sending it over?`,
+            ]),
+          ],
+          'Consultative'
+        );
+      }
+
+      // Conversational (default)
+      return result(
+        [
+          `Improving ${business}'s visibility on Google`,
+          `Local search visibility for ${business}`,
+          `A short audit for ${business}`,
+        ],
+        [
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I'm reaching out from ${this.agencyName}. We help ${categoryPhrase} attract more local customers through:`,
+            ``,
+            `• Google Business Profile optimization, to improve visibility on Google Maps`,
+            `• Website development and SEO, including optimization for AI search tools`,
+            `• Automated enquiry follow-up, so new leads receive a prompt response`,
+            ``,
+            `I reviewed ${business}'s online presence and noticed a few opportunities worth discussing. I'd be glad to share a short audit, free of charge and with no obligation.`,
+            ``,
+            `Would you be open to a brief 10-minute call this week, or would you prefer I send the audit by email?`,
+          ]),
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I'm with ${this.agencyName}, where we work with ${categoryPhrase} on local search visibility, website performance, and enquiry handling.`,
+            ``,
+            `After looking at ${business}'s online presence, I identified a few practical improvements that could help bring in more enquiries. I've put them into a brief audit that I would be happy to share at no cost.`,
+            ``,
+            `Would a short call this week suit you, or shall I email it across?`,
+          ]),
+        ],
+        'Conversational'
+      );
     }
 
-    // 2. Follow-up 1 (Gentle loop-back)
+    // 2. Follow-up 1
     if (stage === 'followup_1') {
-      const subjects = [
-        `Re: Quick question regarding ${business}`,
-        `Following up re: Google ranking & website for ${business}`,
-        `Checking in: ${business}`,
-      ];
-      const bodies = [
-        `Hey ${salutation},\n\nQuick follow-up on my note from last week! I know you're busy running operations at ${business}.\n\nJust wanted to see if scaling your customer flow with GMB ranking, a modern website revamp, SEO/GEO, or workflow automations is on your radar this month?\n\nWe've been getting great results putting businesses in the top 3 on Google Maps and automating their inquiry responses.\n\nLet me know if you'd be open to a quick 5-minute chat this week—no pressure at all.\n\n${signoff}`,
-        `Hi ${salutation},\n\nFollowing up quickly in case my last email got buried. Did you get a chance to review my note about driving more calls to ${business} through Google SEO, GMB optimization, or modern web redesigns?\n\nHappy to share a quick 60-second example whenever suits your schedule.\n\n${signoff}`,
-      ];
-      return {
-        subject: this.pick(subjects),
-        body: this.pick(bodies),
-        stage,
-        isAiGenerated: false,
-        modelUsed: 'Humanizer Engine (Follow-up 1)',
-      };
+      return result(
+        [
+          `Following up: ${business} local visibility audit`,
+          `Following up regarding ${business}`,
+          `Checking in: ${business}`,
+        ],
+        [
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I'm following up on my previous email in case it was missed. I have a short audit prepared for ${business} covering your Google presence, website performance, and how quickly enquiries are being handled.`,
+            ``,
+            `If it would be useful, I can send it across or walk you through it in 10 minutes at a time that suits you.`,
+          ]),
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I wanted to check whether you had a chance to see my earlier note about ${business}.`,
+            ``,
+            `The audit is ready whenever you are. Just let me know whether you'd prefer to receive it by email or discuss it briefly over a call.`,
+          ]),
+        ],
+        'Follow-up 1'
+      );
     }
 
-    // 3. Follow-up 2 (Day 5.5 Value Check-in)
+    // 3. Follow-up 2
     if (stage === 'followup_2') {
-      const subjects = [
-        `${business} - quick check-in`,
-        `Quick check-in re: ${business}`,
-        `Customer inquiries at ${business}`,
-      ];
-      const bodies = [
-        `Hi ${salutation},\n\nTouching base briefly regarding ${business}.\n\nA lot of the businesses we speak with were losing ready-to-buy customers simply because their Google listing wasn't visible in the top 3 Maps results, or because website leads took hours to get a response. We put that entire system on autopilot.\n\nDo you have 5 minutes later this week to see if we can do the same for ${business}, or should I circle back next month?\n\n${signoff}`,
-        `Hey ${salutation},\n\nChecking back in to see if optimizing your local Google ranking and modern website conversions for ${business} is something you're focusing on right now.\n\nIf you'd like to see the quick 2-minute competitive breakdown I mentioned earlier, just let me know and I'll send the link right over.\n\n${signoff}`,
-      ];
-      return {
-        subject: this.pick(subjects),
-        body: this.pick(bodies),
-        stage,
-        isAiGenerated: false,
-        modelUsed: 'Humanizer Engine (Follow-up 2)',
-      };
+      return result(
+        [
+          `A quick observation about ${business}`,
+          `${business}: a brief note`,
+          `Customer enquiries at ${business}`,
+        ],
+        [
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `Many ${categoryPhrase} lose potential customers for two common reasons: their Google listing does not appear among the top local results, or website enquiries wait several hours for a reply. Both are fixable with a straightforward setup.`,
+            ``,
+            `I'd be happy to show you where ${business} currently stands on these points. Would a short call later this week work, or should I check back next month?`,
+          ]),
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I'm writing once more to see whether strengthening ${business}'s online presence and enquiry response time is something you are considering at the moment.`,
+            ``,
+            `If so, I can send over the short audit I mentioned. If the timing is not right, just let me know and I will follow up at a later date.`,
+          ]),
+        ],
+        'Follow-up 2'
+      );
     }
 
-    // 4. Follow-up 3 (Day 10 Final Permission Close)
+    // 4. Follow-up 3 (final)
     if (stage === 'followup_3') {
-      const subjects = [
-        `Final check-in: ${business}`,
-        `Permission to close file re: ${business}?`,
-        `Last follow-up re: ${business}`,
-      ];
-      const bodies = [
-        `Hi ${salutation},\n\nI know you have a lot on your plate, so I'll keep this short and make it my final check-in.\n\nIf you ever want to scale ${business} with GMB ranking (top 3 on Google Maps), modern website development, SEO/GEO, or business workflow automations, feel free to reach out anytime.\n\nWishing you and the entire ${business.replace(/^the\s+/i, '')} team continued success!\n\n${signoff}`,
-        `Hey ${salutation},\n\nI don't want to clutter your inbox, so I'll pause outreach here. If optimizing your website, local Google Maps ranking, or client inquiry automations for ${business} ever becomes a priority down the road, you know where to find us.\n\nAll the best with ${business}!\n\n${signoff}`,
-      ];
-      return {
-        subject: this.pick(subjects),
-        body: this.pick(bodies),
-        stage,
-        isAiGenerated: false,
-        modelUsed: 'Humanizer Engine (Follow-up 3)',
-      };
+      return result(
+        [
+          `Closing the loop: ${business}`,
+          `Final follow-up regarding ${business}`,
+          `Last note: ${business}`,
+        ],
+        [
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I haven't heard back, so I'll assume the timing isn't right and will not send further emails. If improving your local search visibility, website, or enquiry handling becomes a priority, you are welcome to reach out at any time.`,
+            ``,
+            `Wishing you and the ${business.replace(/^the\s+/i, '')} team continued success.`,
+          ]),
+          this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `As I have not received a response, I will pause my outreach here so as not to crowd your inbox. Should you wish to revisit this in the future, I'd be glad to help ${business} with Google visibility, website performance, or enquiry automation.`,
+            ``,
+            `All the best to you and your team.`,
+          ]),
+        ],
+        'Follow-up 3'
+      );
     }
 
-    // 4. Client Check-in / Retention
-    const subjects = [
-      `Quick check-in with ${business}`,
-      `Campaign & automation update for ${business}`,
-      `Performance review: ${business}`,
-    ];
-    const bodies = [
-      `Hey ${salutation},\n\nChecking in to see how your campaigns, website traffic, and client inquiries are performing this week with ${business}!\n\nWe're actively monitoring your SEO rankings, GMB posting consistency, and automation workflows to ensure you're getting the best possible lead volume and ROI.\n\nLet us know if you have any questions or if there are any specific automations or offers you'd like us to feature this month.\n\n${signoff}`,
-      `Hi ${salutation},\n\nHope everything is running smoothly at ${business}! Just touching base to ensure your website, GMB ranking, and inquiry automations are delivering strong results for you.\n\nFeel free to reply if you'd like to adjust any targeting or optimize workflows this week.\n\n${signoff}`,
-    ];
+    // 5. Client check-in / retention (no opt-out footer needed for existing clients)
+    const clientSignoff = this.buildSignoff();
     return {
-      subject: this.pick(subjects),
-      body: this.pick(bodies),
+      subject: this.pick([
+        `Checking in: ${business}`,
+        `Progress update for ${business}`,
+        `Quick review of ${business}'s results`,
+      ]),
+      body: this.pick([
+        [
+          `Hello ${salutation},`,
+          ``,
+          `I'm checking in to see how things are going with your website, search visibility, and enquiries at ${business}.`,
+          ``,
+          `We continue to monitor your rankings, Google Business Profile activity, and automation workflows. If there are any offers, changes, or priorities you'd like us to focus on this month, please let us know.`,
+          ``,
+          clientSignoff,
+        ].join('\n'),
+        [
+          `Hello ${salutation},`,
+          ``,
+          `I hope things are going well at ${business}. I'd like to confirm that your website, Google listing, and enquiry automations are delivering the results you expect.`,
+          ``,
+          `If you'd like to adjust any targeting or workflows, simply reply to this email and we will take care of it.`,
+          ``,
+          clientSignoff,
+        ].join('\n'),
+      ]),
       stage: 'client_checkin',
       isAiGenerated: false,
       modelUsed: 'Humanizer Engine (Client Check-in)',

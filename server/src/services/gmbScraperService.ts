@@ -59,6 +59,7 @@ export interface GmbImportParams {
   leads: ScrapedLeadItem[];
   listId?: string;
   batchName?: string;
+  scheduledStartTime?: string | Date;
 }
 
 export interface GmbImportResult {
@@ -1277,6 +1278,7 @@ export class GmbScraperService {
         intakeResult = await automatedIntakeEngine.processImportedLeads(insertedLeads as any[], {
           customListId: listId,
           autoSend: true,
+          scheduledStartTime: params.scheduledStartTime,
         });
       } catch (intakeErr) {
         console.error('[gmbScraperService.importScrapedLeads] Automated intake error:', intakeErr);

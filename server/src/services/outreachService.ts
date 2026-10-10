@@ -66,13 +66,25 @@ export class OutreachEngineService {
         `UPDATE send_queue SET status = 'discarded', updated_at = NOW() WHERE lead_id = $1 AND status = 'draft'`,
         [leadId]
       );
-      console.log(`[OutreachEngine] Opt-out keyword detected in inbound message. Lead ${leadId} marked 'opted_out'.`);
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'cancelled', error_message = 'Cancelled: Lead opted out', updated_at = NOW()
+         WHERE lead_id = $1 AND status IN ('scheduled', 'processing')`,
+        [leadId]
+      );
+      console.log(`[OutreachEngine] Opt-out keyword detected in inbound message. Lead ${leadId} marked 'opted_out'. Cancelled pending dispatches.`);
       return { isOptOut: true, newStatus: 'opted_out' };
     }
 
     // Otherwise, mark as replied
     await query(
       `UPDATE leads SET consent_status = 'replied', last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [leadId]
+    );
+    await query(
+      `UPDATE scheduled_dispatches
+       SET status = 'cancelled', error_message = 'Cancelled: Lead replied to outreach', updated_at = NOW()
+       WHERE lead_id = $1 AND status IN ('scheduled', 'processing')`,
       [leadId]
     );
 

@@ -51,6 +51,7 @@ export class AutomatedIntakeEngine {
     options: {
       customListId?: string;
       autoSend?: boolean;
+      scheduledStartTime?: Date | string;
     } = {}
   ): Promise<AutomatedIntakeResult> {
     if (!Array.isArray(leads) || leads.length === 0) {
@@ -73,7 +74,7 @@ export class AutomatedIntakeEngine {
       };
     }
 
-    const { customListId, autoSend = true } = options;
+    const { customListId, autoSend = true, scheduledStartTime } = options;
 
     // 1. Channel List Auto-Assignment
     const channelAssignments = await channelListAutoAssignmentService.autoAssignLeads(
@@ -178,12 +179,19 @@ export class AutomatedIntakeEngine {
          AND scheduled_for < CURRENT_DATE + INTERVAL '1 day'`
     );
 
-    let currentTodayPointer = latestSchedRes.rows[0]?.max_time
-      ? new Date(latestSchedRes.rows[0].max_time)
-      : new Date(Date.now() + 2000);
+    // Calculate intelligent scheduling starting pointer:
+    // Dispatches are properly SCHEDULED (not blasted instantly).
+    // During business hours (9:00 AM - 5:00 PM), schedule with a minimum 20-min forward buffer.
+    // Outside business hours, schedule for 9:15 AM next business morning (or today if early morning before 9 AM).
+    const initialPointer = this.getInitialScheduledPointer(scheduledStartTime);
+    let currentTodayPointer = new Date(initialPointer);
 
-    if (currentTodayPointer.getTime() < Date.now()) {
-      currentTodayPointer = new Date(Date.now() + 2000);
+    // If existing scheduled dispatches run past our initial pointer, sequence after them
+    if (latestSchedRes.rows[0]?.max_time) {
+      const maxExisting = new Date(latestSchedRes.rows[0].max_time);
+      if (maxExisting.getTime() > currentTodayPointer.getTime()) {
+        currentTodayPointer = maxExisting;
+      }
     }
 
     let scheduledTodayCount = 0;
@@ -249,15 +257,8 @@ export class AutomatedIntakeEngine {
     }
 
     console.log(
-      `[AutomatedIntakeEngine] Intake processed: ${verifiedLeads.length} verified leads -> ${scheduledTodayCount} scheduled for today, ${rolledOverCount} rolled over to next day(s) adhering to ${this.DAILY_EMAIL_LIMIT}/day limit.`
+      `[AutomatedIntakeEngine] Intake processed: ${verifiedLeads.length} verified leads -> ${scheduledTodayCount} scheduled starting at ${currentTodayPointer.toISOString()}, ${rolledOverCount} rolled over adhering to ${this.DAILY_EMAIL_LIMIT}/day limit.`
     );
-
-    // Asynchronously wake up scheduler to immediately begin processing today's queue
-    if (scheduledTodayCount > 0) {
-      setTimeout(() => {
-        emailSchedulerService.processPendingDispatches().catch(console.error);
-      }, 500);
-    }
 
     return {
       totalImported: leads.length,
@@ -272,11 +273,51 @@ export class AutomatedIntakeEngine {
   }
 
   /**
+   * Calculates a sensible starting schedule time for new dispatches.
+   * If a custom scheduledStartTime is provided, use that.
+   * Otherwise:
+   * - If between 9:00 AM and 5:00 PM local business hours: schedule starting 20 minutes from now (with pacing)
+   * - If before 9:00 AM: schedule starting today at 9:15 AM
+   * - If after 5:00 PM: schedule starting tomorrow at 9:15 AM
+   */
+  private getInitialScheduledPointer(scheduledStartTime?: Date | string): Date {
+    if (scheduledStartTime) {
+      const parsed = new Date(scheduledStartTime);
+      if (!isNaN(parsed.getTime()) && parsed.getTime() > Date.now()) {
+        return parsed;
+      }
+    }
+
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    // If before 9:00 AM, start at 9:15 AM today
+    if (currentHour < 9) {
+      const start = new Date(now);
+      start.setHours(9, 15, 0, 0);
+      return start;
+    }
+
+    // If after 5:00 PM (17:00), start at 9:15 AM next business morning
+    if (currentHour >= 17) {
+      return this.getStartOfRolloverDay(1);
+    }
+
+    // During active business hours (9 AM - 5 PM):
+    // Schedule with a minimum 20-minute forward buffer so the user can review, edit or cancel
+    return new Date(now.getTime() + 20 * 60 * 1000);
+  }
+
+  /**
    * Calculates the starting timestamp for a rollover day (9:15 AM local time)
    */
   private getStartOfRolloverDay(dayOffset: number): Date {
     const d = new Date();
     d.setDate(d.getDate() + dayOffset);
+    // If rollover lands on Saturday (6), advance to Monday (+2 days)
+    if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+    // If rollover lands on Sunday (0), advance to Monday (+1 day)
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
     d.setHours(9, 15, 0, 0); // 9:15 AM
     return d;
   }

@@ -628,6 +628,7 @@ export interface GmbImportParams {
   leads: ScrapedLead[];
   listId?: string;
   batchName?: string;
+  scheduledStartTime?: string;
 }
 
 export interface GmbImportResult {

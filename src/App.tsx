@@ -28,8 +28,10 @@ function App() {
 
   const counts = useMemo(() => {
     const activeLeads = store.leads.filter((l) => !l.deletedAt);
-    const leadEntities = activeLeads.filter((l) => l.entityType === 'lead');
-    const clientEntities = activeLeads.filter((l) => l.entityType === 'client');
+    const duplicateLeads = activeLeads.filter((l) => l.status === 'duplicate');
+    const nonDuplicateLeads = activeLeads.filter((l) => l.status !== 'duplicate');
+    const leadEntities = nonDuplicateLeads.filter((l) => l.entityType === 'lead');
+    const clientEntities = nonDuplicateLeads.filter((l) => l.entityType === 'client');
     const addedLeads = leadEntities.filter((l) => Boolean(l.lists && l.lists.length > 0) && l.status !== 'manual_review');
     const notAddedLeads = leadEntities.filter((l) => (!l.lists || l.lists.length === 0) && l.status !== 'manual_review');
     const manualReviewLeads = leadEntities.filter((l) => l.status === 'manual_review');
@@ -46,6 +48,7 @@ function App() {
       clients: clientEntities.length,
       manualReview: manualReviewLeads.length,
       invalidList: invalidLeads.length,
+      duplicates: duplicateLeads.length,
       trash: store.trashLeads.length,
       queue: store.queue.length,
       unreadMessages,
@@ -144,6 +147,8 @@ function App() {
         ? 'Leads & Clients • Invalid List (Pre-send Flagged)'
         : crmSubFilter === 'inbound'
         ? 'Leads & Clients • Inbound Replies'
+        : crmSubFilter === 'duplicates'
+        ? 'Leads & Clients • Duplicate Leads Category'
         : crmSubFilter === 'trash'
         ? 'Leads & Clients • Trash Bin'
         : 'Leads & Clients CRM',

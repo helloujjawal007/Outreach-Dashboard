@@ -1,5 +1,6 @@
 import dns from 'node:dns';
 import { query } from '../config/db';
+import { millionVerifierService } from './millionVerifierService';
 
 export interface EmailValidationResult {
   isValid: boolean;
@@ -222,6 +223,47 @@ export class EmailValidatorService {
       }
     } catch {
       // Non-blocking query failure fallback
+    }
+
+    // Check with MillionVerifier API v3
+    try {
+      const mvResult = await millionVerifierService.verifySingleEmail(email);
+      if (mvResult.resultcode === 1) {
+        return {
+          isValid: true,
+          email: rawEmail,
+          normalizedEmail: email,
+          status: 'verified',
+          reason: 'Verified via MillionVerifier',
+        };
+      } else if (mvResult.resultcode === 2) {
+        return {
+          isValid: true,
+          email: rawEmail,
+          normalizedEmail: email,
+          status: 'verified',
+          reason: 'Catch-all mailbox (MillionVerifier)',
+        };
+      } else if (mvResult.resultcode === 5) {
+        return {
+          isValid: false,
+          email: rawEmail,
+          normalizedEmail: email,
+          status: 'disposable_domain',
+          reason: 'Disposable email address flagged by MillionVerifier',
+        };
+      } else if (mvResult.resultcode === 6) {
+        return {
+          isValid: false,
+          email: rawEmail,
+          normalizedEmail: email,
+          status: 'invalid_syntax',
+          reason: mvResult.subresult || 'Mailbox invalid or rejected by MillionVerifier',
+        };
+      }
+      // If resultcode === 4 (e.g. Insufficient credits / network error), continue to local MX validation
+    } catch {
+      // Non-blocking fallback to local DNS MX checks
     }
 
     // Check MX records for the domain

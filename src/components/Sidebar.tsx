@@ -19,6 +19,7 @@ import {
   Trash2,
   Compass,
   MailX,
+  Copy,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 
@@ -54,6 +55,7 @@ interface SidebarProps {
     clients: number;
     manualReview: number;
     invalidList?: number;
+    duplicates?: number;
     trash?: number;
     queue: number;
     unreadMessages: number;
@@ -307,6 +309,31 @@ export function Sidebar({
                 {counts.invalidList && counts.invalidList > 0 ? (
                   <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700">
                     {counts.invalidList}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-600">
+                    0
+                  </span>
+                )}
+              </button>
+
+              {/* Duplicates (Quarantined Duplicate Contacts) */}
+              <button
+                onClick={() => onNavigate('crm', 'duplicates', activeCountryFilter)}
+                className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
+                  current === 'crm' && activeSubFilter === 'duplicates'
+                    ? 'bg-amber-50 text-amber-800 font-bold ring-1 ring-amber-300'
+                    : 'text-ink-500 hover:bg-slate-50 hover:text-ink-800'
+                }`}
+                title="Leads detected as duplicates of existing CRM contacts across any list"
+              >
+                <div className="flex items-center gap-2">
+                  <Copy size={13} className={counts.duplicates && counts.duplicates > 0 ? 'text-amber-600' : 'text-slate-400'} />
+                  <span>Duplicates</span>
+                </div>
+                {counts.duplicates && counts.duplicates > 0 ? (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                    {counts.duplicates}
                   </span>
                 ) : (
                   <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-600">

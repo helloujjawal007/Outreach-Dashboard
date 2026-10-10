@@ -799,6 +799,24 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/leads/duplicates - Bulk delete all duplicate leads (or specified list of IDs)
+leadsRouter.delete('/duplicates', async (req: Request, res: Response) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    let delRes;
+    if (ids && ids.length > 0) {
+      delRes = await query(`DELETE FROM leads WHERE id = ANY($1) AND status = 'duplicate' RETURNING id`, [ids]);
+    } else {
+      delRes = await query(`DELETE FROM leads WHERE status = 'duplicate' RETURNING id`);
+    }
+    const count = delRes.rowCount || delRes.rows.length;
+    res.json({ success: true, count, message: `Successfully deleted ${count} duplicate lead(s)` });
+  } catch (error) {
+    console.error('[leadsRouter.deleteDuplicates]', error);
+    res.status(500).json({ success: false, error: 'Failed to delete duplicate leads' });
+  }
+});
+
 // DELETE /api/leads/:id - Soft-delete single lead (preserved for 28 days, removes from everywhere)
 leadsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -1354,9 +1372,32 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
         isDupe = true;
       }
 
-      // If existing lead or duplicate within batch, ignore it (do not add again)
+      // If existing lead or duplicate within batch, route to Duplicate Category
       if (isDupe) {
         duplicateCount++;
+        try {
+          await query(
+            `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, status, consent_status, batch_id, outreach_stage, notes, website, country, location)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'duplicate', 'none', $9, 'initial', $10, $11, $12, $13)`,
+            [
+              businessName || 'Unnamed Business',
+              category,
+              phone || '',
+              email || '',
+              instagram || '',
+              facebook || '',
+              whatsapp || '',
+              (item.linkedin || item.linkedin_url || '').trim(),
+              batchId,
+              `Duplicate Lead: Already exists in CRM`,
+              cleanSiteUrl(item.website || item.website_url || item.url || ''),
+              (item.country || 'USA').trim(),
+              (item.location || item.cityRegion || item.city || '').trim(),
+            ]
+          );
+        } catch (dErr) {
+          console.warn('[leadsRouter.batch] Failed to store duplicate lead:', dErr);
+        }
         continue;
       }
 

@@ -37,6 +37,8 @@ import type {
   GmbSearchParams,
   GmbImportParams,
   GmbImportResult,
+  MillionVerifierCreditsResponse,
+  EmailVerificationTestResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -437,6 +439,13 @@ export const api = {
   async bulkDeleteLeads(ids: string[]): Promise<{ deletedCount: number }> {
     return request<{ success: boolean; deletedCount: number }>('/leads/bulk-delete', {
       method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async deleteDuplicateLeads(ids?: string[]): Promise<{ count: number; success: boolean; message: string }> {
+    return request<{ success: boolean; count: number; message: string }>('/leads/duplicates', {
+      method: 'DELETE',
       body: JSON.stringify({ ids }),
     });
   },
@@ -1745,6 +1754,18 @@ export const api = {
     countries: Array<{ code: string; name: string; flag: string; defaultState: string }>;
   }> {
     return request('/scraper/presets');
+  },
+
+  // MillionVerifier Live Verification API
+  async getMillionVerifierCredits(refresh = false): Promise<MillionVerifierCreditsResponse> {
+    return request<MillionVerifierCreditsResponse>(`/email-verifier/credits${refresh ? '?refresh=true' : ''}`);
+  },
+
+  async testEmailVerification(email: string): Promise<EmailVerificationTestResponse> {
+    return request<EmailVerificationTestResponse>('/email-verifier/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
   },
 };
 

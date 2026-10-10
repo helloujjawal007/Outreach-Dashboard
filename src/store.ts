@@ -698,6 +698,25 @@ export function useStore() {
     [leads, refreshAll]
   );
 
+  const deleteDuplicateLeads = useCallback(
+    async (ids?: string[]) => {
+      try {
+        const res = await api.deleteDuplicateLeads(ids);
+        if (ids && ids.length > 0) {
+          setLeads((prev) => prev.filter((l) => !ids.includes(l.id)));
+        } else {
+          setLeads((prev) => prev.filter((l) => l.status !== 'duplicate'));
+        }
+        await refreshAll();
+        return res;
+      } catch (err) {
+        console.error('[Store] deleteDuplicateLeads error:', err);
+        throw err;
+      }
+    },
+    [refreshAll]
+  );
+
   // Update single lead or client status ('active' | 'inactive' | 'paused' | 'manual_review')
   const updateLeadStatus = useCallback(
     async (id: string, status: 'active' | 'inactive' | 'paused' | 'manual_review') => {
@@ -1298,6 +1317,7 @@ export function useStore() {
       deleteLead,
       updateLead,
       bulkDeleteLeads,
+      deleteDuplicateLeads,
       enrichLeadFromGoogle,
       syncLeadFromGoogleMaps,
       submitWebsiteForm,
@@ -1395,6 +1415,7 @@ export function useStore() {
       deleteLead,
       updateLead,
       bulkDeleteLeads,
+      deleteDuplicateLeads,
       enrichLeadFromGoogle,
       syncLeadFromGoogleMaps,
       submitWebsiteForm,

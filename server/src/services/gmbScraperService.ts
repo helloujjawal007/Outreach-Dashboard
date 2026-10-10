@@ -1134,23 +1134,45 @@ export class GmbScraperService {
     );
     const batchId = batchRes.rows[0].id;
 
-    // 2. Fetch existing leads & clients for deduplication
-    const existingRes = await query<{ business_name: string; email: string; phone: string }>(
-      `SELECT business_name, email, phone FROM leads WHERE deleted_at IS NULL
+    // 2. Fetch existing leads & clients across all CRM lists for deduplication
+    const existingRes = await query<{ business_name: string; email: string; phone: string; list_names: string }>(
+      `SELECT l.business_name, l.email, l.phone,
+              COALESCE(string_agg(lst.name, ', '), '') as list_names
+       FROM leads l
+       LEFT JOIN lead_list_memberships lm ON lm.lead_id = l.id
+       LEFT JOIN lists lst ON lst.id = lm.list_id
+       WHERE l.deleted_at IS NULL AND l.status != 'duplicate'
+       GROUP BY l.id, l.business_name, l.email, l.phone
        UNION
-       SELECT business_name, email, phone FROM clients WHERE deleted_at IS NULL`
+       SELECT cl.business_name, cl.email, cl.phone, 'Clients' as list_names
+       FROM clients cl WHERE cl.deleted_at IS NULL
+       GROUP BY cl.id, cl.business_name, cl.email, cl.phone`
     );
 
     const existingEmails = new Set<string>();
     const existingPhones = new Set<string>();
     const existingNames = new Set<string>();
+    const emailMatchMap = new Map<string, { biz: string; lists: string }>();
+    const phoneMatchMap = new Map<string, { biz: string; lists: string }>();
+    const nameMatchMap = new Map<string, { biz: string; lists: string }>();
 
     for (const r of existingRes.rows) {
-      if (r.email) existingEmails.add(r.email.trim().toLowerCase());
+      const email = (r.email || '').trim().toLowerCase();
+      if (email) {
+        existingEmails.add(email);
+        emailMatchMap.set(email, { biz: r.business_name, lists: r.list_names });
+      }
       const pDigits = (r.phone || '').replace(/\D/g, '');
-      if (pDigits.length >= 7) existingPhones.add(pDigits.slice(-10));
+      if (pDigits.length >= 7) {
+        const last10 = pDigits.slice(-10);
+        existingPhones.add(last10);
+        phoneMatchMap.set(last10, { biz: r.business_name, lists: r.list_names });
+      }
       const cName = this.cleanBizName(r.business_name);
-      if (cName.length >= 3) existingNames.add(cName);
+      if (cName.length >= 3) {
+        existingNames.add(cName);
+        nameMatchMap.set(cName, { biz: r.business_name, lists: r.list_names });
+      }
     }
 
     let importedCount = 0;
@@ -1165,7 +1187,7 @@ export class GmbScraperService {
       const bName = (item.businessName || '').trim();
       const cleanName = this.cleanBizName(bName);
 
-      // Check duplicates
+      // Check duplicates against CRM leads/clients across all lists
       const isDuplicate =
         (email && existingEmails.has(email)) ||
         (phoneLast10 && existingPhones.has(phoneLast10)) ||
@@ -1173,6 +1195,72 @@ export class GmbScraperService {
 
       if (isDuplicate) {
         duplicateCount++;
+
+        let matchedReason = '';
+        if (email && existingEmails.has(email)) {
+          const match = emailMatchMap.get(email);
+          matchedReason = `Email (${email}) already exists in CRM${match?.lists ? ` [List: ${match.lists}]` : ''}`;
+        } else if (phoneLast10 && existingPhones.has(phoneLast10)) {
+          const match = phoneMatchMap.get(phoneLast10);
+          matchedReason = `Phone number (${phone}) already exists in CRM${match?.lists ? ` [List: ${match.lists}]` : ''}`;
+        } else if (cleanName && existingNames.has(cleanName)) {
+          const match = nameMatchMap.get(cleanName);
+          matchedReason = `Business name "${bName}" already exists in CRM${match?.lists ? ` [List: ${match.lists}]` : ''}`;
+        }
+
+        const duplicateMetadata = {
+          source: 'gmb_scraper',
+          is_duplicate: true,
+          duplicate_reason: matchedReason,
+          google_profile: {
+            placeName: bName,
+            rating: item.rating || 4.8,
+            reviewsCount: item.reviewsCount || 0,
+            formattedAddress: item.address || '',
+            category: item.category || 'Local Business',
+            website: item.website || undefined,
+            phone: item.phone || undefined,
+            googleMapsUrl: item.googleMapsUrl || undefined,
+          },
+          discovered_socials: item.discoveredSocials || {},
+        };
+
+        const location = [item.city, item.state, item.country].filter(Boolean).join(', ') || item.address;
+
+        // Route duplicate lead directly to Duplicate Category (status = 'duplicate')
+        try {
+          await query(
+            `INSERT INTO leads (
+              business_name, category, phone, email, website, location, country,
+              whatsapp, instagram, facebook, linkedin,
+              status, consent_status, batch_id, notes, metadata, discovered_emails, discovered_socials, last_enriched_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7,
+              $8, $9, $10, $11,
+              'duplicate', 'none', $12, $13, $14, $15, $16, NOW()
+            )`,
+            [
+              bName,
+              item.category || 'Local Business',
+              phone || null,
+              email || null,
+              item.website || null,
+              location,
+              item.country || 'USA',
+              phone || null,
+              item.discoveredSocials?.instagram || null,
+              item.discoveredSocials?.facebook || null,
+              item.discoveredSocials?.linkedin || null,
+              batchId,
+              `Duplicate Lead: ${matchedReason}`,
+              JSON.stringify(duplicateMetadata),
+              email ? JSON.stringify([email]) : JSON.stringify([]),
+              JSON.stringify(item.discoveredSocials || {}),
+            ]
+          );
+        } catch (dupErr) {
+          console.warn('[GmbScraperService] Failed to insert duplicate record:', dupErr);
+        }
         continue;
       }
 

@@ -49,7 +49,7 @@ export interface Lead {
   daysRemaining?: number;
   notes?: string;
   primaryContactName?: string;
-  status?: 'active' | 'inactive' | 'paused' | 'churned' | 'manual_review';
+  status?: 'active' | 'inactive' | 'paused' | 'churned' | 'manual_review' | 'duplicate';
   manualReviewReason?: string;
   manualReviewAt?: string;
   lists?: Array<{ id: string; name: string }>;
@@ -136,7 +136,7 @@ export interface CustomList {
 }
 
 
-export type CrmSubFilter = 'all' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'trash';
+export type CrmSubFilter = 'all' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'duplicates' | 'trash';
 
 export interface ConversationMessage {
   id: string;
@@ -638,4 +638,37 @@ export interface GmbImportResult {
   batchId?: string;
   batchName?: string;
   leads: Lead[] | Record<string, unknown>[];
+}
+
+export interface MillionVerifierCreditsResponse {
+  success: boolean;
+  apiKeyConfigured: boolean;
+  maskedKey: string;
+  credits: number;
+  bulk_credits: number;
+  renewing_credits: number;
+  plan: number;
+  error?: string;
+  isWorking: boolean;
+}
+
+export interface EmailVerificationTestResponse {
+  success: boolean;
+  email: string;
+  unified: {
+    isValid: boolean;
+    email: string;
+    normalizedEmail: string;
+    reason?: string;
+    status: string;
+  };
+  millionVerifier: {
+    email: string;
+    result: string;
+    resultcode: number;
+    subresult?: string;
+    credits?: number;
+    error?: string;
+    livemode?: boolean;
+  };
 }

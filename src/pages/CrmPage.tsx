@@ -39,6 +39,7 @@ import {
   ExternalLink,
   Compass,
   MailX,
+  Copy,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -67,7 +68,7 @@ interface Props {
   onOpenGlobalMessages?: () => void;
 }
 
-type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'trash';
+type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'duplicates' | 'trash';
 type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'instagram' | 'linkedin';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
@@ -114,7 +115,8 @@ export function CrmPage({
         subFilter === 'lead_not_added' ||
         subFilter === 'client' ||
         subFilter === 'manual_review' ||
-        subFilter === 'invalid_list'
+        subFilter === 'invalid_list' ||
+        subFilter === 'duplicates'
       ) {
         setCrmViewMode('table');
       }
@@ -426,12 +428,18 @@ export function CrmPage({
   );
   const invalidLeadsCount = invalidLeads.length;
 
+  const duplicateLeads = useMemo(
+    () => store.leads.filter((l) => !l.deletedAt && l.status === 'duplicate'),
+    [store.leads]
+  );
+  const duplicateLeadsCount = duplicateLeads.length;
+
   const leadEntities = useMemo(
-    () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'lead' && l.status !== 'manual_review'),
+    () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'lead' && l.status !== 'manual_review' && l.status !== 'duplicate'),
     [store.leads]
   );
   const clientEntities = useMemo(
-    () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'client' && l.status !== 'manual_review'),
+    () => store.leads.filter((l) => !l.deletedAt && l.entityType === 'client' && l.status !== 'manual_review' && l.status !== 'duplicate'),
     [store.leads]
   );
   const addedLeadsCount = useMemo(
@@ -442,6 +450,25 @@ export function CrmPage({
     () => leadEntities.filter((l) => !l.lists || l.lists.length === 0).length,
     [leadEntities]
   );
+
+  const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
+
+  const handleDeleteAllDuplicates = useCallback(async () => {
+    if (isDeletingDuplicates) return;
+    if (!window.confirm(`Are you sure you want to delete all ${duplicateLeadsCount} duplicate leads? This permanently removes duplicate records.`)) {
+      return;
+    }
+    setIsDeletingDuplicates(true);
+    try {
+      const res = await store.deleteDuplicateLeads();
+      setBulkActionSuccess(`Successfully deleted ${res.count || duplicateLeadsCount} duplicate lead(s).`);
+    } catch (err: any) {
+      console.error('Delete duplicates failed:', err);
+      alert(err.message || 'Failed to delete duplicate leads');
+    } finally {
+      setIsDeletingDuplicates(false);
+    }
+  }, [isDeletingDuplicates, duplicateLeadsCount, store]);
 
   const inboundContactCount = useMemo(() => {
     const replyEntityIds = new Set(
@@ -805,11 +832,50 @@ export function CrmPage({
       });
     }
 
+    if (entityFilter === 'duplicates') {
+      return store.leads.filter((l) => {
+        if (l.deletedAt) return false;
+        if (l.status !== 'duplicate') return false;
+
+        if (countryFilter !== 'all') {
+          const leadCountry = (l.country || '').trim() || 'Other';
+          if (countryFilter === '(Not identified)') {
+            if (leadCountry !== '(Not identified)' && !(l.location && l.location.toLowerCase().includes('not identified'))) {
+              return false;
+            }
+          } else if (leadCountry.toLowerCase() !== countryFilter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (cityFilter !== 'all') {
+          const leadLoc = (l.location || '').toLowerCase();
+          if (!leadLoc.includes(cityFilter.toLowerCase())) return false;
+        }
+        if (channelFilter !== 'all' && !matchesLeadChannel(l, channelFilter, channelSubFilter)) {
+          return false;
+        }
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          if (
+            !l.businessName.toLowerCase().includes(q) &&
+            !l.category.toLowerCase().includes(q) &&
+            !l.email.toLowerCase().includes(q) &&
+            !l.phone.toLowerCase().includes(q) &&
+            !(l.location && l.location.toLowerCase().includes(q)) &&
+            !(l.country && l.country.toLowerCase().includes(q)) &&
+            !(l.notes && l.notes.toLowerCase().includes(q))
+          )
+            return false;
+        }
+        return true;
+      });
+    }
+
     return store.leads.filter((l) => {
       // Exclude soft-deleted leads from active CRM views
       if (l.deletedAt) return false;
-      // Exclude contacts quarantined in manual review from regular CRM views
-      if (l.status === 'manual_review') return false;
+      // Exclude contacts quarantined in manual review or duplicate category from regular CRM views
+      if (l.status === 'manual_review' || l.status === 'duplicate') return false;
 
       if (entityFilter === 'lead_added') {
         if (l.entityType !== 'lead') return false;
@@ -1986,6 +2052,11 @@ export function CrmPage({
               icon: MailX,
             },
             {
+              key: 'duplicates',
+              label: `Duplicates (${duplicateLeadsCount})`,
+              icon: Copy,
+            },
+            {
               key: 'trash',
               label: `Trash (${store.trashLeads.length})`,
               icon: Trash2,
@@ -2851,6 +2922,66 @@ export function CrmPage({
         </div>
       )}
 
+      {/* Dedicated Duplicate Leads Category Banner */}
+      {entityFilter === 'duplicates' && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold shrink-0 shadow-md shadow-amber-500/20">
+              <Copy size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-ink-900">
+                  Duplicate Leads Category ({filtered.length} duplicate leads)
+                </h3>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold">
+                  CRM Deduplication Shield
+                </span>
+              </div>
+              <p className="text-xs text-ink-500 mt-0.5">
+                These scraped contacts already exist in your CRM across other lists. You can delete all duplicate leads in bulk or restore them.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {filtered.length > 0 && (
+              <>
+                <button
+                  onClick={handleDeleteAllDuplicates}
+                  disabled={isDeletingDuplicates}
+                  className="btn-primary bg-rose-600 hover:bg-rose-700 flex items-center gap-1.5 text-xs py-2 px-3.5 shadow-sm font-bold text-white transition"
+                  title="Permanently remove all duplicate leads"
+                >
+                  <Trash2 size={14} />
+                  <span>{isDeletingDuplicates ? 'Deleting...' : `Delete All Duplicates (${filtered.length})`}</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    const ids = filtered.map((l) => l.id);
+                    await store.bulkUpdateLeadStatus(ids, 'active');
+                    setBulkActionSuccess(`Restored ${ids.length} duplicate contacts to active leads.`);
+                  }}
+                  className="btn-secondary text-emerald-700 hover:bg-emerald-50 border-emerald-300 flex items-center gap-1.5 text-xs py-2 px-3.5 shadow-sm font-semibold transition"
+                  title="Mark all as regular active leads"
+                >
+                  <CheckCircle2 size={14} className="text-emerald-600" />
+                  <span>Keep All as Active</span>
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                setEntityFilter('all');
+                setSelectedIds(new Set());
+              }}
+              className="btn-secondary text-xs py-2 px-3"
+            >
+              ← Back to Active CRM
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Dedicated Trash Retention Banner */}
       {entityFilter === 'trash' && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
@@ -2994,6 +3125,23 @@ export function CrmPage({
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Deleted Date</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900 text-right">Actions</th>
                 </tr>
+              ) : entityFilter === 'duplicates' ? (
+                <tr className="border-b border-amber-200 bg-amber-50/70 text-left">
+                  <th className="w-10 px-3 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleToggleSelectAll}
+                      aria-label="Select all"
+                      className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Duplicate Contact / Business</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Email & Phone</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Duplicate Match Details</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900">Scraped Date</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-amber-900 text-right">Actions</th>
+                </tr>
               ) : entityFilter === 'manual_review' || entityFilter === 'invalid_list' ? (
                 <tr className="border-b border-rose-200 bg-rose-50/70 text-left">
                   <th className="w-10 px-3 py-3 text-center">
@@ -3040,7 +3188,7 @@ export function CrmPage({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={entityFilter === 'trash' ? 7 : (entityFilter === 'manual_review' || entityFilter === 'invalid_list') ? 6 : 10}
+                    colSpan={entityFilter === 'trash' ? 7 : (entityFilter === 'manual_review' || entityFilter === 'invalid_list' || entityFilter === 'duplicates') ? 6 : 10}
                     className="px-4 py-12 text-center text-ink-300"
                   >
                     {entityFilter === 'trash'
@@ -3049,6 +3197,8 @@ export function CrmPage({
                       ? 'Invalid List is empty. All recipient emails are verified and healthy!'
                       : entityFilter === 'manual_review'
                       ? 'No records in manual checking. All emails and messages are healthy!'
+                      : entityFilter === 'duplicates'
+                      ? 'No duplicate leads found. All CRM records are clean and unique!'
                       : 'No records match your filters.'}
                   </td>
                 </tr>
@@ -3124,6 +3274,85 @@ export function CrmPage({
                           title="Permanently Purge Record"
                         >
                           <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : entityFilter === 'duplicates' ? (
+                filtered.map((lead) => (
+                  <tr
+                    key={lead.id}
+                    onClick={() => handleOpenLead(lead)}
+                    className="cursor-pointer transition-colors hover:bg-amber-50/60"
+                  >
+                    <td
+                      className="w-10 px-3 py-3 text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => handleToggleSelectLead(lead.id)}
+                        aria-label={`Select ${lead.businessName}`}
+                        className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div>
+                        <p className="font-semibold text-ink-900 flex items-center gap-1.5">
+                          <span>{lead.businessName}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-extrabold uppercase bg-amber-100 text-amber-800 border border-amber-200">
+                            Duplicate
+                          </span>
+                        </p>
+                        <p className="text-xs text-ink-400">{lead.category || 'General'} • {lead.location || lead.country || 'No location'}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs">
+                        <div className="font-medium text-ink-800">{lead.email || '—'}</div>
+                        {lead.phone && <div className="text-ink-400">{lead.phone}</div>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 max-w-md truncate"
+                        title={lead.notes || 'Already exists in CRM'}
+                      >
+                        <Copy size={12} className="shrink-0 text-amber-600" />
+                        <span className="truncate">{lead.notes || 'Already exists in CRM'}</span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-ink-500 whitespace-nowrap">
+                      {new Date(lead.createdAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </td>
+                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={async () => {
+                            await store.updateLeadStatus(lead.id, 'active');
+                            setBulkActionSuccess(`Restored "${lead.businessName}" to active leads.`);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-sm transition"
+                          title="Restore contact back to active lead status"
+                        >
+                          <Check size={12} />
+                          <span>Keep Active</span>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            await store.deleteDuplicateLeads([lead.id]);
+                            setBulkActionSuccess(`Deleted duplicate lead "${lead.businessName}".`);
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                          title="Permanently delete duplicate"
+                        >
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     </td>

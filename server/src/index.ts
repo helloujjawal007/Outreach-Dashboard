@@ -42,6 +42,19 @@ process.on('uncaughtException', (err) => {
   console.error('[Server UncaughtException Handled]', err?.message || err);
 });
 
+// Inside startServer() in server/src/index.ts:
+
+// Example A: Simple Interval (e.g., Every 10 minutes)
+setInterval(async () => {
+  try {
+    console.log('[Custom Cron] Running 10-minute task...');
+    // Add your code or database queries here
+  } catch (err) {
+    console.error('[Custom Cron Error]', err);
+  }
+}, 13 * 60 * 1000);
+
+
 process.on('unhandledRejection', (reason) => {
   console.error('[Server UnhandledRejection Handled]', reason);
 });
@@ -243,17 +256,6 @@ async function startServer() {
   } catch (err) {
     console.error('[Autopilot Warning] Failed to initialize Extreme Automation & Cadence:', err);
   }
-
-  // Custom 10-Minute Server Cron & Database Heartbeat
-  setInterval(async () => {
-    try {
-      console.log(`[Custom Cron] Running 10-minute scheduled task at: ${new Date().toISOString()}`);
-      // Keeps database connection pool healthy and prevents idle timeouts
-      await query('SELECT 1').catch(() => null);
-    } catch (err) {
-      console.error('[Custom Cron Error]', err);
-    }
-  }, 10 * 60 * 1000);
 
   const server = app.listen(env.PORT, () => {
     console.log(`🚀 Express Backend running on http://localhost:${env.PORT}`);

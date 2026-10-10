@@ -21,6 +21,7 @@ import { linkedinRouter } from './routes/linkedin';
 import { autopilotRouter } from './routes/autopilot';
 import { scraperRouter } from './routes/scraper';
 import { emailVerifierRouter } from './routes/emailVerifier';
+import { auditRouter } from './routes/audit';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { autonomousDripEngine } from './services/autonomousDripEngine';
@@ -166,6 +167,7 @@ app.use('/api/linkedin', linkedinRouter);
 app.use('/api/autopilot', autopilotRouter);
 app.use('/api/scraper', scraperRouter);
 app.use('/api/email-verifier', emailVerifierRouter);
+app.use('/api/audit', auditRouter);
 
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {

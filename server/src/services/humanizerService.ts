@@ -64,14 +64,10 @@ export class HumanizerService {
   }
 
   /**
-   * Signature block. Optional env vars: SENDER_NAME, SENDER_PHONE, SENDER_WEBSITE
+   * Signature block. Always strictly "Online Digital Solution"
    */
   private buildSignoff(): string {
-    const name = process.env.SENDER_NAME?.trim();
-    const contact = [process.env.SENDER_PHONE?.trim(), process.env.SENDER_WEBSITE?.trim()]
-      .filter(Boolean)
-      .join(' | ');
-    return ['Kind regards,', name, this.agencyName, contact].filter(Boolean).join('\n');
+    return `Best regards,\n${this.agencyName}`;
   }
 
   /**

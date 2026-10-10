@@ -2252,6 +2252,8 @@ export function ChannelOutreachHub({
                     </span>
                     {[
                       { label: '🔍 Free Local SEO Audit', text: 'free audit of website, checking local ranking, quick chat' },
+                      { label: '🌐 No Website -> Web Dev + SEO', text: 'noticed no active website, losing 70% of local customers, offering website development + local SEO + monthly maintenance from Online Digital Solution' },
+                      { label: '⚡ Bolt.host Audit Issues', text: 'audited site via https://bolt-project-access-lb76.bolt.host/, found speed, schema and meta issues to fix, signature Online Digital Solution' },
                       { label: '📍 Google Maps Gap', text: 'noticed Google Business Profile ranking gap in local map pack, 3 min review' },
                       { label: '⚡ Mobile & Speed Check', text: 'checked mobile page speed, quick recommendations to fix ranking loss' },
                       { label: '💬 Inquiry Follow-up', text: 'following up on local search visibility, checking if you had time to review' },

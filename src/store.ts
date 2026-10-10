@@ -421,6 +421,28 @@ export function useStore() {
     }
   }, []);
 
+  const addQueueItem = useCallback(
+    async (payload: {
+      leadId?: string;
+      clientId?: string;
+      campaignId?: string;
+      channel: Channel;
+      messagePreview: string;
+      leadName?: string;
+      campaignName?: string;
+    }) => {
+      try {
+        await api.addToQueue(payload);
+        const freshQueue = await api.getQueue();
+        setQueue(freshQueue);
+      } catch (err) {
+        console.error('[Store] addQueueItem error:', err);
+        throw err;
+      }
+    },
+    []
+  );
+
   // Fetch messages dynamically for a lead or client
   const fetchConversationsForEntity = useCallback(async (id: string, isClient: boolean = false) => {
     try {
@@ -1351,6 +1373,7 @@ export function useStore() {
       deleteCampaign,
       sendQueueItem,
       removeQueueItem,
+      addQueueItem,
       fetchConversationsForEntity,
       conversationsByLead,
       syncEmailReplies,
@@ -1449,6 +1472,7 @@ export function useStore() {
       deleteCampaign,
       sendQueueItem,
       removeQueueItem,
+      addQueueItem,
       fetchConversationsForEntity,
       conversationsByLead,
       syncEmailReplies,

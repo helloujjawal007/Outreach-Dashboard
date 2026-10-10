@@ -39,6 +39,8 @@ import type {
   GmbImportResult,
   MillionVerifierCreditsResponse,
   EmailVerificationTestResponse,
+  ClientAuditReport,
+  AuditPitchResult,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -1024,6 +1026,20 @@ export const api = {
     await request(`/queue/${id}/discard`, { method: 'POST' });
   },
 
+  async addToQueue(payload: {
+    leadId?: string;
+    clientId?: string;
+    campaignId?: string;
+    channel: Channel;
+    messagePreview: string;
+    campaignName?: string;
+  }): Promise<{ success: boolean; item?: any }> {
+    return request('/queue', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Health
   async getHealth(): Promise<HealthResponse> {
     return request<HealthResponse>('/health');
@@ -1765,6 +1781,28 @@ export const api = {
     return request<EmailVerificationTestResponse>('/email-verifier/verify', {
       method: 'POST',
       body: JSON.stringify({ email }),
+    });
+  },
+
+  // Website Audit & Client Intelligence (https://bolt-project-access-lb76.bolt.host/)
+  async runAudit(options: { url?: string; leadId?: string }): Promise<{ success: boolean; report: ClientAuditReport }> {
+    return request<{ success: boolean; report: ClientAuditReport }>('/audit/run', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+  },
+
+  async generateAuditPitch(options: {
+    leadId?: string;
+    customWebsite?: string;
+    businessName?: string;
+    category?: string;
+    city?: string;
+    contactName?: string;
+  }): Promise<{ success: boolean; pitch: AuditPitchResult }> {
+    return request<{ success: boolean; pitch: AuditPitchResult }>('/audit/pitch', {
+      method: 'POST',
+      body: JSON.stringify(options),
     });
   },
 };

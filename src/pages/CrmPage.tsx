@@ -54,6 +54,7 @@ import { channelLabels, consentLabels } from '@/types';
 import { api, cleanSiteUrl } from '@/services/api';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
+import { ClientAuditModal } from '@/components/ClientAuditModal';
 
 interface Props {
   store: Store;
@@ -315,6 +316,7 @@ export function CrmPage({
   const [scraperStatus, setScraperStatus] = useState<ScraperProgressStatus | null>(null);
   const [isScrapingSingle, setIsScrapingSingle] = useState(false);
   const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState(false);
+  const [auditModalLead, setAuditModalLead] = useState<Lead | null>(null);
 
   // Polling for gradual location scrape status
   useEffect(() => {
@@ -3632,6 +3634,14 @@ export function CrmPage({
                       </td>
                       <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setAuditModalLead(lead)}
+                            className="p-1.5 rounded-lg transition text-xs font-semibold flex items-center gap-1 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-2xs"
+                            title={lead.website ? "Audit Website & Pitch via bolt.host (Online Digital Solution)" : "Pitch Website Development & SEO (Online Digital Solution)"}
+                          >
+                            <Sparkles size={12} className="text-indigo-600" />
+                            <span className="text-[10px]">{lead.website ? 'Audit & Pitch' : 'Web Pitch'}</span>
+                          </button>
                           {lead.entityType === 'client' && (
                             <button
                               onClick={() => handleUnmarkClient(lead)}
@@ -3757,6 +3767,14 @@ export function CrmPage({
                   <div className="flex items-center gap-2">
                     <button onClick={handleConvert} disabled={isConverting} className="btn-primary">
                       <UserCheck size={16} /> {isConverting ? 'Converting...' : 'Convert to Client'}
+                    </button>
+                    <button
+                      onClick={() => setAuditModalLead(selectedLead)}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 shadow-2xs transition"
+                      title="Run SEO Audit & Generate Pitch (Online Digital Solution)"
+                    >
+                      <Sparkles size={14} className="text-indigo-600" />
+                      <span>{selectedLead.website ? 'Audit & Pitch' : 'Web Dev Pitch'}</span>
                     </button>
                     <button
                       onClick={() => handleToggleLeadStatus(selectedLead)}
@@ -5558,6 +5576,14 @@ export function CrmPage({
       <AutopilotControlModal
         isOpen={isAutopilotModalOpen}
         onClose={() => setIsAutopilotModalOpen(false)}
+        store={store}
+      />
+
+      {/* Client Intelligence & Website Audit Modal */}
+      <ClientAuditModal
+        open={!!auditModalLead}
+        onClose={() => setAuditModalLead(null)}
+        lead={auditModalLead}
         store={store}
       />
     </div>

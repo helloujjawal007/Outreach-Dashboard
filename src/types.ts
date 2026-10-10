@@ -672,3 +672,40 @@ export interface EmailVerificationTestResponse {
     livemode?: boolean;
   };
 }
+
+export interface ClientAuditReport {
+  targetUrl: string;
+  domain: string;
+  hasWebsite: boolean;
+  auditToolUrl: string;
+  overallScore: number;
+  grade: 'Good' | 'Needs Work' | 'Poor';
+  responseTimeMs: number;
+  mobileFriendly: boolean;
+  checks: Array<{
+    id: string;
+    label: string;
+    category: 'on-page' | 'technical' | 'off-page' | 'mobile';
+    status: 'pass' | 'warn' | 'fail' | 'info';
+    detail: string;
+  }>;
+  criticalIssues: string[];
+  recommendations: Array<{
+    priority: 'high' | 'medium' | 'low';
+    title: string;
+    detail: string;
+  }>;
+  summary: string;
+  auditedAt: string;
+}
+
+export interface AuditPitchResult {
+  hasWebsite: boolean;
+  targetUrl?: string;
+  businessName: string;
+  auditReport?: ClientAuditReport;
+  emailSubject: string;
+  emailBody: string;
+  whatsappMessage: string;
+  recommendedServices: string[];
+}

@@ -38,6 +38,24 @@ queueRouter.get('/', async (_req: Request, res: Response) => {
   }
 });
 
+// POST /api/queue - Enqueue a draft message for approval
+queueRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const { leadId, clientId, campaignId, channel, messagePreview } = req.body;
+    const result = await query(
+      `INSERT INTO send_queue (lead_id, client_id, campaign_id, channel, message_preview, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'draft', NOW(), NOW())
+       RETURNING *`,
+      [leadId || null, clientId || null, campaignId || null, channel || 'email', messagePreview || '']
+    );
+
+    res.json({ success: true, item: result.rows[0] });
+  } catch (error) {
+    console.error('[queueRouter.post]', error);
+    res.status(500).json({ success: false, error: 'Failed to enqueue item' });
+  }
+});
+
 // POST /api/queue/:id/send - Approve and mark as sent
 queueRouter.post('/:id/send', async (req: Request, res: Response) => {
   try {

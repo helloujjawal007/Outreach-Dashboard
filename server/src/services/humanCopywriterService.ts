@@ -5,6 +5,9 @@ export interface LeadContext {
   primaryContactName?: string;
   city?: string;
   country?: string;
+  website?: string | null;
+  auditScore?: number;
+  auditIssues?: string[];
 }
 
 export interface HumanCopyResult {
@@ -19,6 +22,7 @@ type Stage = HumanCopyResult['stage'];
 
 export class HumanCopywriterService {
   private readonly agencyName = 'Online Digital Solution';
+  public readonly auditToolUrl = 'https://bolt-project-access-lb76.bolt.host/';
 
   /**
    * Cleans corporate identifiers for natural conversational reading
@@ -66,14 +70,10 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Signature block. Optional env vars: SENDER_NAME, SENDER_PHONE, SENDER_WEBSITE
+   * Signature block. Always strictly "Online Digital Solution"
    */
   private buildSignoff(): string {
-    const name = process.env.SENDER_NAME?.trim();
-    const contact = [process.env.SENDER_PHONE?.trim(), process.env.SENDER_WEBSITE?.trim()]
-      .filter(Boolean)
-      .join(' | ');
-    return ['Kind regards,', name, this.agencyName, contact].filter(Boolean).join('\n');
+    return `Best regards,\n${this.agencyName}`;
   }
 
   /**
@@ -100,8 +100,96 @@ export class HumanCopywriterService {
     const business = this.cleanBusinessName(lead.businessName || 'your business');
     const salutation = this.buildSalutation(lead.businessName, lead.primaryContactName);
     const categoryPhrase = lead.category ? `${lead.category.toLowerCase()} businesses` : 'local businesses';
+    const cityPhrase = lead.city ? ` in ${lead.city}` : '';
 
-    // 1. Initial outreach (Day 0)
+    const rawWeb = (lead.website || '').trim();
+    const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawWeb);
+    const hasWebsite = Boolean(rawWeb && !isMapsUrl && rawWeb.toLowerCase() !== 'n/a' && rawWeb.toLowerCase() !== 'none');
+
+    // CASE A: LEAD HAS NO ACTIVE WEBSITE -> PITCH WEBSITE DEVELOPMENT + SEO + MAINTENANCE
+    if (!hasWebsite) {
+      if (stage === 'initial') {
+        return {
+          subject: this.pick([
+            `Modern website & local Google growth for ${business}`,
+            `Improving ${business}'s online presence (Website & SEO)`,
+            `A question regarding ${business}'s website presence`,
+          ]),
+          body: this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I'm reaching out from ${this.agencyName}. While reviewing local ${categoryPhrase}${cityPhrase}, I noticed that ${business} does not currently have an active mobile website linked to your Google Business Profile.`,
+            ``,
+            `In today's market, over 70% of local customers look for a website before calling or visiting. Without a website:`,
+            `• Potential client enquiries go directly to competitors who have modern, mobile-friendly sites.`,
+            `• Google Maps ranks businesses higher when paired with an active, structured website.`,
+            `• You miss out on automated customer booking and after-hours inquiry capture.`,
+            ``,
+            `At ${this.agencyName}, we handle everything for you:`,
+            `1. Modern Mobile Website Development: Fast, clean, and built to convert local visitors.`,
+            `2. Google Business Profile & Local SEO: Full optimization so local searchers find you first.`,
+            `3. Monthly Care & Maintenance: Hosting, security updates, and content changes handled for you.`,
+            ``,
+            `Would you be open to a quick 5-10 minute call or WhatsApp chat this week? I'd be happy to share 2-3 design concepts for ${business} with zero obligation.`,
+          ]),
+          stage: 'initial',
+          stageLabel: '1st Email (No Website Pitch)',
+          delayFromStartDays: 0,
+        };
+      }
+
+      if (stage === 'followup_1') {
+        return {
+          subject: `Following up: Website & local visibility for ${business}`,
+          body: this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `I'm following up on my previous note in case it was missed. As mentioned, ${business} could capture significantly more local customer calls with an active, modern mobile website.`,
+            ``,
+            `We build complete websites with local Google SEO and monthly maintenance included so you don't have to manage any technical headaches.`,
+            ``,
+            `Would you like me to send over 2-3 sample layout ideas for your review?`,
+          ]),
+          stage: 'followup_1',
+          stageLabel: '2nd Email (Day 3 Follow-up)',
+          delayFromStartDays: 3,
+        };
+      }
+
+      if (stage === 'followup_2') {
+        return {
+          subject: `Local customer enquiries for ${business}`,
+          body: this.compose([
+            `Hello ${salutation},`,
+            ``,
+            `Many local ${categoryPhrase} miss out on high-value customers simply because they lack an online presence where clients can view services, reviews, and submit enquiries after hours.`,
+            ``,
+            `If modernizing ${business}'s web presence and getting found on Google is a priority this quarter, I'd be glad to walk you through a simple, phased approach.`,
+            ``,
+            `Would later this week suit you for a brief chat, or should I follow up next month?`,
+          ]),
+          stage: 'followup_2',
+          stageLabel: '3rd Email (Day 6 Follow-up)',
+          delayFromStartDays: 6,
+        };
+      }
+
+      return {
+        subject: `Closing the loop: ${business}`,
+        body: this.compose([
+          `Hello ${salutation},`,
+          ``,
+          `I haven't heard back, so I will pause my outreach here so as not to crowd your inbox. If you ever decide to launch a modern website, rank higher on Google Maps, or automate inquiry handling for ${business}, feel free to reach out anytime.`,
+          ``,
+          `Wishing you and your team continued success.`,
+        ]),
+        stage: 'followup_3',
+        stageLabel: '4th Email (Day 10 Final Note)',
+        delayFromStartDays: 10,
+      };
+    }
+
+    // CASE B: LEAD HAS A WEBSITE -> PITCH AUDIT & TECHNICAL FIXES
     if (stage === 'initial') {
       const subject = this.pick([
         `Improving ${business}'s visibility on Google`,
@@ -116,10 +204,10 @@ export class HumanCopywriterService {
           `I'm reaching out from ${this.agencyName}. We help ${categoryPhrase} attract more local customers through:`,
           ``,
           `• Google Business Profile optimization, to improve visibility on Google Maps`,
-          `• Website development and SEO, focused on turning visitors into enquiries`,
-          `• Automated enquiry follow-up, so new leads receive a prompt response`,
+          `• Website development, mobile speed, and SEO, focused on turning visitors into enquiries`,
+          `• Automated enquiry follow-up, so new leads receive an immediate response`,
           ``,
-          `I reviewed ${business}'s online presence and noticed a few opportunities worth discussing. I'd be glad to share a short audit, free of charge and with no obligation.`,
+          `I reviewed ${business}'s online presence using our SEO & deliverability tool (${this.auditToolUrl}) and noticed a few practical opportunities to improve search positioning and speed. I'd be glad to share a short audit, free of charge and with no obligation.`,
           ``,
           `Would you be open to a brief 10-minute call this week, or would you prefer I send the audit by email?`,
         ]),
@@ -128,7 +216,7 @@ export class HumanCopywriterService {
           ``,
           `I'm with ${this.agencyName}, where we work with ${categoryPhrase} on local search visibility, website performance, and enquiry handling.`,
           ``,
-          `After looking at ${business}'s online presence, I identified a few practical improvements that could help bring in more enquiries from Google. I've put them into a brief audit that I would be happy to share with you at no cost.`,
+          `After auditing ${business}'s online presence on our SEO dashboard (${this.auditToolUrl}), I identified a few practical improvements that could help bring in more enquiries from Google. I've put them into a brief audit that I would be happy to share with you at no cost.`,
           ``,
           `Would a short call this week suit you, or shall I simply email it across?`,
         ]),

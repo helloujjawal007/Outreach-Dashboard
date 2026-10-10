@@ -220,10 +220,17 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 async function startServer() {
   console.log('--- Initializing Online Digital Solution Omni-Channel Engine ---');
 
-  // Test PostgreSQL Connection
+  // Test PostgreSQL Connection & Auto-Run Schema Migrations
   const dbConnected = await testConnection();
-  if (!dbConnected) {
-    console.warn('[PostgreSQL Warning] Database connection failed. Verify PostgreSQL is running.');
+  if (dbConnected) {
+    try {
+      const { runMigrations } = await import('./db/migrate');
+      await runMigrations();
+    } catch (migErr) {
+      console.error('[Startup Migration Error]', migErr);
+    }
+  } else {
+    console.warn('[PostgreSQL Warning] Database connection failed. Verify PostgreSQL is running and DATABASE_URL is correct.');
   }
 
   // Check Local Ollama Daemon

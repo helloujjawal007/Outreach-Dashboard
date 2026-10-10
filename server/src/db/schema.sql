@@ -12,10 +12,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 0. UPLOAD BATCHES TABLE
+CREATE TABLE IF NOT EXISTS upload_batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_name VARCHAR(255) NOT NULL,
+    source VARCHAR(50) DEFAULT 'csv',
+    total_rows INT DEFAULT 0,
+    imported_count INT DEFAULT 0,
+    duplicate_count INT DEFAULT 0,
+    incomplete_count INT DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '28 days')
+);
+
 -- 1. LEADS TABLE (Cold Outreach Prospects)
 -- Notice: Leads and Clients are strictly separate tables.
 CREATE TABLE IF NOT EXISTS leads (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_id UUID REFERENCES upload_batches(id) ON DELETE SET NULL,
     business_name TEXT NOT NULL,
     category TEXT NOT NULL DEFAULT 'Uncategorized',
     phone TEXT DEFAULT '',
@@ -23,8 +37,16 @@ CREATE TABLE IF NOT EXISTS leads (
     instagram TEXT DEFAULT '',
     facebook TEXT DEFAULT '',
     whatsapp TEXT DEFAULT '',
+    website TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    linkedin TEXT DEFAULT '',
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    outreach_stage VARCHAR(30) DEFAULT 'initial',
     consent_status VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (consent_status IN ('none', 'replied', 'opted_out')),
     last_contacted_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
+    deleted_expires_at TIMESTAMPTZ DEFAULT NULL,
     notes TEXT DEFAULT '',
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -35,6 +57,8 @@ CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(LOWER(email)) WHERE email <>
 CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone) WHERE phone <> '';
 CREATE INDEX IF NOT EXISTS idx_leads_consent ON leads(consent_status);
 CREATE INDEX IF NOT EXISTS idx_leads_category ON leads(category);
+CREATE INDEX IF NOT EXISTS idx_leads_deleted_at ON leads(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_leads_batch_id ON leads(batch_id);
 
 DROP TRIGGER IF EXISTS trg_leads_updated_at ON leads;
 CREATE TRIGGER trg_leads_updated_at
@@ -55,9 +79,15 @@ CREATE TABLE IF NOT EXISTS clients (
     instagram TEXT DEFAULT '',
     facebook TEXT DEFAULT '',
     whatsapp TEXT DEFAULT '',
+    website TEXT DEFAULT '',
+    country TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    linkedin TEXT DEFAULT '',
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'churned')),
     contract_value NUMERIC(12, 2) DEFAULT 0,
     onboarded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ DEFAULT NULL,
+    deleted_expires_at TIMESTAMPTZ DEFAULT NULL,
     notes TEXT DEFAULT '',
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

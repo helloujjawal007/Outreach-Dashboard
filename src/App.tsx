@@ -16,7 +16,7 @@ import { getCountryFlag } from '@/utils/countryFlag';
 import { MessageSquare, RefreshCw, Zap } from 'lucide-react';
 
 function App() {
-  const [page, setPage] = useState<PageId>('import');
+  const [page, setPage] = useState<PageId>('copilot');
   const [crmSubFilter, setCrmSubFilter] = useState<CrmSubFilter>('all');
   const [crmCountryFilter, setCrmCountryFilter] = useState<string>('all');
   const [crmChannelFilter, setCrmChannelFilter] = useState<string>('all');
@@ -87,7 +87,6 @@ function App() {
     ).length;
     const email = active.filter((l) => Boolean(l.email && l.email.includes('@'))).length;
     const instagram = active.filter((l) => Boolean(l.instagram && l.instagram.trim())).length;
-    const facebook = active.filter((l) => Boolean(l.facebook && l.facebook.trim())).length;
     const linkedin = active.filter((l) => Boolean(l.linkedin && l.linkedin.trim())).length;
 
     return [
@@ -96,7 +95,6 @@ function App() {
       { id: 'website_form', label: 'Website Form', icon: '🌐', count: websiteForm },
       { id: 'email', label: 'Email', icon: '✉️', count: email },
       { id: 'instagram', label: 'Instagram', icon: '📸', count: instagram },
-      { id: 'facebook', label: 'Facebook', icon: '👥', count: facebook },
       { id: 'linkedin', label: 'LinkedIn', icon: '💼', count: linkedin },
     ].filter((c) => c.count > 0);
   }, [store.leads]);

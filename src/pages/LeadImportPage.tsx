@@ -171,7 +171,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
         addedToWhatsAppList: number;
         addedToLinkedInList: number;
         addedToInstagramList: number;
-        addedToFacebookList: number;
         addedToCustomList: number;
       };
     };
@@ -711,20 +710,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                     />
                   </div>
 
-                  <div>
-                    <label className="label flex items-center gap-1.5" htmlFor="facebook">
-                      <Globe size={13} className="text-blue-500" /> Facebook Page or Profile
-                    </label>
-                    <input
-                      id="facebook"
-                      type="text"
-                      value={singleLead.facebook}
-                      onChange={(e) => setSingleLead({ ...singleLead, facebook: e.target.value })}
-                      placeholder="FacebookPageName or profile URL"
-                      className="input"
-                    />
-                  </div>
-
                   <div className="sm:col-span-2">
                     <label className="label flex items-center gap-1.5" htmlFor="linkedin">
                       <Linkedin size={13} className="text-sky-600" /> LinkedIn Profile / Company URL
@@ -1113,12 +1098,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-800 font-semibold border border-purple-200">
                         <Instagram size={12} className="text-purple-600" />
                         <span>Instagram Leads List ({importResult.automatedIntake.channelAssignments.addedToInstagramList})</span>
-                      </span>
-                    )}
-                    {importResult.automatedIntake.channelAssignments.addedToFacebookList > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 font-semibold border border-indigo-200">
-                        <Globe size={12} className="text-indigo-600" />
-                        <span>Facebook Leads List ({importResult.automatedIntake.channelAssignments.addedToFacebookList})</span>
                       </span>
                     )}
                   </div>

@@ -307,6 +307,98 @@ export class WhatsAppValidator {
   }
 
   /**
+   * Validates a phone number using WAValidator.com API (https://wavalidator.com/api-docs/)
+   * Requires WAVALIDATOR_API_KEY environment variable.
+   */
+  public async verifyWithWaValidator(
+    phoneNumber: string
+  ): Promise<{
+    isValid: boolean;
+    status: 'valid' | 'invalid' | 'limit' | 'not_configured' | 'error';
+    creditsRemaining?: number;
+    rawResponse?: any;
+  }> {
+    const apiKey = process.env.WAVALIDATOR_API_KEY;
+    if (!apiKey) {
+      return { isValid: false, status: 'not_configured' };
+    }
+
+    const clean = this.cleanPhoneDigits(phoneNumber).replace(/^\+/, '');
+    if (!clean || clean.length < 7) {
+      return { isValid: false, status: 'invalid' };
+    }
+
+    try {
+      const response = await fetch('https://wavalidator.com/api/v1/validate/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ phone_number: clean }),
+      });
+
+      if (!response.ok) {
+        console.warn(`[WAValidator] API returned status ${response.status}`);
+        return { isValid: false, status: response.status === 429 ? 'limit' : 'error' };
+      }
+
+      const data = (await response.json()) as { phone_number: string; status: string; credits_remaining?: number };
+      const isValid = data.status === 'valid';
+
+      return {
+        isValid,
+        status: (data.status as any) || (isValid ? 'valid' : 'invalid'),
+        creditsRemaining: data.credits_remaining,
+        rawResponse: data,
+      };
+    } catch (err: any) {
+      console.error('[WAValidator] Verification error:', err.message);
+      return { isValid: false, status: 'error' };
+    }
+  }
+
+  /**
+   * Bulk checks up to 100 phone numbers via WAValidator.com API (https://wavalidator.com/api-docs/)
+   */
+  public async bulkVerifyWithWaValidator(
+    phoneNumbers: string[]
+  ): Promise<Map<string, boolean>> {
+    const resultMap = new Map<string, boolean>();
+    const apiKey = process.env.WAVALIDATOR_API_KEY;
+    if (!apiKey || phoneNumbers.length === 0) return resultMap;
+
+    const cleaned = phoneNumbers
+      .map((p) => this.cleanPhoneDigits(p).replace(/^\+/, ''))
+      .filter((p) => p.length >= 7)
+      .slice(0, 100);
+
+    try {
+      const response = await fetch('https://wavalidator.com/api/v1/bulk-check/', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ numbers: cleaned }),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        if (Array.isArray(data.results)) {
+          for (const item of data.results) {
+            resultMap.set(item.phone_number, item.status === 'valid');
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('[WAValidator] Bulk verification error:', err.message);
+    }
+
+    return resultMap;
+  }
+
+  /**
    * Builds direct WhatsApp Web or Mobile click-to-chat URL with pre-filled message text
    */
   public buildWhatsAppUrl(cleanNumber: string, messageText?: string): string {

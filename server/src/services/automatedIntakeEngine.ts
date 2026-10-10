@@ -68,7 +68,6 @@ export class AutomatedIntakeEngine {
           addedToWhatsAppList: 0,
           addedToLinkedInList: 0,
           addedToInstagramList: 0,
-          addedToFacebookList: 0,
           addedToCustomList: 0,
         },
       };

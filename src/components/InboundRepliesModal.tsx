@@ -46,7 +46,7 @@ interface InboundRepliesModalProps {
   onDeleteLead?: (leadId: string) => Promise<void>;
 }
 
-type ChannelFilter = 'all' | 'whatsapp' | 'email' | 'facebook' | 'instagram' | 'linkedin';
+type ChannelFilter = 'all' | 'whatsapp' | 'email' | 'instagram' | 'linkedin';
 type ViewTab = 'recent' | 'unread' | 'pending' | 'inbound' | 'outbound' | 'unmatched';
 type DateFilter = 'all' | 'today' | '7d' | '30d';
 
@@ -198,7 +198,6 @@ export function InboundRepliesModal({
       all: baseDataset.length,
       whatsapp: baseDataset.filter((m) => m.channel === 'whatsapp').length,
       email: baseDataset.filter((m) => m.channel === 'email').length,
-      facebook: baseDataset.filter((m) => m.channel === 'facebook').length,
       instagram: baseDataset.filter((m) => m.channel === 'instagram').length,
       linkedin: baseDataset.filter((m) => m.channel === 'linkedin').length,
     };
@@ -576,20 +575,6 @@ export function InboundRepliesModal({
             <span>Email</span>
             <span className="rounded-full bg-blue-200/80 px-1.5 py-0.5 text-[10px]">
               {channelCounts.email}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setChannelFilter('facebook')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
-              channelFilter === 'facebook'
-                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
-            }`}
-          >
-            <span>Facebook</span>
-            <span className="rounded-full bg-indigo-200/80 px-1.5 py-0.5 text-[10px]">
-              {channelCounts.facebook}
             </span>
           </button>
 

@@ -6,7 +6,6 @@ export interface ChannelAssignmentSummary {
   addedToWhatsAppList: number;
   addedToLinkedInList: number;
   addedToInstagramList: number;
-  addedToFacebookList: number;
   addedToCustomList: number;
 }
 
@@ -22,18 +21,16 @@ export class ChannelListAutoAssignmentService {
     whatsappListId: string;
     linkedinListId: string;
     instagramListId: string;
-    facebookListId: string;
     invalidListId: string;
   }> {
     const now = Date.now();
     // Cache for 2 minutes to minimize repeated queries
-    if (this.listCache.size >= 6 && now - this.cacheLoadedAt < 120000) {
+    if (this.listCache.size >= 5 && now - this.cacheLoadedAt < 120000) {
       return {
         emailListId: this.listCache.get('Email Leads') || '',
         whatsappListId: this.listCache.get('WhatsApp Leads') || '',
         linkedinListId: this.listCache.get('LinkedIn Leads') || '',
         instagramListId: this.listCache.get('Instagram Leads') || '',
-        facebookListId: this.listCache.get('Facebook Leads') || '',
         invalidListId: this.listCache.get('Invalid List') || '',
       };
     }
@@ -54,10 +51,6 @@ export class ChannelListAutoAssignmentService {
       {
         name: 'Instagram Leads',
         description: 'Auto-populated list of all imported leads with Instagram handles or profiles.',
-      },
-      {
-        name: 'Facebook Leads',
-        description: 'Auto-populated list of all imported leads with Facebook business pages.',
       },
       {
         name: 'Invalid List',
@@ -87,7 +80,6 @@ export class ChannelListAutoAssignmentService {
       whatsappListId: this.listCache.get('WhatsApp Leads') || '',
       linkedinListId: this.listCache.get('LinkedIn Leads') || '',
       instagramListId: this.listCache.get('Instagram Leads') || '',
-      facebookListId: this.listCache.get('Facebook Leads') || '',
       invalidListId: this.listCache.get('Invalid List') || '',
     };
   }
@@ -103,7 +95,6 @@ export class ChannelListAutoAssignmentService {
       whatsapp?: string;
       linkedin?: string;
       instagram?: string;
-      facebook?: string;
     }>,
     customListId?: string
   ): Promise<ChannelAssignmentSummary> {
@@ -113,7 +104,6 @@ export class ChannelListAutoAssignmentService {
         addedToWhatsAppList: 0,
         addedToLinkedInList: 0,
         addedToInstagramList: 0,
-        addedToFacebookList: 0,
         addedToCustomList: 0,
       };
     }
@@ -124,7 +114,6 @@ export class ChannelListAutoAssignmentService {
       addedToWhatsAppList: 0,
       addedToLinkedInList: 0,
       addedToInstagramList: 0,
-      addedToFacebookList: 0,
       addedToCustomList: 0,
     };
 
@@ -194,20 +183,7 @@ export class ChannelListAutoAssignmentService {
         if (res.rows.length > 0) summary.addedToInstagramList++;
       }
 
-      // 5. Facebook Channel List
-      const facebook = (lead.facebook || '').trim();
-      if (facebook && channelLists.facebookListId) {
-        const res = await query(
-          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT DO NOTHING
-           RETURNING lead_id`,
-          [channelLists.facebookListId, leadId]
-        );
-        if (res.rows.length > 0) summary.addedToFacebookList++;
-      }
-
-      // 6. User Custom List (if provided and valid)
+      // 5. User Custom List (if provided and valid)
       if (customListId && customListId !== 'none' && customListId !== 'all') {
         const res = await query(
           `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
@@ -221,7 +197,7 @@ export class ChannelListAutoAssignmentService {
     }
 
     console.log(
-      `[ChannelListAutoAssignment] Assigned leads: Email=${summary.addedToEmailList}, WhatsApp=${summary.addedToWhatsAppList}, LinkedIn=${summary.addedToLinkedInList}, IG=${summary.addedToInstagramList}, FB=${summary.addedToFacebookList}, Custom=${summary.addedToCustomList}`
+      `[ChannelListAutoAssignment] Assigned leads: Email=${summary.addedToEmailList}, WhatsApp=${summary.addedToWhatsAppList}, LinkedIn=${summary.addedToLinkedInList}, IG=${summary.addedToInstagramList}, Custom=${summary.addedToCustomList}`
     );
 
     return summary;

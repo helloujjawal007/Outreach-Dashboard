@@ -27,7 +27,7 @@ import {
   Sparkles,
   RefreshCw,
   Users,
-  Facebook,
+  Calendar,
   Eye,
   Check,
   Phone,
@@ -68,7 +68,7 @@ interface Props {
 }
 
 type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'trash';
-type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'facebook' | 'instagram' | 'linkedin';
+type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'instagram' | 'linkedin';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
 export function CrmPage({
@@ -520,7 +520,6 @@ export function CrmPage({
     ).length;
     const email = active.filter((l) => Boolean(l.email && l.email.includes('@'))).length;
     const instagram = active.filter((l) => Boolean(l.instagram && l.instagram.trim())).length;
-    const facebook = active.filter((l) => Boolean(l.facebook && l.facebook.trim())).length;
     const linkedin = active.filter((l) => Boolean(l.linkedin && l.linkedin.trim())).length;
 
     return {
@@ -530,7 +529,6 @@ export function CrmPage({
       websiteForm,
       email,
       instagram,
-      facebook,
       linkedin,
     };
   }, [store.leads]);
@@ -637,7 +635,6 @@ export function CrmPage({
       }
       if (channel === 'whatsapp_mobile') return l.whatsappEligible === true;
       if (channel === 'website_form') return Boolean(l.website || l.googleProfile?.website);
-      if (channel === 'facebook') return Boolean(l.facebook && l.facebook.trim());
       if (channel === 'instagram') return Boolean(l.instagram && l.instagram.trim());
       if (channel === 'linkedin') return Boolean(l.linkedin && l.linkedin.trim());
       return true;
@@ -2175,7 +2172,6 @@ export function CrmPage({
             <option value="website_form">🌐 Website Form ({channelCounts.websiteForm})</option>
             <option value="email">✉️ Email ({channelCounts.email})</option>
             <option value="instagram">📸 Instagram ({channelCounts.instagram})</option>
-            <option value="facebook">👥 Facebook ({channelCounts.facebook})</option>
             <option value="linkedin">💼 LinkedIn ({channelCounts.linkedin})</option>
           </select>
 
@@ -2237,6 +2233,14 @@ export function CrmPage({
               <ListFilter size={13} />
               <span>Lists</span>
             </button>
+            <button
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="btn-primary py-1.5 px-2.5 text-xs flex items-center gap-1 font-bold bg-brand-600 hover:bg-brand-700 text-white shadow-xs"
+              title="Select and schedule automated outreach for a list"
+            >
+              <Calendar size={13} />
+              <span>Schedule List</span>
+            </button>
             {entityFilter !== 'trash' && (
               <button
                 onClick={() => {
@@ -2249,16 +2253,6 @@ export function CrmPage({
               >
                 <BookmarkPlus size={13} className="text-brand-600" />
                 <span>Add Filtered ({filtered.length})</span>
-              </button>
-            )}
-            {selectedListFilter !== 'all' && selectedListFilter !== 'unassigned' && (
-              <button
-                onClick={() => setIsScheduleModalOpen(true)}
-                className="btn-primary py-1.5 px-2.5 text-xs flex items-center gap-1 font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs"
-                title="Shoot or schedule automated humanized outreach for this selected list"
-              >
-                <Zap size={13} className="fill-white" />
-                <span>Auto-Shoot List</span>
               </button>
             )}
           </div>
@@ -2563,39 +2557,6 @@ export function CrmPage({
                 }`}
               >
                 {channelCounts.instagram}
-              </span>
-            </button>
-          )}
-
-          {/* Facebook */}
-          {channelCounts.facebook > 0 && (
-            <button
-              onClick={() => {
-                if (channelFilter === 'facebook') {
-                  setChannelFilter('all');
-                  setChannelSubFilter('all');
-                } else {
-                  setChannelFilter('facebook');
-                  setChannelSubFilter('all');
-                }
-              }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
-                channelFilter === 'facebook'
-                  ? 'bg-indigo-600 text-white shadow-2xs ring-1 ring-indigo-400 font-bold'
-                  : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-indigo-50/70 hover:border-indigo-300'
-              }`}
-              title={`Filter leads with Facebook (${channelCounts.facebook} leads)`}
-            >
-              <span className="text-xs">👥</span>
-              <span>Facebook</span>
-              <span
-                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  channelFilter === 'facebook'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-200 text-ink-700'
-                }`}
-              >
-                {channelCounts.facebook}
               </span>
             </button>
           )}
@@ -3126,8 +3087,8 @@ export function CrmPage({
                       <div className="flex gap-1.5">
                         {lead.email && <Mail size={14} className="text-brand-500" />}
                         {lead.whatsapp && <MessageCircle size={14} className="text-emerald-500" />}
-                        {(lead.instagram || lead.facebook) && <Instagram size={14} className="text-violet-500" />}
-                        {!lead.email && !lead.whatsapp && !lead.instagram && !lead.facebook && (
+                        {lead.instagram && <Instagram size={14} className="text-violet-500" />}
+                        {!lead.email && !lead.whatsapp && !lead.instagram && (
                           <span className="text-xs text-ink-300">None</span>
                         )}
                       </div>
@@ -3418,12 +3379,12 @@ export function CrmPage({
                               <Globe size={14} className="text-teal-600" />
                             </span>
                           )}
-                          {(lead.instagram || lead.facebook) && (
+                          {lead.instagram && (
                             <span title="Social profile">
                               <Instagram size={14} className="text-violet-500" />
                             </span>
                           )}
-                          {!lead.email && !lead.whatsapp && !lead.instagram && !lead.facebook && !cleanSiteUrl(lead.website || lead.googleProfile?.website) && (
+                          {!lead.email && !lead.whatsapp && !lead.instagram && !cleanSiteUrl(lead.website || lead.googleProfile?.website) && (
                             <span className="text-xs text-ink-300">None</span>
                           )}
                         </div>
@@ -4079,15 +4040,6 @@ export function CrmPage({
                           <span>@{selectedLead.instagram.replace(/^@/, '')}</span>
                         </a>
                       )}
-                      {selectedLead.facebook && (
-                        <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-medium"
-                          title="Facebook Page"
-                        >
-                          <Facebook size={11} />
-                          <span className="truncate max-w-[110px]">{selectedLead.facebook}</span>
-                        </span>
-                      )}
                       {selectedLead.linkedin && (
                         <a
                           href={selectedLead.linkedin.startsWith('http') ? selectedLead.linkedin : `https://${selectedLead.linkedin}`}
@@ -4100,7 +4052,7 @@ export function CrmPage({
                           <span>LinkedIn</span>
                         </a>
                       )}
-                      {!selectedLead.instagram && !selectedLead.facebook && !selectedLead.linkedin && (
+                      {!selectedLead.instagram && !selectedLead.linkedin && (
                         <span className="text-ink-300 italic text-[11px]">No social links</span>
                       )}
                     </div>
@@ -4481,14 +4433,6 @@ export function CrmPage({
                                   </span>
                                 </div>
                               )}
-                              {msg.channel === 'facebook' && (
-                                <div className="text-[10px] text-slate-600">
-                                  <span className="font-semibold text-indigo-700">Facebook:</span>{' '}
-                                  <span className="font-mono font-bold text-indigo-900">
-                                    {selectedLead.facebook || selectedLead.businessName}
-                                  </span>
-                                </div>
-                              )}
                               {msg.channel === 'linkedin' && (
                                 <div className="text-[10px] text-slate-600">
                                   <span className="font-semibold text-sky-700">LinkedIn:</span>{' '}
@@ -4584,7 +4528,7 @@ export function CrmPage({
 
               {/* Channel Switcher — All Channels Supported */}
               <div className="flex flex-wrap gap-2 mb-2">
-                {(['email', 'whatsapp', 'website_form', 'facebook', 'instagram', 'linkedin'] as Channel[]).map((ch) => {
+                {(['email', 'whatsapp', 'website_form', 'instagram', 'linkedin'] as Channel[]).map((ch) => {
                   const isAvailable =
                     ch === 'email'
                       ? !!selectedLead.email
@@ -4592,8 +4536,6 @@ export function CrmPage({
                       ? !!selectedLead.whatsapp || !!selectedLead.phone
                       : ch === 'website_form'
                       ? !!(selectedLead.website || selectedLead.googleProfile?.website)
-                      : ch === 'facebook'
-                      ? !!selectedLead.facebook
                       : ch === 'instagram'
                       ? !!selectedLead.instagram
                       : !!selectedLead.linkedin;
@@ -4749,7 +4691,6 @@ export function CrmPage({
                   {replyChannel === 'website_form' && '💡 Website Form: Automatically maps and submits into target website contact forms (skipped if no form)'}
                   {replyChannel === 'linkedin' && '💡 LinkedIn: Peer-level, consultative invite under 70 words'}
                   {replyChannel === 'instagram' && '💡 Instagram: Casual, direct profile note under 45 words'}
-                  {replyChannel === 'facebook' && '💡 Facebook: Concise local growth angle under 55 words'}
                 </span>
               </div>
 
@@ -5294,6 +5235,19 @@ export function CrmPage({
                       {lst.description && <p className="text-xs text-ink-400 mt-1">{lst.description}</p>}
                     </div>
                     <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedListFilter(lst.id);
+                          store.refreshAll(lst.id, selectedBatchFilter);
+                          setIsManageListsOpen(false);
+                          setIsScheduleModalOpen(true);
+                        }}
+                        className="btn-primary text-xs py-1 px-2.5 flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white shadow-xs"
+                        title="Schedule automated outreach for this list"
+                      >
+                        <Calendar size={13} />
+                        Schedule
+                      </button>
                       <button
                         onClick={() => {
                           setSelectedListFilter(lst.id);

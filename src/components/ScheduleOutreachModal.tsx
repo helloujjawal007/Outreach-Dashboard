@@ -11,7 +11,6 @@ import {
   MessageCircle,
   Mail,
   Instagram,
-  Facebook,
   Linkedin,
   Loader2,
   Smartphone,
@@ -167,7 +166,6 @@ export function ScheduleOutreachModal({
     return targetLeads.filter((l) => {
       if (channel === 'email') return !!(l.email && l.email.trim());
       if (channel === 'whatsapp') return !!((l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
-      if (channel === 'facebook') return !!(l.facebook && l.facebook.trim());
       if (channel === 'instagram') return !!(l.instagram && l.instagram.trim());
       if (channel === 'linkedin') return !!(l.linkedin && l.linkedin.trim());
       return false;
@@ -364,7 +362,7 @@ export function ScheduleOutreachModal({
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Automated background scheduling for WhatsApp, Email, Facebook & Instagram
+                  Automated background scheduling for WhatsApp, Email & Instagram
                 </p>
               </div>
             </div>
@@ -442,13 +440,6 @@ export function ScheduleOutreachModal({
                     badgeColor: 'bg-blue-100 text-blue-800',
                   },
                   {
-                    id: 'facebook' as ChannelType,
-                    name: 'Facebook',
-                    icon: Facebook,
-                    activeClass: 'border-indigo-500 bg-indigo-50 text-indigo-900 ring-2 ring-indigo-400/20',
-                    badgeColor: 'bg-indigo-100 text-indigo-800',
-                  },
-                  {
                     id: 'instagram' as ChannelType,
                     name: 'Instagram',
                     icon: Instagram,
@@ -468,7 +459,6 @@ export function ScheduleOutreachModal({
                   const eligibleCount = targetLeads.filter((l) => {
                     if (item.id === 'email') return !!(l.email && l.email.trim());
                     if (item.id === 'whatsapp') return !!((l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
-                    if (item.id === 'facebook') return !!(l.facebook && l.facebook.trim());
                     if (item.id === 'instagram') return !!(l.instagram && l.instagram.trim());
                     if (item.id === 'linkedin') return !!(l.linkedin && l.linkedin.trim());
                     return false;
@@ -824,7 +814,6 @@ export function ScheduleOutreachModal({
                   <option value="all">All Channels</option>
                   <option value="whatsapp">WhatsApp</option>
                   <option value="email">Email</option>
-                  <option value="facebook">Facebook</option>
                   <option value="instagram">Instagram</option>
                   <option value="linkedin">LinkedIn</option>
                 </select>
@@ -897,11 +886,7 @@ export function ScheduleOutreachModal({
                                   <Mail size={10} /> Email
                                 </span>
                               )}
-                              {itemChannel === 'facebook' && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] bg-indigo-100 text-indigo-800">
-                                  <Facebook size={10} /> FB
-                                </span>
-                              )}
+
                               {itemChannel === 'instagram' && (
                                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] bg-pink-100 text-pink-800">
                                   <Instagram size={10} /> IG

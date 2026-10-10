@@ -64,7 +64,7 @@ interface Props {
   inboundRepliesCount?: number;
 }
 
-type ActiveChannelTab = 'email' | 'whatsapp' | 'website_form' | 'facebook' | 'instagram' | 'linkedin';
+type ActiveChannelTab = 'email' | 'whatsapp' | 'website_form' | 'instagram' | 'linkedin';
 type WhatsAppFilter = 'all' | 'eligible' | 'ineligible';
 
 export function ChannelOutreachHub({
@@ -207,7 +207,6 @@ export function ChannelOutreachHub({
     const website_form = activeLeads.filter(
       (l) => Boolean(cleanSiteUrl(l.website || l.googleProfile?.website))
     );
-    const facebook = activeLeads.filter((l) => (l.facebook || '').trim().length > 0);
     const instagram = activeLeads.filter((l) => (l.instagram || '').trim().length > 0);
     const linkedin = activeLeads.filter((l) => (l.linkedin || '').trim().length > 0);
 
@@ -217,7 +216,6 @@ export function ChannelOutreachHub({
       whatsappEligible,
       whatsappIneligible,
       website_form,
-      facebook,
       instagram,
       linkedin,
     };
@@ -232,7 +230,6 @@ export function ChannelOutreachHub({
       return segregated.whatsapp;
     }
     if (activeTab === 'website_form') return segregated.website_form;
-    if (activeTab === 'facebook') return segregated.facebook;
     if (activeTab === 'instagram') return segregated.instagram;
     return segregated.linkedin;
   }, [activeTab, segregated, waFilter]);
@@ -1144,34 +1141,7 @@ export function ChannelOutreachHub({
             </div>
           </button>
 
-          {/* 4. Facebook Tab */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('facebook');
-              setSearch('');
-            }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${
-              activeTab === 'facebook'
-                ? 'border-indigo-300 bg-gradient-to-br from-indigo-50 to-blue-50/50 shadow-sm ring-2 ring-indigo-200/60'
-                : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-            }`}
-          >
-            <div className="flex w-full items-center justify-between">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
-                <Facebook size={18} />
-              </div>
-              <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-800">
-                {segregated.facebook.length}
-              </span>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-ink-900">Facebook Leads</div>
-              <div className="text-[11px] font-medium text-indigo-700">Messenger Deep-Link Ready</div>
-            </div>
-          </button>
-
-          {/* 5. Instagram Tab */}
+          {/* 4. Instagram Tab */}
           <button
             type="button"
             onClick={() => {
@@ -1880,12 +1850,6 @@ export function ChannelOutreachHub({
                             </div>
                           </div>
                         )}
-                        {activeTab === 'facebook' && (
-                          <div className="font-medium text-indigo-700 flex items-center gap-1">
-                            <Facebook size={13} />
-                            <span>{lead.facebook}</span>
-                          </div>
-                        )}
                         {activeTab === 'instagram' && (
                           <div className="font-medium text-pink-700 flex items-center gap-1">
                             <Instagram size={13} />
@@ -2053,23 +2017,6 @@ export function ChannelOutreachHub({
                             >
                               <ExternalLink size={13} />
                               <span>IG</span>
-                            </a>
-                          )}
-
-                          {activeTab === 'facebook' && lead.facebook && (
-                            <a
-                              href={
-                                lead.facebook.startsWith('http')
-                                  ? lead.facebook
-                                  : `https://m.me/${lead.facebook.replace(/^[/@]/, '')}`
-                              }
-                              target="_blank"
-                              rel="noreferrer"
-                              className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-indigo-700 hover:bg-indigo-50 border-indigo-200 shadow-2xs"
-                              title="Open Facebook Messenger"
-                            >
-                              <ExternalLink size={13} />
-                              <span>Messenger</span>
                             </a>
                           )}
                         </div>
@@ -3339,7 +3286,7 @@ export function ChannelOutreachHub({
               <div className="space-y-1">
                 <h4 className="text-sm font-bold">Are you sure you want to delete this lead?</h4>
                 <p className="text-xs text-rose-900/90 leading-relaxed">
-                  <strong>{deletingLead.businessName}</strong> will be removed from all channels (WhatsApp, Email, Facebook, Instagram)
+                  <strong>{deletingLead.businessName}</strong> will be removed from all channels (WhatsApp, Email, Instagram)
                   and safely preserved in Trash for 28 days with restore capability.
                 </p>
               </div>

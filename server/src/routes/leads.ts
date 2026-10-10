@@ -680,7 +680,6 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const detectedChannels: string[] = [];
     if (trimmedEmail && trimmedEmail.includes('@')) detectedChannels.push('email');
     if (waEval.isEligible) detectedChannels.push('whatsapp');
-    if (trimmedFacebook) detectedChannels.push('facebook');
     if (trimmedInstagram) detectedChannels.push('instagram');
 
     // Merge updated metadata (including manual or verified google_profile changes)
@@ -1079,7 +1078,6 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
     const detectedChannels: string[] = [];
     if (trimmedEmail) detectedChannels.push('email');
     if (waEval.isEligible) detectedChannels.push('whatsapp');
-    if (facebook) detectedChannels.push('facebook');
     if (instagram) detectedChannels.push('instagram');
     if (req.body.linkedin) detectedChannels.push('linkedin');
 
@@ -1371,7 +1369,6 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       const detectedChannels: string[] = [];
       if (email) detectedChannels.push('email');
       if (waEval.isEligible) detectedChannels.push('whatsapp');
-      if (facebook) detectedChannels.push('facebook');
       if (instagram) detectedChannels.push('instagram');
       if (linkedin) detectedChannels.push('linkedin');
 
@@ -1531,5 +1528,34 @@ leadsRouter.patch('/:id/consent', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[leadsRouter.consent]', error);
     res.status(500).json({ success: false, error: 'Failed to update consent status' });
+  }
+});
+
+// POST /api/leads/validate-whatsapp - Validates a phone number using WAValidator.com API or local engine
+leadsRouter.post('/validate-whatsapp', async (req: Request, res: Response) => {
+  try {
+    const phone = req.body.phone || req.body.phoneNumber || req.body.whatsapp || '';
+    if (!phone) {
+      return res.status(400).json({ success: false, error: 'Phone number is required' });
+    }
+
+    // 1. Evaluate with regex/carrier rule base
+    const localEval = whatsappValidator.evaluate({ phone });
+
+    // 2. If WAVALIDATOR_API_KEY is configured, call WAValidator live check (wavalidator.com/api-docs)
+    const liveCheck = await whatsappValidator.verifyWithWaValidator(phone);
+
+    res.json({
+      success: true,
+      phone,
+      localEval,
+      liveCheck,
+      isWhatsAppValid:
+        liveCheck.status === 'valid' ||
+        (liveCheck.status === 'not_configured' && localEval.isEligible),
+    });
+  } catch (error: any) {
+    console.error('[leadsRouter.validateWhatsapp]', error);
+    res.status(500).json({ success: false, error: error.message || 'Failed to validate WhatsApp number' });
   }
 });

@@ -5,7 +5,6 @@ import {
   Mail,
   MessageCircle,
   Instagram,
-  Facebook,
   Linkedin,
   Clock,
   Save,
@@ -49,14 +48,6 @@ const channelOptions: {
     activeColor: 'border-emerald-500 bg-emerald-50/90 text-emerald-800 ring-2 ring-emerald-200 shadow-xs',
     badgeColor: 'bg-emerald-100 text-emerald-800',
     hint: 'Instant mobile messaging for verified numbers (68% 15-min open rate)',
-  },
-  {
-    value: 'facebook',
-    label: 'Facebook',
-    icon: Facebook,
-    activeColor: 'border-indigo-500 bg-indigo-50/90 text-indigo-800 ring-2 ring-indigo-200 shadow-xs',
-    badgeColor: 'bg-indigo-100 text-indigo-800',
-    hint: 'Direct Messenger outreach to business pages',
   },
   {
     value: 'instagram',
@@ -189,7 +180,6 @@ export function CampaignBuilderPage({ store }: Props) {
       if (targetChannel !== 'all') {
         if (targetChannel === 'email' && !l.email) return false;
         if (targetChannel === 'whatsapp' && !l.whatsapp && !l.phone) return false;
-        if (targetChannel === 'facebook' && (!l.facebook || !l.facebook.trim())) return false;
         if (targetChannel === 'instagram' && (!l.instagram || !l.instagram.trim())) return false;
         if (targetChannel === 'linkedin' && (!l.linkedin || !l.linkedin.trim())) return false;
       }
@@ -688,8 +678,6 @@ export function CampaignBuilderPage({ store }: Props) {
                             '💡 Tip: Keep Cold Email under 90 words with a clear, low-friction question'}
                           {step.channel === 'instagram' &&
                             '💡 Tip: Casual, complimentary profile DM under 50 words'}
-                          {step.channel === 'facebook' &&
-                            '💡 Tip: Concise page growth angle under 60 words'}
                           {step.channel === 'linkedin' &&
                             '💡 Tip: Thought-leadership observation + brief conversational invite'}
                         </span>
@@ -739,8 +727,6 @@ export function CampaignBuilderPage({ store }: Props) {
                           ? 'bg-blue-600'
                           : step.channel === 'whatsapp'
                           ? 'bg-emerald-600'
-                          : step.channel === 'facebook'
-                          ? 'bg-indigo-600'
                           : step.channel === 'instagram'
                           ? 'bg-pink-600'
                           : 'bg-sky-600'
@@ -831,11 +817,6 @@ export function CampaignBuilderPage({ store }: Props) {
                           <MessageCircle size={12} className="text-emerald-500" />
                         </span>
                       )}
-                      {lead.facebook && (
-                        <span title="Facebook Ready" className="inline-flex">
-                          <Facebook size={12} className="text-indigo-500" />
-                        </span>
-                      )}
                       {lead.instagram && (
                         <span title="Instagram Ready" className="inline-flex">
                           <Instagram size={12} className="text-pink-500" />
@@ -893,7 +874,6 @@ export function CampaignBuilderPage({ store }: Props) {
               <option value="all">All Channels</option>
               <option value="email">Email</option>
               <option value="whatsapp">WhatsApp</option>
-              <option value="facebook">Facebook</option>
               <option value="instagram">Instagram</option>
               <option value="linkedin">LinkedIn</option>
             </select>
@@ -961,8 +941,6 @@ export function CampaignBuilderPage({ store }: Props) {
                               ? 'bg-blue-600'
                               : s.channel === 'whatsapp'
                               ? 'bg-emerald-600'
-                              : s.channel === 'facebook'
-                              ? 'bg-indigo-600'
                               : s.channel === 'instagram'
                               ? 'bg-pink-600'
                               : 'bg-sky-600'

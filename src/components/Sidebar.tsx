@@ -72,9 +72,9 @@ export function Sidebar({
   onOpenScheduleModal: _onOpenScheduleModal,
   counts,
 }: SidebarProps) {
-  const [crmExpanded, setCrmExpanded] = useState(true);
-  const [countriesExpanded, setCountriesExpanded] = useState(true);
-  const [channelsExpanded, setChannelsExpanded] = useState(true);
+  const [crmExpanded, setCrmExpanded] = useState(false);
+  const [countriesExpanded, setCountriesExpanded] = useState(false);
+  const [channelsExpanded, setChannelsExpanded] = useState(false);
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -84,7 +84,7 @@ export function Sidebar({
           <Zap size={20} strokeWidth={2.5} />
         </div>
         <div>
-          <h1 className="text-sm font-bold text-ink-900 leading-tight">Online Digital Solution</h1>
+          <h1 className="text-sm font-bold text-ink-900 leading-tight">Outreach Dashboard</h1>
           <p className="text-xs text-brand-600 font-semibold leading-tight">Omni-Channel Engine</p>
         </div>
       </div>
@@ -182,7 +182,7 @@ export function Sidebar({
             }`}
             onClick={() => {
               onNavigate('crm', 'all', 'all');
-              setCrmExpanded(true);
+              setCrmExpanded(!crmExpanded);
             }}
           >
             <div className="flex items-center gap-3">

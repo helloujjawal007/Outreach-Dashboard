@@ -1,6 +1,9 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execSync, type ChildProcess } from 'child_process';
 import http from 'http';
 import dns from 'dns/promises';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { query } from '../config/db';
 import { whatsappValidator } from './whatsappValidator';
 import { automatedIntakeEngine } from './automatedIntakeEngine';
@@ -68,8 +71,115 @@ export interface GmbImportResult {
 }
 
 export class GmbScraperService {
-  private chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   private portCounter = 9500;
+
+  /**
+   * Resolves the Google Chrome or Chromium executable path across macOS, Linux (Render/Docker/Ubuntu), and Windows.
+   */
+  public getChromeExecutable(): string | null {
+    if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+      return process.env.CHROME_PATH;
+    }
+
+    // Check project-local downloaded chrome or puppeteer cache
+    const searchDirs = [
+      path.resolve(process.cwd(), 'chrome-bin'),
+      path.resolve(process.cwd(), '.cache', 'chrome'),
+      path.join(os.homedir(), '.cache', 'puppeteer'),
+      '/opt/render/.cache/puppeteer',
+      '/opt/render/project/src/chrome-bin',
+    ];
+
+    for (const d of searchDirs) {
+      if (fs.existsSync(d)) {
+        try {
+          const findBin = (dir: string, depth = 0): string | null => {
+            if (depth > 4) return null;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const full = path.join(dir, entry.name);
+              if (entry.isFile() && (entry.name === 'chrome' || entry.name === 'google-chrome' || entry.name === 'chromium')) {
+                return full;
+              }
+              if (entry.isDirectory()) {
+                const sub = findBin(full, depth + 1);
+                if (sub) return sub;
+              }
+            }
+            return null;
+          };
+          const found = findBin(d);
+          if (found) return found;
+        } catch (_) {}
+      }
+    }
+
+    const platform = process.platform;
+    const candidates: string[] = [];
+
+    if (platform === 'darwin') {
+      candidates.push(
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        `${os.homedir()}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
+      );
+    } else if (platform === 'linux') {
+      candidates.push(
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/opt/google/chrome/chrome',
+        '/snap/bin/chromium',
+        '/usr/lib/chromium/chromium',
+        '/usr/lib/chromium-browser/chromium-browser'
+      );
+    } else if (platform === 'win32') {
+      candidates.push(
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files\\Chromium\\Application\\chrome.exe'
+      );
+    }
+
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Ensures Chrome or Chromium is available. On Linux (Render/Docker), if not found,
+   * attempts auto-installation into ./chrome-bin using @puppeteer/browsers.
+   */
+  public async ensureChromeInstalled(): Promise<string | null> {
+    let executable = this.getChromeExecutable();
+    if (executable) return executable;
+
+    if (process.platform === 'linux') {
+      try {
+        console.log('[GmbScraperService] Headless Chrome not found on Linux. Attempting auto-installation via @puppeteer/browsers...');
+        const targetDir = path.resolve(process.cwd(), 'chrome-bin');
+        execSync(`npx -y @puppeteer/browsers install chrome@stable --path "${targetDir}"`, {
+          stdio: 'inherit',
+          timeout: 60000,
+        });
+        executable = this.getChromeExecutable();
+        if (executable) {
+          console.log(`[GmbScraperService] Successfully installed Chrome at ${executable}`);
+          return executable;
+        }
+      } catch (installErr: any) {
+        console.error('[GmbScraperService] Auto-install of Chrome failed:', installErr?.message);
+      }
+    }
+
+    return null;
+  }
 
   /**
    * Actively opens and verifies whether a website URL is genuinely live, resolving, and opening in the backend.
@@ -200,9 +310,19 @@ export class GmbScraperService {
       `[GmbScraperService] Initiating search for [${targetCategories.join(', ')}] across ${locationQueries.length} location(s): [${locationQueries.join('; ')}] (Target limit: ${effectiveLimit}, Leads/location quota: ${perLocationQuota})`
     );
 
+    // Pre-flight check: ensure Chrome/Chromium is installed or can be downloaded
+    const chromeBin = await this.ensureChromeInstalled();
+    if (!chromeBin) {
+      throw new Error(
+        `Headless Chrome/Chromium is not installed on this server (${process.platform}). ` +
+        `To enable lead scraping on Render, set Build Command to: 'npm run render:build' (or deploy via Docker).`
+      );
+    }
+
     const rawList: ScrapedLeadItem[] = [];
     const existingNames = new Set<string>();
     const existingPhones = new Set<string>();
+    let lastCdpError: string | null = null;
 
     // Attempt Chrome CDP search across all selected locations, categories and query variations
     for (const locQuery of locationQueries) {
@@ -239,10 +359,15 @@ export class GmbScraperService {
               }
             }
           } catch (err: any) {
+            lastCdpError = err?.message || 'CDP query error';
             console.warn(`[GmbScraperService] CDP query variation "${q}" error:`, err?.message);
           }
         }
       }
+    }
+
+    if (rawList.length === 0 && lastCdpError) {
+      throw new Error(`Google Maps Scraper failed: ${lastCdpError}`);
     }
 
     // Limit to requested count (strictly authentic leads from Google Maps)
@@ -326,13 +451,26 @@ export class GmbScraperService {
     let ws: WebSocket | null = null;
     const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(queryStr)}?hl=en`;
 
+    const executable = this.getChromeExecutable();
+    if (!executable) {
+      throw new Error(
+        `Headless Chrome executable not found on ${process.platform}. Please install Google Chrome / Chromium or set CHROME_PATH environment variable.`
+      );
+    }
+
     try {
-      chromeProc = spawn(this.chromePath, [
+      chromeProc = spawn(executable, [
         '--headless=new',
         `--remote-debugging-port=${port}`,
         '--window-size=1440,900',
         '--no-first-run',
         '--no-default-browser-check',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
         'about:blank',
       ]);
 

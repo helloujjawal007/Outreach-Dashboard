@@ -61,6 +61,71 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 
+// Security Hardening: Disable server fingerprints & enforce security headers
+app.disable('x-powered-by');
+
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// Security Barrier: Block path traversal, null bytes, and unauthorized access to source/config files
+app.use((req: Request, res: Response, next: NextFunction) => {
+  let decoded = req.path;
+  try {
+    decoded = decodeURIComponent(req.path);
+    if (decoded.includes('%')) {
+      decoded = decodeURIComponent(decoded);
+    }
+  } catch (_) {
+    return res.status(400).json({ success: false, error: 'Malformed request path' });
+  }
+
+  const lower = decoded.toLowerCase();
+
+  // Null byte or path traversal injection
+  if (lower.includes('\0') || lower.includes('..') || lower.includes('\\')) {
+    return res.status(403).json({ success: false, error: 'Access forbidden: invalid path tokens' });
+  }
+
+  // Block hidden files or directories (.env, .git, etc.)
+  if (/(^|\/)\./.test(lower)) {
+    return res.status(403).json({ success: false, error: 'Access forbidden: hidden resources restricted' });
+  }
+
+  // Block source code, build configs, system scripts, and credentials
+  const forbiddenPatterns = [
+    '/server',
+    '/src',
+    '/node_modules',
+    'package.json',
+    'package-lock.json',
+    'tsconfig',
+    'dockerfile',
+    'render.yaml',
+    'vite.config',
+    'tailwind.config',
+    'render-build',
+    '.env',
+    '.git',
+    '.ts',
+    '.tsx',
+    '.sh',
+    '.log',
+  ];
+
+  for (const pattern of forbiddenPatterns) {
+    if (lower.includes(pattern)) {
+      return res.status(403).json({ success: false, error: 'Access forbidden: restricted resource' });
+    }
+  }
+
+  next();
+});
+
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -131,7 +196,7 @@ async function run28DayRetentionCleanup() {
 // Serve static client bundle in deployment
 const distPath = path.resolve(process.cwd(), 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, { dotfiles: 'deny', index: false }));
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
       return res.sendFile(path.join(distPath, 'index.html'));

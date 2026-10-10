@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: outreach-dashboard
+    runtime: node
+    plan: free
+    buildCommand: ./render-build.sh
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5001

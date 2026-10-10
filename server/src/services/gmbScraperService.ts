@@ -202,7 +202,7 @@ export class GmbScraperService {
   /**
    * Polls Chrome CDP endpoint with retries until it is ready to accept WebSocket connections
    */
-  public async waitForCdpReady(port: number, timeoutMs = 15000, proc?: ChildProcess | null): Promise<any> {
+  public async waitForCdpReady(port: number, timeoutMs = 30000, proc?: ChildProcess | null): Promise<any> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (proc && proc.exitCode !== null) {
@@ -216,15 +216,20 @@ export class GmbScraperService {
             res.on('end', () => {
               try {
                 const list = JSON.parse(data);
-                if (Array.isArray(list) && list.length > 0 && list[0].webSocketDebuggerUrl) {
-                  return resolve(list[0]);
+                if (Array.isArray(list) && list.length > 0) {
+                  const targetPage =
+                    list.find((item: any) => item.type === 'page' && item.webSocketDebuggerUrl) ||
+                    list.find((item: any) => item.webSocketDebuggerUrl);
+                  if (targetPage) {
+                    return resolve(targetPage);
+                  }
                 }
               } catch (_) {}
               resolve(null);
             });
           });
           req.on('error', () => resolve(null));
-          req.setTimeout(800, () => req.destroy());
+          req.setTimeout(1000, () => req.destroy());
         });
         if (page) return page;
 
@@ -242,23 +247,36 @@ export class GmbScraperService {
             });
           });
           req.on('error', () => resolve(null));
-          req.setTimeout(800, () => req.destroy());
+          req.setTimeout(1000, () => req.destroy());
         });
         if (ver) {
           const newPage = await new Promise<any>((resolve) => {
-            const req = http.get(`http://127.0.0.1:${port}/json/new`, (res) => {
-              let data = '';
-              res.on('data', (c) => (data += c));
-              res.on('end', () => {
-                try {
-                  const p = JSON.parse(data);
-                  if (p.webSocketDebuggerUrl) return resolve(p);
-                } catch (_) {}
-                resolve(null);
-              });
-            });
+            const req = http.request(
+              {
+                hostname: '127.0.0.1',
+                port,
+                path: '/json/new',
+                method: 'PUT',
+                timeout: 1200,
+              },
+              (res) => {
+                let data = '';
+                res.on('data', (c) => (data += c));
+                res.on('end', () => {
+                  try {
+                    const p = JSON.parse(data);
+                    if (p.webSocketDebuggerUrl) return resolve(p);
+                  } catch (_) {}
+                  resolve(null);
+                });
+              }
+            );
             req.on('error', () => resolve(null));
-            req.setTimeout(800, () => req.destroy());
+            req.on('timeout', () => {
+              req.destroy();
+              resolve(null);
+            });
+            req.end();
           });
           if (newPage) return newPage;
         }
@@ -554,12 +572,14 @@ export class GmbScraperService {
         `--remote-debugging-port=${port}`,
         '--remote-debugging-address=127.0.0.1',
         `--user-data-dir=${tempProfileDir}`,
-        '--window-size=1440,900',
-        '--no-first-run',
-        '--no-default-browser-check',
+        '--window-size=1280,800',
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--no-zygote',
         '--disable-gpu',
         '--disable-software-rasterizer',
         '--disable-extensions',
@@ -570,7 +590,10 @@ export class GmbScraperService {
         '--disable-crash-reporter',
         '--disable-breakpad',
         '--no-crashpad',
-        '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,CrashReporting',
+        '--password-store=basic',
+        '--use-mock-keychain',
+        '--disable-notifications',
+        '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,CrashReporting,Translate,OptimizationHints',
         '--mute-audio',
         '--hide-scrollbars',
         '--metrics-recording-only',
@@ -580,7 +603,8 @@ export class GmbScraperService {
       chromeProc = spawn(executable, chromeArgs, {
         env: {
           ...process.env,
-          DBUS_SESSION_BUS_ADDRESS: '/dev/null',
+          DBUS_SESSION_BUS_ADDRESS: 'disabled:',
+          DBUS_SYSTEM_BUS_ADDRESS: 'disabled:',
         },
       });
 
@@ -592,8 +616,8 @@ export class GmbScraperService {
         console.error(`[GmbScraperService] Chrome process spawn error:`, err);
       });
 
-      // Poll until remote debugging endpoint is responsive (up to 14s for slow cloud containers)
-      const page = await this.waitForCdpReady(port, 14000, chromeProc);
+      // Poll until remote debugging endpoint is responsive (up to 30s for slow cloud containers)
+      const page = await this.waitForCdpReady(port, 30000, chromeProc);
 
       if (!page || !page.webSocketDebuggerUrl) {
         const exitMsg =

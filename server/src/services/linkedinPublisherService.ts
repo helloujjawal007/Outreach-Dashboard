@@ -146,16 +146,33 @@ export class LinkedInPublisherService {
     let ws: WebSocket | null = null;
 
     try {
-      chromeProc = spawn(this.chromePath, [
-        '--headless=new',
-        `--remote-debugging-port=${port}`,
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-extensions',
-        '--window-size=1280,900',
-        'about:blank',
-      ]);
+      chromeProc = spawn(
+        this.chromePath,
+        [
+          '--headless=new',
+          `--remote-debugging-port=${port}`,
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-zygote',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-extensions',
+          '--password-store=basic',
+          '--use-mock-keychain',
+          '--window-size=1280,900',
+          'about:blank',
+        ],
+        {
+          env: {
+            ...process.env,
+            DBUS_SESSION_BUS_ADDRESS: 'disabled:',
+            DBUS_SYSTEM_BUS_ADDRESS: 'disabled:',
+          },
+        }
+      );
 
       await new Promise((res) => setTimeout(res, 1200));
       const wsUrl = await this.getWsUrl(port);
@@ -327,16 +344,33 @@ export class LinkedInPublisherService {
     let ws: WebSocket | null = null;
 
     try {
-      chromeProc = spawn(this.chromePath, [
-        '--headless=new',
-        `--remote-debugging-port=${port}`,
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-extensions',
-        '--window-size=1280,900',
-        'about:blank',
-      ]);
+      chromeProc = spawn(
+        this.chromePath,
+        [
+          '--headless=new',
+          `--remote-debugging-port=${port}`,
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-zygote',
+          '--disable-gpu',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-extensions',
+          '--password-store=basic',
+          '--use-mock-keychain',
+          '--window-size=1280,900',
+          'about:blank',
+        ],
+        {
+          env: {
+            ...process.env,
+            DBUS_SESSION_BUS_ADDRESS: 'disabled:',
+            DBUS_SYSTEM_BUS_ADDRESS: 'disabled:',
+          },
+        }
+      );
 
       await new Promise((res) => setTimeout(res, 1200));
       const wsUrl = await this.getWsUrl(port);

@@ -202,7 +202,7 @@ export class GmbScraperService {
   /**
    * Polls Chrome CDP endpoint with retries until it is ready to accept WebSocket connections
    */
-  public async waitForCdpReady(port: number, timeoutMs = 14000, proc?: ChildProcess | null): Promise<any> {
+  public async waitForCdpReady(port: number, timeoutMs = 15000, proc?: ChildProcess | null): Promise<any> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (proc && proc.exitCode !== null) {
@@ -216,20 +216,54 @@ export class GmbScraperService {
             res.on('end', () => {
               try {
                 const list = JSON.parse(data);
-                resolve(Array.isArray(list) && list.length > 0 ? list[0] : null);
-              } catch (_) {
-                resolve(null);
-              }
+                if (Array.isArray(list) && list.length > 0 && list[0].webSocketDebuggerUrl) {
+                  return resolve(list[0]);
+                }
+              } catch (_) {}
+              resolve(null);
             });
           });
           req.on('error', () => resolve(null));
           req.setTimeout(800, () => req.destroy());
         });
-        if (page && page.webSocketDebuggerUrl) {
-          return page;
+        if (page) return page;
+
+        // Fallback: check /json/version
+        const ver = await new Promise<any>((resolve) => {
+          const req = http.get(`http://127.0.0.1:${port}/json/version`, (res) => {
+            let data = '';
+            res.on('data', (c) => (data += c));
+            res.on('end', () => {
+              try {
+                const j = JSON.parse(data);
+                if (j.webSocketDebuggerUrl) return resolve(j);
+              } catch (_) {}
+              resolve(null);
+            });
+          });
+          req.on('error', () => resolve(null));
+          req.setTimeout(800, () => req.destroy());
+        });
+        if (ver) {
+          const newPage = await new Promise<any>((resolve) => {
+            const req = http.get(`http://127.0.0.1:${port}/json/new`, (res) => {
+              let data = '';
+              res.on('data', (c) => (data += c));
+              res.on('end', () => {
+                try {
+                  const p = JSON.parse(data);
+                  if (p.webSocketDebuggerUrl) return resolve(p);
+                } catch (_) {}
+                resolve(null);
+              });
+            });
+            req.on('error', () => resolve(null));
+            req.setTimeout(800, () => req.destroy());
+          });
+          if (newPage) return newPage;
         }
       } catch (_) {}
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 200));
     }
     return null;
   }
@@ -515,7 +549,6 @@ export class GmbScraperService {
     let stderrOutput = '';
 
     try {
-      const isLinux = process.platform === 'linux';
       const chromeArgs = [
         '--headless=new',
         `--remote-debugging-port=${port}`,
@@ -534,18 +567,22 @@ export class GmbScraperService {
         '--disable-background-networking',
         '--disable-sync',
         '--disable-translate',
+        '--disable-crash-reporter',
+        '--disable-breakpad',
+        '--no-crashpad',
+        '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process,CrashReporting',
         '--mute-audio',
         '--hide-scrollbars',
         '--metrics-recording-only',
+        'about:blank',
       ];
 
-      if (isLinux) {
-        chromeArgs.push('--no-zygote', '--single-process');
-      }
-
-      chromeArgs.push('about:blank');
-
-      chromeProc = spawn(executable, chromeArgs);
+      chromeProc = spawn(executable, chromeArgs, {
+        env: {
+          ...process.env,
+          DBUS_SESSION_BUS_ADDRESS: '/dev/null',
+        },
+      });
 
       chromeProc.stderr?.on('data', (c) => {
         stderrOutput += c.toString();

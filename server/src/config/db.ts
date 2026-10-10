@@ -5,13 +5,34 @@ import path from 'path';
 // Load .env from project root
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://localhost:5432/outreach_dashboard';
+const rawDbUrl = process.env.DATABASE_URL?.trim();
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (!rawDbUrl && isProduction) {
+  console.warn(
+    '⚠️ [PostgreSQL Warning] DATABASE_URL is not set in Environment Variables! ' +
+    'The server is trying to connect to localhost:5432 which does not exist on Render. ' +
+    'Please add DATABASE_URL (from Supabase or Neon) in your Render Dashboard -> Environment Variables.'
+  );
+}
+
+const connectionString = rawDbUrl || 'postgresql://localhost:5432/outreach_dashboard';
+
+const isRemoteDb =
+  !!rawDbUrl &&
+  (rawDbUrl.includes('render.com') ||
+    rawDbUrl.includes('supabase.co') ||
+    rawDbUrl.includes('neon.tech') ||
+    rawDbUrl.includes('pooler.supabase.com') ||
+    rawDbUrl.includes('aws') ||
+    !rawDbUrl.includes('localhost'));
 
 export const pool = new Pool({
   connectionString,
+  ssl: isRemoteDb ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {

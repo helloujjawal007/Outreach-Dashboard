@@ -1,5 +1,6 @@
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import http from 'http';
+import net from 'net';
 import dns from 'dns/promises';
 import fs from 'fs';
 import path from 'path';
@@ -98,7 +99,7 @@ export class GmbScraperService {
             const entries = fs.readdirSync(dir, { withFileTypes: true });
             for (const entry of entries) {
               const full = path.join(dir, entry.name);
-              if (entry.isFile() && (entry.name === 'chrome' || entry.name === 'google-chrome' || entry.name === 'chromium')) {
+              if (entry.isFile() && (entry.name === 'chrome' || entry.name === 'google-chrome' || entry.name === 'chromium' || entry.name === 'chrome-headless-shell')) {
                 return full;
               }
               if (entry.isDirectory()) {
@@ -164,9 +165,9 @@ export class GmbScraperService {
       try {
         console.log('[GmbScraperService] Headless Chrome not found on Linux. Attempting auto-installation via @puppeteer/browsers...');
         const targetDir = path.resolve(process.cwd(), 'chrome-bin');
-        execSync(`npx -y @puppeteer/browsers install chrome@stable --path "${targetDir}"`, {
+        execSync(`npx -y @puppeteer/browsers install chrome-headless-shell@stable --path "${targetDir}" || npx -y @puppeteer/browsers install chrome@stable --path "${targetDir}"`, {
           stdio: 'inherit',
-          timeout: 60000,
+          timeout: 90000,
         });
         executable = this.getChromeExecutable();
         if (executable) {
@@ -178,6 +179,58 @@ export class GmbScraperService {
       }
     }
 
+    return null;
+  }
+
+  /**
+   * Finds an available free ephemeral TCP port for Chrome remote debugging
+   */
+  public async getFreePort(startPort = 9500): Promise<number> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.unref();
+      server.on('error', () => {
+        resolve(this.getFreePort(startPort + 1));
+      });
+      server.listen(startPort, '127.0.0.1', () => {
+        const port = (server.address() as net.AddressInfo).port;
+        server.close(() => resolve(port));
+      });
+    });
+  }
+
+  /**
+   * Polls Chrome CDP endpoint with retries until it is ready to accept WebSocket connections
+   */
+  public async waitForCdpReady(port: number, timeoutMs = 14000, proc?: ChildProcess | null): Promise<any> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (proc && proc.exitCode !== null) {
+        return null;
+      }
+      try {
+        const page = await new Promise<any>((resolve) => {
+          const req = http.get(`http://127.0.0.1:${port}/json/list`, (res) => {
+            let data = '';
+            res.on('data', (c) => (data += c));
+            res.on('end', () => {
+              try {
+                const list = JSON.parse(data);
+                resolve(Array.isArray(list) && list.length > 0 ? list[0] : null);
+              } catch (_) {
+                resolve(null);
+              }
+            });
+          });
+          req.on('error', () => resolve(null));
+          req.setTimeout(800, () => req.destroy());
+        });
+        if (page && page.webSocketDebuggerUrl) {
+          return page;
+        }
+      } catch (_) {}
+      await new Promise((r) => setTimeout(r, 250));
+    }
     return null;
   }
 
@@ -446,9 +499,10 @@ export class GmbScraperService {
    * Spawns headless Chrome and captures Google Maps tbm=map response
    */
   private async scrapeWithCdp(queryStr: string, limit: number, targetCountry?: string): Promise<ScrapedLeadItem[]> {
-    const port = ++this.portCounter;
+    const port = await this.getFreePort();
     let chromeProc: ChildProcess | null = null;
     let ws: WebSocket | null = null;
+    const tempProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-cdp-'));
     const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(queryStr)}?hl=en`;
 
     const executable = this.getChromeExecutable();
@@ -458,10 +512,15 @@ export class GmbScraperService {
       );
     }
 
+    let stderrOutput = '';
+
     try {
-      chromeProc = spawn(executable, [
+      const isLinux = process.platform === 'linux';
+      const chromeArgs = [
         '--headless=new',
         `--remote-debugging-port=${port}`,
+        '--remote-debugging-address=127.0.0.1',
+        `--user-data-dir=${tempProfileDir}`,
         '--window-size=1440,900',
         '--no-first-run',
         '--no-default-browser-check',
@@ -471,26 +530,42 @@ export class GmbScraperService {
         '--disable-gpu',
         '--disable-software-rasterizer',
         '--disable-extensions',
-        'about:blank',
-      ]);
+        '--disable-default-apps',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-translate',
+        '--mute-audio',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+      ];
 
-      await new Promise((r) => setTimeout(r, 1200));
+      if (isLinux) {
+        chromeArgs.push('--no-zygote', '--single-process');
+      }
 
-      const page = await new Promise<any>((resolve, reject) => {
-        const req = http.get(`http://127.0.0.1:${port}/json/list`, (res) => {
-          let d = '';
-          res.on('data', (c) => (d += c));
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(d)[0]);
-            } catch (e) {
-              reject(e);
-            }
-          });
-        });
-        req.on('error', reject);
-        req.setTimeout(3000, () => req.destroy(new Error('CDP connect timeout')));
+      chromeArgs.push('about:blank');
+
+      chromeProc = spawn(executable, chromeArgs);
+
+      chromeProc.stderr?.on('data', (c) => {
+        stderrOutput += c.toString();
       });
+
+      chromeProc.on('error', (err) => {
+        console.error(`[GmbScraperService] Chrome process spawn error:`, err);
+      });
+
+      // Poll until remote debugging endpoint is responsive (up to 14s for slow cloud containers)
+      const page = await this.waitForCdpReady(port, 14000, chromeProc);
+
+      if (!page || !page.webSocketDebuggerUrl) {
+        const exitMsg =
+          chromeProc.exitCode !== null
+            ? `Chrome exited with code ${chromeProc.exitCode}.`
+            : `Connection to Chrome remote debugger on 127.0.0.1:${port} timed out.`;
+        const errDetail = stderrOutput.trim() ? ` Stderr: ${stderrOutput.slice(0, 400)}` : '';
+        throw new Error(`${exitMsg}${errDetail}`);
+      }
 
       ws = new WebSocket(page.webSocketDebuggerUrl);
       await new Promise<void>((resolve, reject) => {
@@ -803,6 +878,9 @@ export class GmbScraperService {
           chromeProc.kill('SIGKILL');
         } catch (_) {}
       }
+      try {
+        fs.rmSync(tempProfileDir, { recursive: true, force: true });
+      } catch (_) {}
     }
   }
 

@@ -11,6 +11,7 @@ npm run build
 
 echo "🌐 Installing Chrome for headless lead scraping..."
 npx -y @puppeteer/browsers install chrome@stable --path ./chrome-bin || echo "Puppeteer Chrome installation skipped or fallback used"
+npx -y @puppeteer/browsers install chrome-headless-shell@stable --path ./chrome-bin || echo "Puppeteer Chrome-headless-shell installation skipped"
 
 echo "🗄️ Running database migrations..."
 npm run db:migrate || true

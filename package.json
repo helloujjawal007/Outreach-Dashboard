@@ -9,7 +9,7 @@
     "dev:server": "tsx watch server/src/index.ts",
     "start": "tsx server/src/index.ts",
     "build": "vite build",
-    "install:chrome": "npx -y @puppeteer/browsers install chrome@stable --path ./chrome-bin && npx -y @puppeteer/browsers install chrome-headless-shell@stable --path ./chrome-bin",
+    "install:chrome": "npx -y @puppeteer/browsers install chrome-headless-shell@stable --path ./chrome-bin || npx -y @puppeteer/browsers install chrome@stable --path ./chrome-bin",
     "render:build": "npm run build && (npm run install:chrome || true)",
     "lint": "eslint .",
     "preview": "vite preview",

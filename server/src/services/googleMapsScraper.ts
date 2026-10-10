@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import http from 'http';
+import { gmbScraperService } from './gmbScraperService';
 
 export interface ScrapedGooglePlace {
   placeName: string;
@@ -63,18 +64,25 @@ export class GoogleMapsScraper {
     let chromeProc: ChildProcess | null = null;
     let ws: WebSocket | null = null;
 
+    const executable = gmbScraperService.getChromeExecutable() || this.chromePath;
+    const isHeadlessShell = executable.includes('chrome-headless-shell');
+
     try {
       chromeProc = spawn(
-        this.chromePath,
+        executable,
         [
-          '--headless=new',
-          `--remote-debugging-port=${port}`,
+          isHeadlessShell ? '--headless' : '--headless=new',
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-zygote',
           '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--disable-dbus',
+          '--no-zygote',
+          '--single-process',
+          `--remote-debugging-port=${port}`,
+          '--remote-debugging-address=127.0.0.1',
+          '--disable-accelerated-2d-canvas',
           '--no-first-run',
           '--no-default-browser-check',
           '--disable-extensions',

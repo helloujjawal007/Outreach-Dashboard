@@ -89,17 +89,47 @@ export class GmbScraperService {
       path.join(os.homedir(), '.cache', 'puppeteer'),
       '/opt/render/.cache/puppeteer',
       '/opt/render/project/src/chrome-bin',
+      '/opt/render/project/src/server/chrome-bin',
     ];
 
+    // 1. High Priority: Look specifically for chrome-headless-shell (optimized for headless server containers, zero D-Bus overhead)
+    for (const d of searchDirs) {
+      if (fs.existsSync(d)) {
+        try {
+          const findShell = (dir: string, depth = 0): string | null => {
+            if (depth > 6) return null;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const full = path.join(dir, entry.name);
+              if (entry.isFile() && entry.name === 'chrome-headless-shell') {
+                return full;
+              }
+              if (entry.isDirectory()) {
+                const sub = findShell(full, depth + 1);
+                if (sub) return sub;
+              }
+            }
+            return null;
+          };
+          const found = findShell(d);
+          if (found) {
+            console.log(`[GmbScraperService] Found preferred chrome-headless-shell at ${found}`);
+            return found;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Fallback: Search for standard local chrome/chromium binaries
     for (const d of searchDirs) {
       if (fs.existsSync(d)) {
         try {
           const findBin = (dir: string, depth = 0): string | null => {
-            if (depth > 4) return null;
+            if (depth > 5) return null;
             const entries = fs.readdirSync(dir, { withFileTypes: true });
             for (const entry of entries) {
               const full = path.join(dir, entry.name);
-              if (entry.isFile() && (entry.name === 'chrome' || entry.name === 'google-chrome' || entry.name === 'chromium' || entry.name === 'chrome-headless-shell')) {
+              if (entry.isFile() && (entry.name === 'chrome' || entry.name === 'google-chrome' || entry.name === 'chromium')) {
                 return full;
               }
               if (entry.isDirectory()) {
@@ -567,21 +597,24 @@ export class GmbScraperService {
     let stderrOutput = '';
 
     try {
+      const isHeadlessShell = executable.includes('chrome-headless-shell');
       const chromeArgs = [
-        '--headless=new',
+        isHeadlessShell ? '--headless' : '--headless=new',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--disable-dbus',                    // Suppresses the /run/dbus/system_bus_socket failure
+        '--no-zygote',
+        '--single-process',                  // Prevents multiple memory-heavy sub-processes
         `--remote-debugging-port=${port}`,
         '--remote-debugging-address=127.0.0.1',
         `--user-data-dir=${tempProfileDir}`,
         '--window-size=1280,800',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-default-browser-check',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
         '--disable-extensions',
         '--disable-default-apps',
         '--disable-background-networking',

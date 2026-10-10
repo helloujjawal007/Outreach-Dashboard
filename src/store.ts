@@ -174,6 +174,17 @@ export function useStore() {
     );
   }, []);
 
+  const deleteFailedDispatches = useCallback(async () => {
+    const res = await api.deleteFailedDispatches();
+    setDispatches((prev) => prev.filter((d) => d.status !== 'failed'));
+    return res;
+  }, []);
+
+  const deleteScheduledDispatch = useCallback(async (id: string) => {
+    await api.deleteScheduledDispatch(id);
+    setDispatches((prev) => prev.filter((d) => d.id !== id));
+  }, []);
+
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -1340,6 +1351,8 @@ export function useStore() {
       scheduleBatchDispatch,
       cancelScheduledDispatch,
       retryScheduledDispatch,
+      deleteFailedDispatches,
+      deleteScheduledDispatch,
     }),
     [
       autopilotStatus,
@@ -1355,6 +1368,8 @@ export function useStore() {
       scheduleBatchDispatch,
       cancelScheduledDispatch,
       retryScheduledDispatch,
+      deleteFailedDispatches,
+      deleteScheduledDispatch,
       leads,
       lists,
       batches,

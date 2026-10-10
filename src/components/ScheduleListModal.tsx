@@ -19,6 +19,7 @@ import {
   Smartphone,
   CheckSquare,
   Square,
+  Trash2,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '@/services/api';
@@ -71,6 +72,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
   const [dispatchStatusFilter, setDispatchStatusFilter] = useState<string>('all');
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [isDeletingFailed, setIsDeletingFailed] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Initialize list, inboxes, linkedin accounts, and default date-time (1 hour from now)
   useEffect(() => {
@@ -419,6 +422,35 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
       console.error('Retry dispatch failed:', err);
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  // Bulk delete all failed dispatches
+  const handleDeleteFailedDispatches = async () => {
+    if (isDeletingFailed) return;
+    const failedCount = store.dispatches.filter((d) => d.status === 'failed').length;
+    if (!window.confirm(`Are you sure you want to delete all ${failedCount} failed scheduled outreach dispatches?`)) {
+      return;
+    }
+    try {
+      setIsDeletingFailed(true);
+      await store.deleteFailedDispatches();
+    } catch (err) {
+      console.error('Delete failed dispatches failed:', err);
+    } finally {
+      setIsDeletingFailed(false);
+    }
+  };
+
+  // Delete a single dispatch
+  const handleDeleteDispatch = async (id: string) => {
+    try {
+      setDeletingId(id);
+      await store.deleteScheduledDispatch(id);
+    } catch (err) {
+      console.error('Delete dispatch failed:', err);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -1097,14 +1129,33 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 </select>
               </div>
 
-              <button
-                type="button"
-                onClick={() => store.fetchDispatches()}
-                className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
-              >
-                <RefreshCw size={12} />
-                <span>Refresh Queue</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {store.dispatches.filter((d) => d.status === 'failed').length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteFailedDispatches}
+                    disabled={isDeletingFailed}
+                    className="btn-secondary text-xs py-1 px-2.5 flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 font-bold transition-colors"
+                    title="Purge all failed outreach messages from queue"
+                  >
+                    <Trash2 size={12} className="text-rose-600" />
+                    <span>
+                      {isDeletingFailed
+                        ? 'Deleting...'
+                        : `Delete All Failed (${store.dispatches.filter((d) => d.status === 'failed').length})`}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => store.fetchDispatches()}
+                  className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                >
+                  <RefreshCw size={12} />
+                  <span>Refresh Queue</span>
+                </button>
+              </div>
             </div>
 
             {/* Dispatches List */}
@@ -1236,6 +1287,15 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                               {retryingId === dispatch.id ? 'Requeuing...' : 'Retry'}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDispatch(dispatch.id)}
+                            disabled={deletingId === dispatch.id}
+                            title="Delete dispatch"
+                            className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors ml-1 inline-flex items-center"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </td>
                       </tr>
                     ))}

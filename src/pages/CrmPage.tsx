@@ -1922,7 +1922,7 @@ export function CrmPage({
             }`}
           >
             <Zap size={15} className="text-amber-500 fill-amber-500" />
-            <span>⚡ Multi-Channel Outreach Hub (Email, WhatsApp, FB, IG, LinkedIn)</span>
+            <span>⚡ Multi-Channel Outreach Hub (Email, WhatsApp, Forms, IG, LinkedIn)</span>
           </button>
 
           <button

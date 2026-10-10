@@ -191,3 +191,45 @@ schedulerRouter.post('/dispatches/:id/retry', async (req: Request, res: Response
     res.status(500).json({ success: false, error: 'Failed to retry dispatch' });
   }
 });
+
+// DELETE /api/scheduler/dispatches/failed - Bulk delete all failed scheduled dispatches
+schedulerRouter.delete('/dispatches/failed', async (req: Request, res: Response) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    const deletedCount = await emailSchedulerService.deleteFailedDispatches(ids);
+    res.json({ success: true, count: deletedCount, message: `Deleted ${deletedCount} failed dispatches` });
+  } catch (error) {
+    console.error('[schedulerRouter.deleteFailed]', error);
+    res.status(500).json({ success: false, error: 'Failed to delete failed dispatches' });
+  }
+});
+
+// POST /api/scheduler/dispatches/bulk-delete - Bulk delete dispatches by IDs
+schedulerRouter.post('/dispatches/bulk-delete', async (req: Request, res: Response) => {
+  try {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'IDs array required' });
+    }
+    const deletedCount = await emailSchedulerService.deleteDispatches(ids);
+    res.json({ success: true, count: deletedCount, message: `Deleted ${deletedCount} dispatches` });
+  } catch (error) {
+    console.error('[schedulerRouter.bulkDelete]', error);
+    res.status(500).json({ success: false, error: 'Failed to delete dispatches' });
+  }
+});
+
+// DELETE /api/scheduler/dispatches/:id - Delete single dispatch
+schedulerRouter.delete('/dispatches/:id', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const deletedCount = await emailSchedulerService.deleteDispatches([id]);
+    if (deletedCount === 0) {
+      return res.status(404).json({ success: false, error: 'Dispatch not found' });
+    }
+    res.json({ success: true, message: 'Dispatch deleted successfully' });
+  } catch (error) {
+    console.error('[schedulerRouter.deleteSingle]', error);
+    res.status(500).json({ success: false, error: 'Failed to delete dispatch' });
+  }
+});

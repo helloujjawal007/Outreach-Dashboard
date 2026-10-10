@@ -1357,6 +1357,35 @@ export class EmailSchedulerService {
   }
 
   /**
+   * Deletes all failed dispatches in bulk, or specific failed dispatches by ID
+   */
+  async deleteFailedDispatches(ids?: string[]): Promise<number> {
+    if (ids && ids.length > 0) {
+      const res = await query(
+        `DELETE FROM scheduled_dispatches WHERE id = ANY($1) AND status = 'failed' RETURNING id`,
+        [ids]
+      );
+      return res.rowCount || res.rows.length;
+    }
+    const res = await query(
+      `DELETE FROM scheduled_dispatches WHERE status = 'failed' RETURNING id`
+    );
+    return res.rowCount || res.rows.length;
+  }
+
+  /**
+   * Deletes dispatches by list of IDs
+   */
+  async deleteDispatches(ids: string[]): Promise<number> {
+    if (!ids || ids.length === 0) return 0;
+    const res = await query(
+      `DELETE FROM scheduled_dispatches WHERE id = ANY($1) RETURNING id`,
+      [ids]
+    );
+    return res.rowCount || res.rows.length;
+  }
+
+  /**
    * Starts background scheduler polling loop
    */
   startScheduler(pollIntervalMs = 20000) {

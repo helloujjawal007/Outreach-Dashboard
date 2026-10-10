@@ -1217,6 +1217,44 @@ export const api = {
     });
   },
 
+  async deleteFailedDispatches(ids?: string[]): Promise<{ count: number }> {
+    return await request<{ success: boolean; count: number; message: string }>('/scheduler/dispatches/failed', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async bulkDeleteDispatches(ids: string[]): Promise<{ count: number }> {
+    return await request<{ success: boolean; count: number; message: string }>('/scheduler/dispatches/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async deleteScheduledDispatch(id: string): Promise<void> {
+    await request(`/scheduler/dispatches/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async deleteFailedMessages(ids?: string[]): Promise<{ count: number }> {
+    return await request<{ success: boolean; count: number; message: string }>('/conversations/messages/failed', {
+      method: 'DELETE',
+      body: JSON.stringify({ ids }),
+    });
+  },
+
+  async bulkDeleteAllFailedOutreach(): Promise<{ dispatchesCount: number; messagesCount: number }> {
+    const [dRes, mRes] = await Promise.all([
+      this.deleteFailedDispatches().catch(() => ({ count: 0 })),
+      this.deleteFailedMessages().catch(() => ({ count: 0 })),
+    ]);
+    return {
+      dispatchesCount: dRes.count || 0,
+      messagesCount: mRes.count || 0,
+    };
+  },
+
   // 4-Channel Segregation
   async getLeadsByChannel(): Promise<ChannelSegregationData> {
     const res = await request<{

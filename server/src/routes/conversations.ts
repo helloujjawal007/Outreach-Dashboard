@@ -1267,3 +1267,27 @@ conversationsRouter.get('/unmatched-inbox', async (_req: Request, res: Response)
     res.status(500).json({ success: false, error: error.message || 'Failed to fetch unmatched inbox items' });
   }
 });
+
+// DELETE /api/conversations/messages/failed - Bulk delete failed emails & messages
+conversationsRouter.delete('/messages/failed', async (req: Request, res: Response) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    let deletedCount = 0;
+    if (ids && ids.length > 0) {
+      const result = await query(
+        `DELETE FROM messages WHERE id = ANY($1) AND (status = 'failed' OR status = 'smtp_failed') RETURNING id`,
+        [ids]
+      );
+      deletedCount = result.rowCount || result.rows.length;
+    } else {
+      const result = await query(
+        `DELETE FROM messages WHERE status = 'failed' OR status = 'smtp_failed' RETURNING id`
+      );
+      deletedCount = result.rowCount || result.rows.length;
+    }
+    res.json({ success: true, count: deletedCount, message: `Deleted ${deletedCount} failed messages` });
+  } catch (error: any) {
+    console.error('[conversationsRouter.deleteFailedMessages]', error);
+    res.status(500).json({ success: false, error: 'Failed to delete failed messages' });
+  }
+});

@@ -15,6 +15,7 @@ import {
   Loader2,
   Smartphone,
   Search,
+  Trash2,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '@/services/api';
@@ -89,6 +90,8 @@ export function ScheduleOutreachModal({
   const [queueSearch, setQueueSearch] = useState<string>('');
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [isDeletingFailed, setIsDeletingFailed] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Calculate quick preset date times
   const getPresetTime = useCallback((preset: string): { isoLocal: string; label: string } => {
@@ -300,6 +303,37 @@ export function ScheduleOutreachModal({
       console.error('Failed to retry dispatch:', err);
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  // Bulk delete failed dispatches
+  const handleDeleteFailedDispatches = async () => {
+    if (isDeletingFailed) return;
+    const failedCount = dispatches.filter((d) => d.status === 'failed').length;
+    if (!window.confirm(`Are you sure you want to delete all ${failedCount} failed scheduled outreach dispatches?`)) {
+      return;
+    }
+    setIsDeletingFailed(true);
+    try {
+      await api.deleteFailedDispatches();
+      await fetchQueue();
+    } catch (err) {
+      console.error('Failed to delete failed dispatches:', err);
+    } finally {
+      setIsDeletingFailed(false);
+    }
+  };
+
+  // Delete single dispatch
+  const handleDeleteDispatch = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await api.deleteScheduledDispatch(id);
+      await fetchQueue();
+    } catch (err) {
+      console.error('Failed to delete dispatch:', err);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -830,15 +864,34 @@ export function ScheduleOutreachModal({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={fetchQueue}
-                disabled={isLoadingQueue}
-                className="btn-secondary text-xs py-1 px-2.5 flex items-center gap-1 font-semibold"
-              >
-                <RefreshCw size={12} className={isLoadingQueue ? 'animate-spin' : ''} />
-                <span>Refresh</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {dispatches.filter((d) => d.status === 'failed').length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteFailedDispatches}
+                    disabled={isDeletingFailed}
+                    className="btn-secondary text-xs py-1 px-2.5 flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 font-bold transition-colors"
+                    title="Purge all failed outreach messages from queue"
+                  >
+                    <Trash2 size={12} className="text-rose-600" />
+                    <span>
+                      {isDeletingFailed
+                        ? 'Deleting...'
+                        : `Delete All Failed (${dispatches.filter((d) => d.status === 'failed').length})`}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={fetchQueue}
+                  disabled={isLoadingQueue}
+                  className="btn-secondary text-xs py-1 px-2.5 flex items-center gap-1 font-semibold"
+                >
+                  <RefreshCw size={12} className={isLoadingQueue ? 'animate-spin' : ''} />
+                  <span>Refresh</span>
+                </button>
+              </div>
             </div>
 
             {/* Dispatches Table */}
@@ -985,11 +1038,20 @@ export function ScheduleOutreachModal({
                                 type="button"
                                 onClick={() => handleRetryDispatch(item.id)}
                                 disabled={retryingId === item.id}
-                                className="btn-secondary py-1 px-2 text-[11px] text-brand-600 hover:bg-brand-50 border-brand-200"
+                                className="btn-secondary py-1 px-2 text-[11px] text-brand-600 hover:bg-brand-50 border-brand-200 mr-1"
                               >
                                 {retryingId === item.id ? 'Requeueing...' : 'Retry'}
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDispatch(item.id)}
+                              disabled={deletingId === item.id}
+                              title="Delete dispatch"
+                              className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors inline-flex items-center"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </td>
                         </tr>
                       );

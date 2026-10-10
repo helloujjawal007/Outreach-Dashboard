@@ -69,6 +69,8 @@ export function SendingHealthPage({ store }: Props) {
   // Row action spinners
   const [togglingInboxId, setTogglingInboxId] = useState<string | null>(null);
   const [deletingInboxId, setDeletingInboxId] = useState<string | null>(null);
+  const [isDeletingFailedMessages, setIsDeletingFailedMessages] = useState(false);
+  const [deleteFailedFeedback, setDeleteFailedFeedback] = useState<string | null>(null);
 
   // New Inbox Form
   const [newInboxForm, setNewInboxForm] = useState<{
@@ -354,6 +356,31 @@ export function SendingHealthPage({ store }: Props) {
     }
   };
 
+  const handleDeleteFailedMessages = async () => {
+    if (isDeletingFailedMessages) return;
+    if (!window.confirm('Are you sure you want to delete all failed outreach emails and messages in bulk?')) {
+      return;
+    }
+    setIsDeletingFailedMessages(true);
+    try {
+      const res = await api.bulkDeleteAllFailedOutreach();
+      const totalDeleted = (res.dispatchesCount || 0) + (res.messagesCount || 0);
+      setDeleteFailedFeedback(
+        totalDeleted > 0
+          ? `Cleared ${totalDeleted} failed outreach records.`
+          : 'No failed outreach messages found.'
+      );
+      await store.fetchHealth();
+      setTimeout(() => setDeleteFailedFeedback(null), 4000);
+    } catch (err) {
+      console.error('Failed to purge failed messages:', err);
+      setDeleteFailedFeedback(err instanceof Error ? err.message : 'Failed to purge.');
+      setTimeout(() => setDeleteFailedFeedback(null), 4000);
+    } finally {
+      setIsDeletingFailedMessages(false);
+    }
+  };
+
   const healthData = useMemo(() => {
     return store.health?.dailyData && store.health.dailyData.length > 0
       ? store.health.dailyData
@@ -594,6 +621,25 @@ export function SendingHealthPage({ store }: Props) {
           <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
             <TrendingDown size={12} /> {totals.bounceRate.toFixed(1)}% (max 5.0%)
           </p>
+          <button
+            type="button"
+            onClick={handleDeleteFailedMessages}
+            disabled={isDeletingFailedMessages}
+            className="mt-3 w-full py-1.5 px-2 rounded-lg text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 flex items-center justify-center gap-1.5 transition-colors"
+            title="Bulk delete all failed and bounced messages across channels"
+          >
+            {isDeletingFailedMessages ? (
+              <Loader2 size={12} className="animate-spin text-rose-600" />
+            ) : (
+              <Trash2 size={12} className="text-rose-600" />
+            )}
+            <span>{isDeletingFailedMessages ? 'Purging Failed...' : 'Delete Failed Messages'}</span>
+          </button>
+          {deleteFailedFeedback && (
+            <p className="mt-1.5 text-[10px] text-center font-semibold text-rose-600 animate-fade-in">
+              {deleteFailedFeedback}
+            </p>
+          )}
         </div>
 
         <div className="card p-5">

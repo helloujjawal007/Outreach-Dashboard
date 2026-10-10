@@ -194,6 +194,7 @@ export function ChannelOutreachHub({
   }>({ current: 0, total: 0 });
   const [batchShootResult, setBatchShootResult] = useState<BatchShootResponse | null>(null);
   const [shootError, setShootError] = useState<string | null>(null);
+  const [isDeletingFailedOutreach, setIsDeletingFailedOutreach] = useState(false);
 
   // 1. Segregate leads into channels (exclude soft-deleted leads)
   const segregated = useMemo(() => {
@@ -448,10 +449,10 @@ export function ChannelOutreachHub({
       .then((status) => {
         setWaSessionStatus(status);
         if (status.status === 'disconnected') {
-          api.startWhatsAppSession().then(setWaSessionStatus).catch(() => {});
+          api.startWhatsAppSession().then(setWaSessionStatus).catch(() => { });
         }
       })
-      .catch(() => {});
+      .catch(() => { });
 
     const interval = setInterval(() => {
       api.getWhatsAppSessionStatus()
@@ -461,7 +462,7 @@ export function ChannelOutreachHub({
             setWaPairingCode(status.pairingCode);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }, 2500);
 
     return () => clearInterval(interval);
@@ -508,14 +509,14 @@ export function ChannelOutreachHub({
       setWaSessionStatus((prev) =>
         prev
           ? {
-              ...prev,
-              status: 'disconnected',
-              isConnected: false,
-              phoneNumber: null,
-              name: null,
-              qrCodeDataUrl: null,
-              pairingCode: null,
-            }
+            ...prev,
+            status: 'disconnected',
+            isConnected: false,
+            phoneNumber: null,
+            name: null,
+            qrCodeDataUrl: null,
+            pairingCode: null,
+          }
           : null
       );
       setWaPairingCode(null);
@@ -835,7 +836,7 @@ export function ChannelOutreachHub({
       if (!waSessionStatus?.isConnected) {
         setIsWaLinkModalOpen(true);
         if (waSessionStatus?.status === 'disconnected') {
-          api.startWhatsAppSession().then(setWaSessionStatus).catch(() => {});
+          api.startWhatsAppSession().then(setWaSessionStatus).catch(() => { });
         }
         return;
       }
@@ -1053,11 +1054,40 @@ export function ChannelOutreachHub({
     }
   }, [currentChannelLeads, selectedLeadIds, activeTab, batchLimit, intervalSeconds, onRefreshLeads, alsoSubmitWebsiteForm]);
 
+  // Bulk delete failed messages & scheduled dispatches
+  const handleBulkDeleteFailedOutreach = useCallback(async () => {
+    if (isDeletingFailedOutreach) return;
+    const confirmed = window.confirm(
+      'Are you sure you want to delete all failed outreach messages and dispatches in bulk? This permanently clears failed records.'
+    );
+    if (!confirmed) return;
+
+    setIsDeletingFailedOutreach(true);
+    try {
+      const res = await api.bulkDeleteAllFailedOutreach();
+      const totalDeleted = (res.dispatchesCount || 0) + (res.messagesCount || 0);
+      showToast(
+        totalDeleted > 0
+          ? `Successfully cleared ${totalDeleted} failed outreach records (${res.dispatchesCount} scheduled, ${res.messagesCount} sent/failed).`
+          : 'No failed outreach messages or dispatches found to delete.',
+        'success'
+      );
+      if (onRefreshLeads) {
+        await onRefreshLeads();
+      }
+    } catch (err) {
+      console.error('Failed to delete failed outreach:', err);
+      showToast(err instanceof Error ? err.message : 'Failed to delete failed outreach records.', 'error');
+    } finally {
+      setIsDeletingFailedOutreach(false);
+    }
+  }, [isDeletingFailedOutreach, showToast, onRefreshLeads]);
+
   return (
     <div className="space-y-6">
       {/* CHANNEL NAVIGATION TABS */}
       <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {/* 1. WhatsApp Tab */}
           <button
             type="button"
@@ -1065,11 +1095,10 @@ export function ChannelOutreachHub({
               setActiveTab('whatsapp');
               setSearch('');
             }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${
-              activeTab === 'whatsapp'
-                ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50/50 shadow-sm ring-2 ring-emerald-200/60'
-                : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-            }`}
+            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'whatsapp'
+              ? 'border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50/50 shadow-sm ring-2 ring-emerald-200/60'
+              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
+              }`}
           >
             <div className="flex w-full items-center justify-between">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-sm">
@@ -1094,11 +1123,10 @@ export function ChannelOutreachHub({
               setActiveTab('email');
               setSearch('');
             }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${
-              activeTab === 'email'
-                ? 'border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50/50 shadow-sm ring-2 ring-blue-200/60'
-                : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-            }`}
+            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'email'
+              ? 'border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50/50 shadow-sm ring-2 ring-blue-200/60'
+              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
+              }`}
           >
             <div className="flex w-full items-center justify-between">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
@@ -1121,11 +1149,10 @@ export function ChannelOutreachHub({
               setActiveTab('website_form');
               setSearch('');
             }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${
-              activeTab === 'website_form'
-                ? 'border-teal-400 bg-gradient-to-br from-teal-50 to-emerald-50/60 shadow-sm ring-2 ring-teal-300/60'
-                : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-            }`}
+            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'website_form'
+              ? 'border-teal-400 bg-gradient-to-br from-teal-50 to-emerald-50/60 shadow-sm ring-2 ring-teal-300/60'
+              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
+              }`}
           >
             <div className="flex w-full items-center justify-between">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
@@ -1148,11 +1175,10 @@ export function ChannelOutreachHub({
               setActiveTab('instagram');
               setSearch('');
             }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${
-              activeTab === 'instagram'
-                ? 'border-pink-300 bg-gradient-to-br from-pink-50 to-rose-50/50 shadow-sm ring-2 ring-pink-200/60'
-                : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-            }`}
+            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'instagram'
+              ? 'border-pink-300 bg-gradient-to-br from-pink-50 to-rose-50/50 shadow-sm ring-2 ring-pink-200/60'
+              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
+              }`}
           >
             <div className="flex w-full items-center justify-between">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm">
@@ -1175,11 +1201,10 @@ export function ChannelOutreachHub({
               setActiveTab('linkedin');
               setSearch('');
             }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${
-              activeTab === 'linkedin'
-                ? 'border-sky-400 bg-gradient-to-br from-sky-50 to-blue-50/60 shadow-sm ring-2 ring-sky-300/60'
-                : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-            }`}
+            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'linkedin'
+              ? 'border-sky-400 bg-gradient-to-br from-sky-50 to-blue-50/60 shadow-sm ring-2 ring-sky-300/60'
+              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
+              }`}
           >
             <div className="flex w-full items-center justify-between">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0a66c2] text-white shadow-sm">
@@ -1202,920 +1227,926 @@ export function ChannelOutreachHub({
       ) : (
         <>
 
-      {/* OPTION 1: WHATSAPP DIRECT PHONE LINK STATUS BANNER (shown only in WhatsApp tab) */}
-      {activeTab === 'whatsapp' && (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-300 bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 p-4 shadow-sm animate-fade-in">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shrink-0 mt-0.5">
-              <MessageCircle size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-bold text-emerald-950">
-                  Direct WhatsApp Dispatching Engine (Option 1)
-                </h4>
+          {/* OPTION 1: WHATSAPP DIRECT PHONE LINK STATUS BANNER (shown only in WhatsApp tab) */}
+          {activeTab === 'whatsapp' && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-300 bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 p-4 shadow-sm animate-fade-in">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm shrink-0 mt-0.5">
+                  <MessageCircle size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-bold text-emerald-950">
+                      Direct WhatsApp Dispatching Engine (Option 1)
+                    </h4>
+                    {waSessionStatus?.isConnected ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Connected: {waSessionStatus.phoneNumber || 'Active Account'}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        Phone Not Linked
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-emerald-800 mt-1">
+                    {waSessionStatus?.isConnected
+                      ? `Your WhatsApp account (${waSessionStatus.phoneNumber || 'Active Device'}) is connected. Automated messages and 100/batch shoots will be dispatched directly from your phone in headless mode.`
+                      : 'Link your WhatsApp account via QR Code or 8-digit Pairing Code. Once linked, the system shoots personalized outreach directly from your phone number without any manual web clicks.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
                 {waSessionStatus?.isConnected ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Connected: {waSessionStatus.phoneNumber || 'Active Account'}
-                  </span>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsWaLinkModalOpen(true)}
+                      className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-900 text-xs font-semibold hover:bg-emerald-50 transition-all shadow-2xs flex items-center gap-1.5"
+                    >
+                      <Smartphone size={14} className="text-emerald-600" />
+                      <span>Device Details</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectWa}
+                      disabled={isDisconnectingWa}
+                      className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-all shadow-2xs flex items-center gap-1.5"
+                    >
+                      <Unlink size={14} />
+                      <span>{isDisconnectingWa ? 'Disconnecting...' : 'Disconnect'}</span>
+                    </button>
+                  </>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                    Phone Not Linked
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsWaLinkModalOpen(true);
+                      if (waSessionStatus?.status === 'disconnected') {
+                        api.startWhatsAppSession().then(setWaSessionStatus).catch(() => { });
+                      }
+                    }}
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 group"
+                  >
+                    <QrCode size={16} className="group-hover:scale-110 transition-transform" />
+                    <span>Link WhatsApp Phone</span>
+                  </button>
                 )}
               </div>
-              <p className="text-xs text-emerald-800 mt-1">
-                {waSessionStatus?.isConnected
-                  ? `Your WhatsApp account (${waSessionStatus.phoneNumber || 'Active Device'}) is connected. Automated messages and 100/batch shoots will be dispatched directly from your phone in headless mode.`
-                  : 'Link your WhatsApp account via QR Code or 8-digit Pairing Code. Once linked, the system shoots personalized outreach directly from your phone number without any manual web clicks.'}
-              </p>
             </div>
-          </div>
+          )}
 
-          <div className="flex items-center gap-2">
-            {waSessionStatus?.isConnected ? (
-              <>
+          {/* WHATSAPP ELIGIBILITY DECISION BANNER (shown only in WhatsApp tab) */}
+          {activeTab === 'whatsapp' && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm animate-fade-in">
+              <div className="flex items-start gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shrink-0 mt-0.5">
+                  <ShieldCheck size={18} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-emerald-950">
+                    WhatsApp Automated Number &amp; Landline Decision Engine
+                  </h4>
+                  <p className="text-xs text-emerald-800 mt-0.5">
+                    The engine checks whether phone numbers are mobile-ready. Australian landlines (02, 03, 07, 08)
+                    cannot receive WhatsApp messages and are filtered automatically to protect deliverability.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-emerald-200 shadow-xs">
                 <button
                   type="button"
-                  onClick={() => setIsWaLinkModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-900 text-xs font-semibold hover:bg-emerald-50 transition-all shadow-2xs flex items-center gap-1.5"
+                  onClick={() => setWaFilter('all')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${waFilter === 'all'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-900 hover:bg-emerald-50'
+                    }`}
                 >
-                  <Smartphone size={14} className="text-emerald-600" />
-                  <span>Device Details</span>
+                  All ({segregated.whatsapp.length})
                 </button>
                 <button
                   type="button"
-                  onClick={handleDisconnectWa}
-                  disabled={isDisconnectingWa}
-                  className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-all shadow-2xs flex items-center gap-1.5"
+                  onClick={() => setWaFilter('eligible')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${waFilter === 'eligible'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-emerald-900 hover:bg-emerald-50'
+                    }`}
                 >
-                  <Unlink size={14} />
-                  <span>{isDisconnectingWa ? 'Disconnecting...' : 'Disconnect'}</span>
+                  ✓ Mobile Ready ({segregated.whatsappEligible.length})
                 </button>
-              </>
-            ) : (
+                <button
+                  type="button"
+                  onClick={() => setWaFilter('ineligible')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${waFilter === 'ineligible'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-amber-800 hover:bg-amber-50'
+                    }`}
+                >
+                  Landlines ({segregated.whatsappIneligible.length})
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* EMAIL MULTI-INBOX ROTATION ENGINE BANNER (shown only in Email tab) */}
+          {activeTab === 'email' && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-sky-50/80 p-4 shadow-sm animate-fade-in">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shrink-0 mt-0.5">
+                  <Zap size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-bold text-blue-950">
+                      Apollo-Grade Multi-Inbox Cold Email Rotation Engine
+                    </h4>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                      <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                      Multi-Inbox Pool Active
+                    </span>
+                    {inboxSummary && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-white text-ink-700 border border-blue-200 shadow-2xs">
+                        {inboxSummary.activeInboxes} Active Mailboxes • {inboxSummary.totalDailyCapacity}/day Safe Capacity
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-blue-900 mt-1 max-w-3xl">
+                    Cold email dispatches and batch shoots automatically rotate across connected Google Workspace and Microsoft 365 accounts in weighted round-robin. Each inbox is capped at a safe daily limit (30–50/day) to guarantee 99%+ inbox placement and protect your domains.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-blue-800 bg-white/80 border border-blue-200 px-3 py-1.5 rounded-lg shadow-2xs">
+                  ⚡ Safe Cap: 30–50/day/inbox
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* INSTAGRAM SENDER PROFILE BANNER (shown only in Instagram tab) */}
+          {activeTab === 'instagram' && (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-pink-300 bg-gradient-to-r from-pink-50 via-rose-50/60 to-purple-50/60 p-4 shadow-sm animate-fade-in">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm shrink-0 mt-0.5">
+                  <Instagram size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-bold text-pink-950">
+                      Instagram Direct Outreach Engine
+                    </h4>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-pink-100 text-pink-800 border border-pink-300">
+                      <span className="h-2 w-2 rounded-full bg-pink-500 animate-pulse" />
+                      Sender: @anupam_kumar_seo
+                    </span>
+                  </div>
+                  <p className="text-xs text-pink-900 mt-1">
+                    Direct Instagram DMs and social touchpoints are initiated from{' '}
+                    <a
+                      href="https://www.instagram.com/anupam_kumar_seo/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-bold underline hover:text-pink-950"
+                    >
+                      @anupam_kumar_seo (Anupam Kumar)
+                    </a>
+                    . All outreach drafts are pre-screened to avoid automated shadowbans.
+                  </p>
+                </div>
+              </div>
+
+              <a
+                href="https://www.instagram.com/anupam_kumar_seo/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary text-xs flex items-center gap-1.5 border-pink-300 text-pink-800 bg-white hover:bg-pink-50 shadow-2xs"
+                title="Open Instagram profile"
+              >
+                <Instagram size={14} className="text-pink-600" />
+                <span>View Instagram Profile</span>
+                <ExternalLink size={12} />
+              </a>
+            </div>
+          )}
+
+          {/* CHANNEL ACTION HEADER & SEARCH + MULTI-FACTOR FILTERS */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+            <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+              <div className="relative min-w-44 max-w-xs flex-1">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+                <input
+                  type="text"
+                  placeholder={`Search ${channelLabels[activeTab]} leads...`}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="input pl-9 pr-3 py-1.5 text-xs w-full bg-slate-50 border-slate-200"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 text-ink-400 text-xs font-semibold pl-1">
+                <Filter size={13} />
+              </div>
+
+              {/* Country Filter */}
+              <select
+                value={channelCountryFilter}
+                onChange={(e) => {
+                  setChannelCountryFilter(e.target.value);
+                  setChannelCityFilter('all');
+                }}
+                className={`input py-1.5 text-xs w-auto font-medium transition-all ${channelCountryFilter !== 'all'
+                  ? 'ring-2 ring-brand-500 bg-brand-50/50 text-brand-900 font-bold border-brand-300'
+                  : 'bg-slate-50 border-slate-200'
+                  }`}
+                title="Filter channel leads by country"
+              >
+                <option value="all">🌍 All Countries ({activeChannelCountries.length})</option>
+                {activeChannelCountries.map(({ country, count, flag }) => (
+                  <option key={country} value={country}>
+                    {flag} {country} ({count})
+                  </option>
+                ))}
+              </select>
+
+              {/* City / Location Sub-Filter */}
+              {channelCountryFilter !== 'all' && activeChannelCities.length > 0 && (
+                <select
+                  value={channelCityFilter}
+                  onChange={(e) => setChannelCityFilter(e.target.value)}
+                  className={`input py-1.5 text-xs w-auto font-medium transition-all animate-fadeIn ${channelCityFilter !== 'all'
+                    ? 'ring-2 ring-indigo-500 bg-indigo-50/50 text-indigo-900 font-bold border-indigo-300'
+                    : 'bg-slate-50 border-slate-200'
+                    }`}
+                  title={`Sub-filter by city/region in ${channelCountryFilter}`}
+                >
+                  <option value="all">📍 All Cities ({channelCountryFilter} - {activeChannelCities.length})</option>
+                  {activeChannelCities.map(({ city, count }) => (
+                    <option key={city} value={city}>
+                      {city} ({count})
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Category Filter */}
+              <select
+                value={channelCategoryFilter}
+                onChange={(e) => setChannelCategoryFilter(e.target.value)}
+                className={`input py-1.5 text-xs w-auto font-medium transition-all ${channelCategoryFilter !== 'all'
+                  ? 'ring-2 ring-purple-500 bg-purple-50/50 text-purple-900 font-bold border-purple-300'
+                  : 'bg-slate-50 border-slate-200'
+                  }`}
+                title="Filter channel leads by category"
+              >
+                <option value="all">All Categories ({activeChannelCategories.length})</option>
+                {activeChannelCategories.map(({ category, count }) => (
+                  <option key={category} value={category}>
+                    {category} ({count})
+                  </option>
+                ))}
+              </select>
+
+              {/* List Filter */}
+              <select
+                value={channelListFilter}
+                onChange={(e) => setChannelListFilter(e.target.value)}
+                className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
+                title="Filter channel leads by list"
+              >
+                <option value="all">All Lists ({channelListCounts.all})</option>
+                <option value="unassigned">📥 Main List (Unassigned) ({channelListCounts.unassigned})</option>
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    🏷️ {l.name} ({channelListCounts.map.get(l.id) || 0})
+                  </option>
+                ))}
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={channelStatusFilter}
+                onChange={(e) => setChannelStatusFilter(e.target.value as any)}
+                className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
+              >
+                <option value="all">All Status ({channelStatusCounts.all})</option>
+                <option value="active">Active Only ({channelStatusCounts.active})</option>
+                <option value="inactive">Inactive Only ({channelStatusCounts.inactive})</option>
+              </select>
+
+              {/* Consent Filter */}
+              <select
+                value={channelConsentFilter}
+                onChange={(e) => setChannelConsentFilter(e.target.value as any)}
+                className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
+              >
+                <option value="all">All Responses ({channelConsentCounts.all})</option>
+                <option value="none">No Response ({channelConsentCounts.none})</option>
+                <option value="replied">Replied ({channelConsentCounts.replied})</option>
+                <option value="opted_out">Opted Out ({channelConsentCounts.opted_out})</option>
+              </select>
+
+              {/* Clear Filter Button */}
+              {hasActiveChannelFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetChannelFilters}
+                  className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-rose-600 hover:bg-rose-50 border-rose-200 font-semibold"
+                  title="Reset all channel filters"
+                >
+                  <X size={12} />
+                  <span>Reset</span>
+                </button>
+              )}
+
+              <span className="text-xs text-ink-500 font-medium ml-1">
+                <strong className="text-ink-900 font-bold">{currentChannelLeads.length}</strong> leads
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {activeTab === 'whatsapp' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsWaLinkModalOpen(true);
+                    if (waSessionStatus?.status === 'disconnected') {
+                      api.startWhatsAppSession().then(setWaSessionStatus).catch(() => { });
+                    }
+                  }}
+                  className={`py-2 px-3.5 rounded-lg border text-xs font-bold flex items-center gap-2 transition-all shadow-xs ${waSessionStatus?.isConnected
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                    : 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                >
+                  {waSessionStatus?.isConnected ? (
+                    <>
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>WA Linked: {waSessionStatus.phoneNumber || 'Active'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone size={15} />
+                      <span>Link WhatsApp Phone</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Schedule Outreach Button */}
               <button
                 type="button"
                 onClick={() => {
-                  setIsWaLinkModalOpen(true);
-                  if (waSessionStatus?.status === 'disconnected') {
-                    api.startWhatsAppSession().then(setWaSessionStatus).catch(() => {});
+                  if (selectedLeadIds.size > 0) {
+                    handleOpenScheduleForSelected();
+                  } else {
+                    setScheduleTargetLead(null);
+                    setScheduleTargetLeads(currentChannelLeads);
+                    setIsScheduleModalOpen(true);
                   }
                 }}
-                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 group"
+                disabled={currentChannelLeads.length === 0}
+                className="btn-secondary py-2 px-3.5 flex items-center gap-1.5 shadow-xs font-bold text-xs text-indigo-700 bg-indigo-50/70 border-indigo-200 hover:bg-indigo-100/70"
+                title="Schedule outreach for later with automated background delivery"
               >
-                <QrCode size={16} className="group-hover:scale-110 transition-transform" />
-                <span>Link WhatsApp Phone</span>
+                <CalendarClock size={15} className="text-indigo-600" />
+                <span>
+                  {selectedLeadIds.size > 0
+                    ? `Schedule (${selectedLeadIds.size})`
+                    : 'Schedule Outreach'}
+                </span>
               </button>
-            )}
-          </div>
-        </div>
-      )}
 
-      {/* WHATSAPP ELIGIBILITY DECISION BANNER (shown only in WhatsApp tab) */}
-      {activeTab === 'whatsapp' && (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 shadow-sm animate-fade-in">
-          <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shrink-0 mt-0.5">
-              <ShieldCheck size={18} />
-            </div>
-            <div>
-              <h4 className="text-sm font-bold text-emerald-950">
-                WhatsApp Automated Number &amp; Landline Decision Engine
-              </h4>
-              <p className="text-xs text-emerald-800 mt-0.5">
-                The engine checks whether phone numbers are mobile-ready. Australian landlines (02, 03, 07, 08)
-                cannot receive WhatsApp messages and are filtered automatically to protect deliverability.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-emerald-200 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setWaFilter('all')}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                waFilter === 'all'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-emerald-900 hover:bg-emerald-50'
-              }`}
-            >
-              All ({segregated.whatsapp.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setWaFilter('eligible')}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                waFilter === 'eligible'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-emerald-900 hover:bg-emerald-50'
-              }`}
-            >
-              ✓ Mobile Ready ({segregated.whatsappEligible.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setWaFilter('ineligible')}
-              className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                waFilter === 'ineligible'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : 'text-amber-800 hover:bg-amber-50'
-              }`}
-            >
-              Landlines ({segregated.whatsappIneligible.length})
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* EMAIL MULTI-INBOX ROTATION ENGINE BANNER (shown only in Email tab) */}
-      {activeTab === 'email' && (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-sky-50/80 p-4 shadow-sm animate-fade-in">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shrink-0 mt-0.5">
-              <Zap size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-bold text-blue-950">
-                  Apollo-Grade Multi-Inbox Cold Email Rotation Engine
-                </h4>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                  <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-                  Multi-Inbox Pool Active
-                </span>
-                {inboxSummary && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-white text-ink-700 border border-blue-200 shadow-2xs">
-                    {inboxSummary.activeInboxes} Active Mailboxes • {inboxSummary.totalDailyCapacity}/day Safe Capacity
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-blue-900 mt-1 max-w-3xl">
-                Cold email dispatches and batch shoots automatically rotate across connected Google Workspace and Microsoft 365 accounts in weighted round-robin. Each inbox is capped at a safe daily limit (30–50/day) to guarantee 99%+ inbox placement and protect your domains.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-blue-800 bg-white/80 border border-blue-200 px-3 py-1.5 rounded-lg shadow-2xs">
-              ⚡ Safe Cap: 30–50/day/inbox
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* INSTAGRAM SENDER PROFILE BANNER (shown only in Instagram tab) */}
-      {activeTab === 'instagram' && (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-pink-300 bg-gradient-to-r from-pink-50 via-rose-50/60 to-purple-50/60 p-4 shadow-sm animate-fade-in">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm shrink-0 mt-0.5">
-              <Instagram size={20} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-bold text-pink-950">
-                  Instagram Direct Outreach Engine
-                </h4>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-pink-100 text-pink-800 border border-pink-300">
-                  <span className="h-2 w-2 rounded-full bg-pink-500 animate-pulse" />
-                  Sender: @anupam_kumar_seo
-                </span>
-              </div>
-              <p className="text-xs text-pink-900 mt-1">
-                Direct Instagram DMs and social touchpoints are initiated from{' '}
-                <a
-                  href="https://www.instagram.com/anupam_kumar_seo/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-bold underline hover:text-pink-950"
-                >
-                  @anupam_kumar_seo (Anupam Kumar)
-                </a>
-                . All outreach drafts are pre-screened to avoid automated shadowbans.
-              </p>
-            </div>
-          </div>
-
-          <a
-            href="https://www.instagram.com/anupam_kumar_seo/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary text-xs flex items-center gap-1.5 border-pink-300 text-pink-800 bg-white hover:bg-pink-50 shadow-2xs"
-            title="Open Instagram profile"
-          >
-            <Instagram size={14} className="text-pink-600" />
-            <span>View Instagram Profile</span>
-            <ExternalLink size={12} />
-          </a>
-        </div>
-      )}
-
-      {/* CHANNEL ACTION HEADER & SEARCH + MULTI-FACTOR FILTERS */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-          <div className="relative min-w-44 max-w-xs flex-1">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-            <input
-              type="text"
-              placeholder={`Search ${channelLabels[activeTab]} leads...`}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input pl-9 pr-3 py-1.5 text-xs w-full bg-slate-50 border-slate-200"
-            />
-          </div>
-
-          <div className="flex items-center gap-1.5 text-ink-400 text-xs font-semibold pl-1">
-            <Filter size={13} />
-          </div>
-
-          {/* Country Filter */}
-          <select
-            value={channelCountryFilter}
-            onChange={(e) => {
-              setChannelCountryFilter(e.target.value);
-              setChannelCityFilter('all');
-            }}
-            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
-              channelCountryFilter !== 'all'
-                ? 'ring-2 ring-brand-500 bg-brand-50/50 text-brand-900 font-bold border-brand-300'
-                : 'bg-slate-50 border-slate-200'
-            }`}
-            title="Filter channel leads by country"
-          >
-            <option value="all">🌍 All Countries ({activeChannelCountries.length})</option>
-            {activeChannelCountries.map(({ country, count, flag }) => (
-              <option key={country} value={country}>
-                {flag} {country} ({count})
-              </option>
-            ))}
-          </select>
-
-          {/* City / Location Sub-Filter */}
-          {channelCountryFilter !== 'all' && activeChannelCities.length > 0 && (
-            <select
-              value={channelCityFilter}
-              onChange={(e) => setChannelCityFilter(e.target.value)}
-              className={`input py-1.5 text-xs w-auto font-medium transition-all animate-fadeIn ${
-                channelCityFilter !== 'all'
-                  ? 'ring-2 ring-indigo-500 bg-indigo-50/50 text-indigo-900 font-bold border-indigo-300'
-                  : 'bg-slate-50 border-slate-200'
-              }`}
-              title={`Sub-filter by city/region in ${channelCountryFilter}`}
-            >
-              <option value="all">📍 All Cities ({channelCountryFilter} - {activeChannelCities.length})</option>
-              {activeChannelCities.map(({ city, count }) => (
-                <option key={city} value={city}>
-                  {city} ({count})
-                </option>
-              ))}
-            </select>
-          )}
-
-          {/* Category Filter */}
-          <select
-            value={channelCategoryFilter}
-            onChange={(e) => setChannelCategoryFilter(e.target.value)}
-            className={`input py-1.5 text-xs w-auto font-medium transition-all ${
-              channelCategoryFilter !== 'all'
-                ? 'ring-2 ring-purple-500 bg-purple-50/50 text-purple-900 font-bold border-purple-300'
-                : 'bg-slate-50 border-slate-200'
-            }`}
-            title="Filter channel leads by category"
-          >
-            <option value="all">All Categories ({activeChannelCategories.length})</option>
-            {activeChannelCategories.map(({ category, count }) => (
-              <option key={category} value={category}>
-                {category} ({count})
-              </option>
-            ))}
-          </select>
-
-          {/* List Filter */}
-          <select
-            value={channelListFilter}
-            onChange={(e) => setChannelListFilter(e.target.value)}
-            className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
-            title="Filter channel leads by list"
-          >
-            <option value="all">All Lists ({channelListCounts.all})</option>
-            <option value="unassigned">📥 Main List (Unassigned) ({channelListCounts.unassigned})</option>
-            {lists.map((l) => (
-              <option key={l.id} value={l.id}>
-                🏷️ {l.name} ({channelListCounts.map.get(l.id) || 0})
-              </option>
-            ))}
-          </select>
-
-          {/* Status Filter */}
-          <select
-            value={channelStatusFilter}
-            onChange={(e) => setChannelStatusFilter(e.target.value as any)}
-            className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
-          >
-            <option value="all">All Status ({channelStatusCounts.all})</option>
-            <option value="active">Active Only ({channelStatusCounts.active})</option>
-            <option value="inactive">Inactive Only ({channelStatusCounts.inactive})</option>
-          </select>
-
-          {/* Consent Filter */}
-          <select
-            value={channelConsentFilter}
-            onChange={(e) => setChannelConsentFilter(e.target.value as any)}
-            className="input py-1.5 text-xs w-auto font-medium bg-slate-50 border-slate-200"
-          >
-            <option value="all">All Responses ({channelConsentCounts.all})</option>
-            <option value="none">No Response ({channelConsentCounts.none})</option>
-            <option value="replied">Replied ({channelConsentCounts.replied})</option>
-            <option value="opted_out">Opted Out ({channelConsentCounts.opted_out})</option>
-          </select>
-
-          {/* Clear Filter Button */}
-          {hasActiveChannelFilters && (
-            <button
-              type="button"
-              onClick={handleResetChannelFilters}
-              className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-rose-600 hover:bg-rose-50 border-rose-200 font-semibold"
-              title="Reset all channel filters"
-            >
-              <X size={12} />
-              <span>Reset</span>
-            </button>
-          )}
-
-          <span className="text-xs text-ink-500 font-medium ml-1">
-            <strong className="text-ink-900 font-bold">{currentChannelLeads.length}</strong> leads
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {activeTab === 'whatsapp' && (
-            <button
-              type="button"
-              onClick={() => {
-                setIsWaLinkModalOpen(true);
-                if (waSessionStatus?.status === 'disconnected') {
-                  api.startWhatsAppSession().then(setWaSessionStatus).catch(() => {});
-                }
-              }}
-              className={`py-2 px-3.5 rounded-lg border text-xs font-bold flex items-center gap-2 transition-all shadow-xs ${
-                waSessionStatus?.isConnected
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                  : 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700'
-              }`}
-            >
-              {waSessionStatus?.isConnected ? (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>WA Linked: {waSessionStatus.phoneNumber || 'Active'}</span>
-                </>
-              ) : (
-                <>
-                  <Smartphone size={15} />
-                  <span>Link WhatsApp Phone</span>
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Schedule Outreach Button */}
-          <button
-            type="button"
-            onClick={() => {
-              if (selectedLeadIds.size > 0) {
-                handleOpenScheduleForSelected();
-              } else {
-                setScheduleTargetLead(null);
-                setScheduleTargetLeads(currentChannelLeads);
-                setIsScheduleModalOpen(true);
-              }
-            }}
-            disabled={currentChannelLeads.length === 0}
-            className="btn-secondary py-2 px-3.5 flex items-center gap-1.5 shadow-xs font-bold text-xs text-indigo-700 bg-indigo-50/70 border-indigo-200 hover:bg-indigo-100/70"
-            title="Schedule outreach for later with automated background delivery"
-          >
-            <CalendarClock size={15} className="text-indigo-600" />
-            <span>
-              {selectedLeadIds.size > 0
-                ? `Schedule (${selectedLeadIds.size})`
-                : 'Schedule Outreach'}
-            </span>
-          </button>
-
-          {/* Shoot Messages Button (supports selected batch or default batch) */}
-          <button
-            type="button"
-            onClick={() => {
-              if (selectedLeadIds.size > 0) {
-                setBatchLimit(selectedLeadIds.size);
-              }
-              setIsBatchShootModalOpen(true);
-              setBatchShootResult(null);
-              setShootError(null);
-            }}
-            disabled={currentChannelLeads.length === 0}
-            className="btn-primary py-2 px-4 flex items-center gap-2 shadow-sm font-bold text-xs"
-          >
-            <Zap size={16} className="text-amber-300" />
-            <span>
-              {selectedLeadIds.size > 0
-                ? `Shoot Selected (${selectedLeadIds.size}) Messages`
-                : `Shoot ${channelLabels[activeTab]} Messages (Up to 100)`}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* TOAST FEEDBACK NOTIFICATION */}
-      {toastNotification && (
-        <div
-          className={`flex items-center justify-between p-3.5 rounded-xl text-xs font-semibold shadow-sm animate-fade-in border ${
-            toastNotification.type === 'success'
-              ? 'bg-emerald-50 text-emerald-950 border-emerald-300'
-              : 'bg-rose-50 text-rose-950 border-rose-300'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            {toastNotification.type === 'success' ? (
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-            ) : (
-              <AlertTriangle size={16} className="text-rose-600 shrink-0" />
-            )}
-            <span>{toastNotification.message}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setToastNotification(null)}
-            className="text-ink-400 hover:text-ink-700 p-1"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* FLOATING BULK ACTIONS BAR (WHEN 1 OR MORE LEADS ARE CHECKED) */}
-      {selectedLeadIds.size > 0 && (
-        <div className="sticky top-3 z-30 flex items-center justify-between gap-3 rounded-2xl border-2 border-brand-200 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-3.5 text-white shadow-xl animate-fade-in">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500 text-white font-black text-xs shadow-sm">
-              {selectedLeadIds.size}
-            </span>
-            <div>
-              <span className="font-bold text-sm text-white">
-                {selectedLeadIds.size} {selectedLeadIds.size === 1 ? 'Lead' : 'Leads'} Selected
-              </span>
-              <span className="text-[11px] text-slate-300 block">
-                Bulk actions ready for {channelLabels[activeTab]} leads
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* 1. Shoot Selected */}
-            <button
-              type="button"
-              onClick={() => {
-                setBatchLimit(selectedLeadIds.size);
-                setIsBatchShootModalOpen(true);
-                setBatchShootResult(null);
-                setShootError(null);
-              }}
-              className="btn-primary py-1.5 px-3.5 text-xs font-bold flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white border-0 shadow-sm"
-              title="Shoot outreach messages to all selected leads"
-            >
-              <Zap size={14} className="text-amber-300" />
-              <span>Shoot Selected ({selectedLeadIds.size})</span>
-            </button>
-
-            {/* 2. Schedule Selected */}
-            <button
-              type="button"
-              onClick={handleOpenScheduleForSelected}
-              className="btn-secondary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-indigo-500/25 hover:bg-indigo-500/40 text-indigo-200 border-indigo-400/30 shadow-sm"
-              title="Schedule automated outreach for all selected leads"
-            >
-              <CalendarClock size={14} className="text-indigo-300" />
-              <span>Schedule Selected ({selectedLeadIds.size})</span>
-            </button>
-
-            {/* 3. Add to List */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedTargetListId(lists?.[0]?.id || '');
-                setIsAddToListModalOpen(true);
-                setAddToListError(null);
-              }}
-              className="btn-secondary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white border-white/20 shadow-sm"
-              title="Assign selected leads to any list"
-            >
-              <ListPlus size={14} />
-              <span>Add to List</span>
-            </button>
-
-            {/* 3. Delete Selected */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsBulkDeleteModalOpen(true);
-                setBulkDeleteError(null);
-              }}
-              className="btn-secondary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border-rose-400/30 shadow-sm"
-              title="Delete all selected leads (preserved in 28-day trash)"
-            >
-              <Trash2 size={14} />
-              <span>Delete Selected</span>
-            </button>
-
-            {/* 4. Deselect All */}
-            <button
-              type="button"
-              onClick={() => setSelectedLeadIds(new Set())}
-              className="btn-secondary py-1.5 px-2.5 text-xs text-slate-300 hover:text-white bg-transparent border-transparent hover:bg-white/10"
-              title="Clear selection"
-            >
-              Deselect All
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* LEADS TABLE / LIST */}
-      <div className="card overflow-hidden border border-slate-200 shadow-sm">
-        {/* Apollo/Gmail Multi-Page Select Alert */}
-        {allOnPageSelected && paginatedLeads.length < currentChannelLeads.length && (
-          <div className="bg-brand-50 border-b border-brand-200 px-4 py-2 text-center text-xs text-brand-900 flex items-center justify-center gap-2 flex-wrap animate-fade-in">
-            <span>
-              All <strong>{paginatedLeads.length}</strong> leads on this page are selected.
-            </span>
-            {!allInFilteredSelected ? (
+              {/* Bulk Delete Failed Outreach Button */}
               <button
                 type="button"
-                onClick={handleSelectAllInFiltered}
-                className="font-bold underline text-brand-700 hover:text-brand-900 cursor-pointer"
+                onClick={handleBulkDeleteFailedOutreach}
+                disabled={isDeletingFailedOutreach}
+                className="btn-secondary py-2 px-3.5 flex items-center gap-1.5 shadow-xs font-bold text-xs text-rose-700 bg-rose-50/70 border-rose-200 hover:bg-rose-100/70 transition-colors"
+                title="Bulk delete failed outreach emails and messages"
               >
-                Select all {currentChannelLeads.length} leads in this view
+                {isDeletingFailedOutreach ? (
+                  <Loader2 size={15} className="animate-spin text-rose-600" />
+                ) : (
+                  <Trash2 size={15} className="text-rose-600" />
+                )}
+                <span>{isDeletingFailedOutreach ? 'Deleting Failed...' : 'Delete Failed'}</span>
               </button>
-            ) : (
-              <span className="font-semibold text-emerald-700">
-                ✓ All {currentChannelLeads.length} leads in this view are selected.
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={handleClearSelection}
-              className="text-xs text-ink-500 hover:text-ink-800 ml-2"
-            >
-              Clear selection
-            </button>
+
+              {/* Shoot Messages Button (supports selected batch or default batch) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedLeadIds.size > 0) {
+                    setBatchLimit(selectedLeadIds.size);
+                  }
+                  setIsBatchShootModalOpen(true);
+                  setBatchShootResult(null);
+                  setShootError(null);
+                }}
+                disabled={currentChannelLeads.length === 0}
+                className="btn-primary py-2 px-4 flex items-center gap-2 shadow-sm font-bold text-xs"
+              >
+                <Zap size={16} className="text-amber-300" />
+                <span>
+                  {selectedLeadIds.size > 0
+                    ? `Shoot Selected (${selectedLeadIds.size}) Messages`
+                    : `Shoot ${channelLabels[activeTab]} Messages (Up to 100)`}
+                </span>
+              </button>
+            </div>
           </div>
-        )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase tracking-wider text-ink-500">
-              <tr>
-                {/* Checkbox column */}
-                <th className="py-3 px-3 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={allInCurrentViewSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = someInCurrentViewSelected && !allInCurrentViewSelected;
-                    }}
-                    onChange={handleToggleSelectAll}
-                    className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
-                    title="Select / Deselect all leads in current page"
-                  />
-                </th>
-                <th className="py-3 px-4">Business &amp; Category</th>
-                <th className="py-3 px-4">Contact &amp; Channel Status</th>
-                <th className="py-3 px-4">Eligibility Decision</th>
-                <th className="py-3 px-4">Consent / Stage</th>
-                <th className="py-3 px-4 text-right">Outreach Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {currentChannelLeads.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-ink-400">
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <Info size={28} className="text-ink-300" />
-                      <p className="font-semibold text-sm text-ink-700">No leads found in this channel section</p>
-                      <p className="text-xs text-ink-400">
-                        {search ? 'Try clearing your search query.' : 'Import leads with this channel to populate.'}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                paginatedLeads.map((lead) => {
-                  const isEligible =
-                    activeTab === 'whatsapp' ? lead.whatsappEligible === true : true;
-                  const isSelected = selectedLeadIds.has(lead.id);
+          {/* TOAST FEEDBACK NOTIFICATION */}
+          {toastNotification && (
+            <div
+              className={`flex items-center justify-between p-3.5 rounded-xl text-xs font-semibold shadow-sm animate-fade-in border ${toastNotification.type === 'success'
+                ? 'bg-emerald-50 text-emerald-950 border-emerald-300'
+                : 'bg-rose-50 text-rose-950 border-rose-300'
+                }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {toastNotification.type === 'success' ? (
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                )}
+                <span>{toastNotification.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToastNotification(null)}
+                className="text-ink-400 hover:text-ink-700 p-1"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
 
-                  return (
-                    <tr
-                      key={lead.id}
-                      className={`hover:bg-slate-50/80 transition-colors ${
-                        isSelected ? 'bg-brand-50/40' : ''
-                      }`}
-                    >
-                      {/* Checkbox */}
-                      <td className="py-3.5 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleSelectOne(lead.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
-                        />
-                      </td>
+          {/* FLOATING BULK ACTIONS BAR (WHEN 1 OR MORE LEADS ARE CHECKED) */}
+          {selectedLeadIds.size > 0 && (
+            <div className="sticky top-3 z-30 flex items-center justify-between gap-3 rounded-2xl border-2 border-brand-200 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-3.5 text-white shadow-xl animate-fade-in">
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-500 text-white font-black text-xs shadow-sm">
+                  {selectedLeadIds.size}
+                </span>
+                <div>
+                  <span className="font-bold text-sm text-white">
+                    {selectedLeadIds.size} {selectedLeadIds.size === 1 ? 'Lead' : 'Leads'} Selected
+                  </span>
+                  <span className="text-[11px] text-slate-300 block">
+                    Bulk actions ready for {channelLabels[activeTab]} leads
+                  </span>
+                </div>
+              </div>
 
-                      {/* 1. Business & Category */}
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-ink-900 text-sm">{lead.businessName}</div>
-                        <div className="text-[11px] text-ink-500">{lead.category}</div>
-                      </td>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* 1. Shoot Selected */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchLimit(selectedLeadIds.size);
+                    setIsBatchShootModalOpen(true);
+                    setBatchShootResult(null);
+                    setShootError(null);
+                  }}
+                  className="btn-primary py-1.5 px-3.5 text-xs font-bold flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white border-0 shadow-sm"
+                  title="Shoot outreach messages to all selected leads"
+                >
+                  <Zap size={14} className="text-amber-300" />
+                  <span>Shoot Selected ({selectedLeadIds.size})</span>
+                </button>
 
-                      {/* 2. Contact info */}
-                      <td className="py-3.5 px-4">
-                        {activeTab === 'email' && (
-                          <div className="font-medium text-ink-800">{lead.email}</div>
-                        )}
-                        {activeTab === 'whatsapp' && (
-                          <div className="space-y-0.5">
-                            <div className="font-medium text-ink-800 flex items-center gap-1.5">
-                              <Phone size={13} className="text-emerald-600" />
-                              <span>{lead.whatsapp || lead.phone || 'No phone'}</span>
-                            </div>
-                          </div>
-                        )}
-                        {activeTab === 'instagram' && (
-                          <div className="font-medium text-pink-700 flex items-center gap-1">
-                            <Instagram size={13} />
-                            <span>@{lead.instagram.replace(/^@/, '')}</span>
-                          </div>
-                        )}
-                      </td>
+                {/* 2. Schedule Selected */}
+                <button
+                  type="button"
+                  onClick={handleOpenScheduleForSelected}
+                  className="btn-secondary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-indigo-500/25 hover:bg-indigo-500/40 text-indigo-200 border-indigo-400/30 shadow-sm"
+                  title="Schedule automated outreach for all selected leads"
+                >
+                  <CalendarClock size={14} className="text-indigo-300" />
+                  <span>Schedule Selected ({selectedLeadIds.size})</span>
+                </button>
 
-                      {/* 3. Eligibility Decision */}
-                      <td className="py-3.5 px-4">
-                        {activeTab === 'whatsapp' ? (
-                          lead.whatsappEligible === true ? (
-                            <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                              <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                              <span>Mobile (WhatsApp Ready)</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 text-amber-700 font-medium">
-                              <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-                              <span className="text-[11px]">
-                                {lead.whatsappDecisionReason || 'Landline / Ineligible'}
-                              </span>
-                            </div>
-                          )
-                        ) : activeTab === 'email' ? (
-                          <div className="flex items-center gap-1.5 text-blue-700 font-semibold">
-                            <CheckCircle2 size={14} className="text-blue-600" />
-                            <span>Valid Email Address</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
-                            <CheckCircle2 size={14} className="text-emerald-600" />
-                            <span>Profile Verified</span>
-                          </div>
-                        )}
-                      </td>
+                {/* 3. Add to List */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTargetListId(lists?.[0]?.id || '');
+                    setIsAddToListModalOpen(true);
+                    setAddToListError(null);
+                  }}
+                  className="btn-secondary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-white/10 hover:bg-white/20 text-white border-white/20 shadow-sm"
+                  title="Assign selected leads to any list"
+                >
+                  <ListPlus size={14} />
+                  <span>Add to List</span>
+                </button>
 
-                      {/* 4. Consent / Stage */}
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            lead.consentStatus === 'replied'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : lead.consentStatus === 'opted_out'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {lead.consentStatus === 'replied'
-                            ? 'Replied'
-                            : lead.consentStatus === 'opted_out'
-                            ? 'Opted Out'
-                            : lead.lastContactedAt
-                            ? 'Contacted'
-                            : 'Cold / Uncontacted'}
-                        </span>
-                      </td>
+                {/* 3. Delete Selected */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBulkDeleteModalOpen(true);
+                    setBulkDeleteError(null);
+                  }}
+                  className="btn-secondary py-1.5 px-3.5 text-xs font-semibold flex items-center gap-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border-rose-400/30 shadow-sm"
+                  title="Delete all selected leads (preserved in 28-day trash)"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete Selected</span>
+                </button>
 
-                      {/* 5. Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                          {/* Edit Lead button */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(lead)}
-                            className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-ink-700 hover:text-ink-950 hover:bg-slate-100 border-slate-200 shadow-2xs"
-                            title="Edit and update lead information across channels"
-                          >
-                            <Pencil size={12} className="text-slate-500" />
-                            <span>Edit</span>
-                          </button>
+                {/* 4. Deselect All */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedLeadIds(new Set())}
+                  className="btn-secondary py-1.5 px-2.5 text-xs text-slate-300 hover:text-white bg-transparent border-transparent hover:bg-white/10"
+                  title="Clear selection"
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+          )}
 
-                          {/* Delete Lead button */}
-                          <button
-                            type="button"
-                            onClick={() => setDeletingLead(lead)}
-                            className="btn-secondary py-1 px-2 text-xs font-semibold flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 shadow-2xs"
-                            title="Delete lead (moves to trash with 28-day recovery)"
-                          >
-                            <Trash2 size={12} />
-                            <span>Delete</span>
-                          </button>
+          {/* LEADS TABLE / LIST */}
+          <div className="card overflow-hidden border border-slate-200 shadow-sm">
+            {/* Apollo/Gmail Multi-Page Select Alert */}
+            {allOnPageSelected && paginatedLeads.length < currentChannelLeads.length && (
+              <div className="bg-brand-50 border-b border-brand-200 px-4 py-2 text-center text-xs text-brand-900 flex items-center justify-center gap-2 flex-wrap animate-fade-in">
+                <span>
+                  All <strong>{paginatedLeads.length}</strong> leads on this page are selected.
+                </span>
+                {!allInFilteredSelected ? (
+                  <button
+                    type="button"
+                    onClick={handleSelectAllInFiltered}
+                    className="font-bold underline text-brand-700 hover:text-brand-900 cursor-pointer"
+                  >
+                    Select all {currentChannelLeads.length} leads in this view
+                  </button>
+                ) : (
+                  <span className="font-semibold text-emerald-700">
+                    ✓ All {currentChannelLeads.length} leads in this view are selected.
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="text-xs text-ink-500 hover:text-ink-800 ml-2"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
 
-                          {/* AI Research & Draft button */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAiResearch(lead)}
-                            className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-brand-700 border-brand-200 hover:bg-brand-50 shadow-2xs"
-                            title="Perform AI business research and draft personalized copy"
-                          >
-                            <Sparkles size={13} className="text-brand-600" />
-                            <span>AI Research &amp; Write</span>
-                          </button>
-
-                          {/* Schedule Outreach button */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenScheduleForLead(lead)}
-                            className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-indigo-700 hover:bg-indigo-50 border-indigo-200 shadow-2xs"
-                            title={`Schedule ${channelLabels[activeTab]} outreach message for ${lead.businessName}`}
-                          >
-                            <CalendarClock size={13} className="text-indigo-600" />
-                            <span>Schedule</span>
-                          </button>
-
-                          {/* Direct WhatsApp Shoot button */}
-                          {activeTab === 'whatsapp' && isEligible && (
-                            <button
-                              type="button"
-                              onClick={() => handleSingleDirectWhatsAppShoot(lead)}
-                              disabled={directShootingLeadId === lead.id}
-                              className="btn-primary py-1 px-2.5 text-xs font-bold flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-2xs"
-                              title={
-                                waSessionStatus?.isConnected
-                                  ? `Shoot WhatsApp message directly from your linked phone (${waSessionStatus.phoneNumber})`
-                                  : 'Link your WhatsApp phone to shoot messages directly'
-                              }
-                            >
-                              {directShootingLeadId === lead.id ? (
-                                <>
-                                  <Loader2 size={12} className="animate-spin" />
-                                  <span>Shooting...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Zap size={12} className="text-amber-300" />
-                                  <span>Shoot WA</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-
-                          {/* Direct deep-link or chat opener */}
-                          {activeTab === 'whatsapp' && isEligible && (
-                            <a
-                              href={`https://wa.me/${(lead.whatsapp || lead.phone).replace(/\D/g, '')}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-emerald-700 hover:bg-emerald-50 border-emerald-200 shadow-2xs"
-                              title="Open in WhatsApp Web"
-                            >
-                              <ExternalLink size={12} />
-                              <span>wa.me</span>
-                            </a>
-                          )}
-
-                          {activeTab === 'email' && lead.email && (
-                            <a
-                              href={`mailto:${lead.email}`}
-                              className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 border-blue-200 shadow-2xs"
-                              title="Open in Email Client"
-                            >
-                              <Mail size={13} />
-                              <span>Mail</span>
-                            </a>
-                          )}
-
-                          {activeTab === 'instagram' && lead.instagram && (
-                            <a
-                              href={`https://instagram.com/${lead.instagram.replace(/^@/, '')}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-pink-700 hover:bg-pink-50 border-pink-200 shadow-2xs"
-                              title="Open Instagram Profile"
-                            >
-                              <ExternalLink size={13} />
-                              <span>IG</span>
-                            </a>
-                          )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase tracking-wider text-ink-500">
+                  <tr>
+                    {/* Checkbox column */}
+                    <th className="py-3 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={allInCurrentViewSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someInCurrentViewSelected && !allInCurrentViewSelected;
+                        }}
+                        onChange={handleToggleSelectAll}
+                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                        title="Select / Deselect all leads in current page"
+                      />
+                    </th>
+                    <th className="py-3 px-4">Business &amp; Category</th>
+                    <th className="py-3 px-4">Contact &amp; Channel Status</th>
+                    <th className="py-3 px-4">Eligibility Decision</th>
+                    <th className="py-3 px-4">Consent / Stage</th>
+                    <th className="py-3 px-4 text-right">Outreach Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {currentChannelLeads.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-ink-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Info size={28} className="text-ink-300" />
+                          <p className="font-semibold text-sm text-ink-700">No leads found in this channel section</p>
+                          <p className="text-xs text-ink-400">
+                            {search ? 'Try clearing your search query.' : 'Import leads with this channel to populate.'}
+                          </p>
                         </div>
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                  ) : (
+                    paginatedLeads.map((lead) => {
+                      const isEligible =
+                        activeTab === 'whatsapp' ? lead.whatsappEligible === true : true;
+                      const isSelected = selectedLeadIds.has(lead.id);
 
-        {/* APOLLO-GRADE PAGINATION TOOLBAR */}
-        {currentChannelLeads.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50/70 text-xs">
-            {/* Left: Range and Count */}
-            <div className="flex items-center gap-2 text-ink-600">
-              <span>
-                Showing <strong>{Math.min((currentPage - 1) * pageSize + 1, currentChannelLeads.length)}</strong>–
-                <strong>{Math.min(currentPage * pageSize, currentChannelLeads.length)}</strong> of{' '}
-                <strong>{currentChannelLeads.length}</strong> leads
-              </span>
-              {selectedLeadIds.size > 0 && (
-                <span className="text-[11px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-md ml-1">
-                  {selectedLeadIds.size} selected
-                </span>
-              )}
+                      return (
+                        <tr
+                          key={lead.id}
+                          className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-brand-50/40' : ''
+                            }`}
+                        >
+                          {/* Checkbox */}
+                          <td className="py-3.5 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectOne(lead.id)}
+                              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                            />
+                          </td>
+
+                          {/* 1. Business & Category */}
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-ink-900 text-sm">{lead.businessName}</div>
+                            <div className="text-[11px] text-ink-500">{lead.category}</div>
+                          </td>
+
+                          {/* 2. Contact info */}
+                          <td className="py-3.5 px-4">
+                            {activeTab === 'email' && (
+                              <div className="font-medium text-ink-800">{lead.email}</div>
+                            )}
+                            {activeTab === 'whatsapp' && (
+                              <div className="space-y-0.5">
+                                <div className="font-medium text-ink-800 flex items-center gap-1.5">
+                                  <Phone size={13} className="text-emerald-600" />
+                                  <span>{lead.whatsapp || lead.phone || 'No phone'}</span>
+                                </div>
+                              </div>
+                            )}
+                            {activeTab === 'instagram' && (
+                              <div className="font-medium text-pink-700 flex items-center gap-1">
+                                <Instagram size={13} />
+                                <span>@{lead.instagram.replace(/^@/, '')}</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 3. Eligibility Decision */}
+                          <td className="py-3.5 px-4">
+                            {activeTab === 'whatsapp' ? (
+                              lead.whatsappEligible === true ? (
+                                <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                                  <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                                  <span>Mobile (WhatsApp Ready)</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 text-amber-700 font-medium">
+                                  <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                                  <span className="text-[11px]">
+                                    {lead.whatsappDecisionReason || 'Landline / Ineligible'}
+                                  </span>
+                                </div>
+                              )
+                            ) : activeTab === 'email' ? (
+                              <div className="flex items-center gap-1.5 text-blue-700 font-semibold">
+                                <CheckCircle2 size={14} className="text-blue-600" />
+                                <span>Valid Email Address</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-emerald-700 font-semibold">
+                                <CheckCircle2 size={14} className="text-emerald-600" />
+                                <span>Profile Verified</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 4. Consent / Stage */}
+                          <td className="py-3.5 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${lead.consentStatus === 'replied'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : lead.consentStatus === 'opted_out'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-slate-100 text-slate-700'
+                                }`}
+                            >
+                              {lead.consentStatus === 'replied'
+                                ? 'Replied'
+                                : lead.consentStatus === 'opted_out'
+                                  ? 'Opted Out'
+                                  : lead.lastContactedAt
+                                    ? 'Contacted'
+                                    : 'Cold / Uncontacted'}
+                            </span>
+                          </td>
+
+                          {/* 5. Actions */}
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              {/* Edit Lead button */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(lead)}
+                                className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-ink-700 hover:text-ink-950 hover:bg-slate-100 border-slate-200 shadow-2xs"
+                                title="Edit and update lead information across channels"
+                              >
+                                <Pencil size={12} className="text-slate-500" />
+                                <span>Edit</span>
+                              </button>
+
+                              {/* Delete Lead button */}
+                              <button
+                                type="button"
+                                onClick={() => setDeletingLead(lead)}
+                                className="btn-secondary py-1 px-2 text-xs font-semibold flex items-center gap-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 shadow-2xs"
+                                title="Delete lead (moves to trash with 28-day recovery)"
+                              >
+                                <Trash2 size={12} />
+                                <span>Delete</span>
+                              </button>
+
+                              {/* AI Research & Draft button */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAiResearch(lead)}
+                                className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-brand-700 border-brand-200 hover:bg-brand-50 shadow-2xs"
+                                title="Perform AI business research and draft personalized copy"
+                              >
+                                <Sparkles size={13} className="text-brand-600" />
+                                <span>AI Research &amp; Write</span>
+                              </button>
+
+                              {/* Schedule Outreach button */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenScheduleForLead(lead)}
+                                className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-indigo-700 hover:bg-indigo-50 border-indigo-200 shadow-2xs"
+                                title={`Schedule ${channelLabels[activeTab]} outreach message for ${lead.businessName}`}
+                              >
+                                <CalendarClock size={13} className="text-indigo-600" />
+                                <span>Schedule</span>
+                              </button>
+
+                              {/* Direct WhatsApp Shoot button */}
+                              {activeTab === 'whatsapp' && isEligible && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSingleDirectWhatsAppShoot(lead)}
+                                  disabled={directShootingLeadId === lead.id}
+                                  className="btn-primary py-1 px-2.5 text-xs font-bold flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white border-0 shadow-2xs"
+                                  title={
+                                    waSessionStatus?.isConnected
+                                      ? `Shoot WhatsApp message directly from your linked phone (${waSessionStatus.phoneNumber})`
+                                      : 'Link your WhatsApp phone to shoot messages directly'
+                                  }
+                                >
+                                  {directShootingLeadId === lead.id ? (
+                                    <>
+                                      <Loader2 size={12} className="animate-spin" />
+                                      <span>Shooting...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Zap size={12} className="text-amber-300" />
+                                      <span>Shoot WA</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Direct deep-link or chat opener */}
+                              {activeTab === 'whatsapp' && isEligible && (
+                                <a
+                                  href={`https://wa.me/${(lead.whatsapp || lead.phone).replace(/\D/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-emerald-700 hover:bg-emerald-50 border-emerald-200 shadow-2xs"
+                                  title="Open in WhatsApp Web"
+                                >
+                                  <ExternalLink size={12} />
+                                  <span>wa.me</span>
+                                </a>
+                              )}
+
+                              {activeTab === 'email' && lead.email && (
+                                <a
+                                  href={`mailto:${lead.email}`}
+                                  className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 border-blue-200 shadow-2xs"
+                                  title="Open in Email Client"
+                                >
+                                  <Mail size={13} />
+                                  <span>Mail</span>
+                                </a>
+                              )}
+
+                              {activeTab === 'instagram' && lead.instagram && (
+                                <a
+                                  href={`https://instagram.com/${lead.instagram.replace(/^@/, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-pink-700 hover:bg-pink-50 border-pink-200 shadow-2xs"
+                                  title="Open Instagram Profile"
+                                >
+                                  <ExternalLink size={13} />
+                                  <span>IG</span>
+                                </a>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Right: Page Size Selector & Navigation Buttons */}
-            <div className="flex items-center gap-4 flex-wrap">
-              {/* Page size selector */}
-              <div className="flex items-center gap-1.5 text-ink-500">
-                <span>Per page:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="input py-1 px-2 text-xs bg-white cursor-pointer"
-                >
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                  <option value={250}>250</option>
-                  <option value={999999}>All</option>
-                </select>
+            {/* APOLLO-GRADE PAGINATION TOOLBAR */}
+            {currentChannelLeads.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50/70 text-xs">
+                {/* Left: Range and Count */}
+                <div className="flex items-center gap-2 text-ink-600">
+                  <span>
+                    Showing <strong>{Math.min((currentPage - 1) * pageSize + 1, currentChannelLeads.length)}</strong>–
+                    <strong>{Math.min(currentPage * pageSize, currentChannelLeads.length)}</strong> of{' '}
+                    <strong>{currentChannelLeads.length}</strong> leads
+                  </span>
+                  {selectedLeadIds.size > 0 && (
+                    <span className="text-[11px] font-semibold text-brand-700 bg-brand-50 border border-brand-200 px-2 py-0.5 rounded-md ml-1">
+                      {selectedLeadIds.size} selected
+                    </span>
+                  )}
+                </div>
+
+                {/* Right: Page Size Selector & Navigation Buttons */}
+                <div className="flex items-center gap-4 flex-wrap">
+                  {/* Page size selector */}
+                  <div className="flex items-center gap-1.5 text-ink-500">
+                    <span>Per page:</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="input py-1 px-2 text-xs bg-white cursor-pointer"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                      <option value={250}>250</option>
+                      <option value={999999}>All</option>
+                    </select>
+                  </div>
+
+                  {/* Navigation buttons */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage <= 1}
+                      className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="First page"
+                    >
+                      <ChevronsLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage <= 1}
+                      className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Previous page"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+
+                    <span className="px-2 font-medium text-ink-700">
+                      Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage >= totalPages}
+                      className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Next page"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage >= totalPages}
+                      className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title="Last page"
+                    >
+                      <ChevronsRight size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
-
-              {/* Navigation buttons */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage <= 1}
-                  className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title="First page"
-                >
-                  <ChevronsLeft size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
-                  className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title="Previous page"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-
-                <span className="px-2 font-medium text-ink-700">
-                  Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage >= totalPages}
-                  className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title="Next page"
-                >
-                  <ChevronRight size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage >= totalPages}
-                  className="p-1 rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  title="Last page"
-                >
-                  <ChevronsRight size={14} />
-                </button>
-              </div>
-            </div>
+            )}
           </div>
-        )}
-      </div>
-      </>
+        </>
       )}
 
       {/* AI RESEARCH & PERSONALIZED COPYWRITER MODAL */}
@@ -2401,15 +2432,13 @@ export function ChannelOutreachHub({
 
                 {/* WhatsApp Engine Status Callout in Batch Shoot */}
                 {activeTab === 'whatsapp' && (
-                  <div className={`rounded-xl border p-3 text-xs flex items-center justify-between gap-3 ${
-                    waSessionStatus?.isConnected
-                      ? 'border-emerald-300 bg-emerald-50/80 text-emerald-950'
-                      : 'border-blue-200 bg-blue-50/80 text-blue-950'
-                  }`}>
+                  <div className={`rounded-xl border p-3 text-xs flex items-center justify-between gap-3 ${waSessionStatus?.isConnected
+                    ? 'border-emerald-300 bg-emerald-50/80 text-emerald-950'
+                    : 'border-blue-200 bg-blue-50/80 text-blue-950'
+                    }`}>
                     <div className="flex items-center gap-2.5">
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-white shrink-0 ${
-                        waSessionStatus?.isConnected ? 'bg-emerald-600' : 'bg-blue-600'
-                      }`}>
+                      <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-white shrink-0 ${waSessionStatus?.isConnected ? 'bg-emerald-600' : 'bg-blue-600'
+                        }`}>
                         <Smartphone size={15} />
                       </div>
                       <div>
@@ -2606,13 +2635,12 @@ export function ChannelOutreachHub({
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                            r.status === 'sent' || r.status === 'queued'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : r.status === 'skipped'
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${r.status === 'sent' || r.status === 'queued'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : r.status === 'skipped'
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-red-100 text-red-800'
-                          }`}
+                            }`}
                         >
                           {r.status}
                         </span>
@@ -2632,7 +2660,21 @@ export function ChannelOutreachHub({
                   ))}
                 </div>
 
-                <div className="flex justify-end pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                  {batchShootResult.failedCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={handleBulkDeleteFailedOutreach}
+                      disabled={isDeletingFailedOutreach}
+                      className="btn-secondary py-1.5 px-3 text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 flex items-center gap-1.5 transition-colors"
+                      title="Purge failed message records"
+                    >
+                      <Trash2 size={13} className="text-rose-600" />
+                      <span>Delete {batchShootResult.failedCount} Failed</span>
+                    </button>
+                  ) : (
+                    <div />
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsBatchShootModalOpen(false)}
@@ -2652,9 +2694,8 @@ export function ChannelOutreachHub({
         <div className="fixed bottom-5 right-5 z-50 w-80 sm:w-96 rounded-2xl border border-slate-200/90 bg-white/95 backdrop-blur-md shadow-2xl p-4 transition-all duration-300 animate-slide-up border-l-4 border-l-brand-600">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-white shrink-0 ${
-                activeTab === 'whatsapp' ? 'bg-emerald-600' : activeTab === 'email' ? 'bg-blue-600' : 'bg-brand-600'
-              }`}>
+              <div className={`flex h-7 w-7 items-center justify-center rounded-lg text-white shrink-0 ${activeTab === 'whatsapp' ? 'bg-emerald-600' : activeTab === 'email' ? 'bg-blue-600' : 'bg-brand-600'
+                }`}>
                 {activeTab === 'whatsapp' ? <Smartphone size={15} /> : <Mail size={15} />}
               </div>
               <div className="truncate">
@@ -2797,13 +2838,12 @@ export function ChannelOutreachHub({
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span
-                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase ${
-                          r.status === 'sent' || r.status === 'queued'
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : r.status === 'skipped'
+                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase ${r.status === 'sent' || r.status === 'queued'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : r.status === 'skipped'
                             ? 'bg-amber-100 text-amber-800 border border-amber-200'
                             : 'bg-red-100 text-red-800 border border-red-200'
-                        }`}
+                          }`}
                       >
                         {r.status === 'sent' ? 'Delivered' : r.status}
                       </span>
@@ -2824,7 +2864,21 @@ export function ChannelOutreachHub({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-200">
+              {batchShootResult.failedCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteFailedOutreach}
+                  disabled={isDeletingFailedOutreach}
+                  className="btn-secondary py-2 px-3 text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 flex items-center gap-1.5 transition-colors"
+                  title="Purge failed dispatch and message records"
+                >
+                  <Trash2 size={13} className="text-rose-600" />
+                  <span>Delete {batchShootResult.failedCount} Failed</span>
+                </button>
+              ) : (
+                <div />
+              )}
               <button
                 type="button"
                 onClick={() => setIsCompletionPopupOpen(false)}
@@ -2916,11 +2970,10 @@ export function ChannelOutreachHub({
                   <button
                     type="button"
                     onClick={() => setWaLinkMode('qr')}
-                    className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${
-                      waLinkMode === 'qr'
-                        ? 'bg-white text-ink-900 shadow-xs'
-                        : 'text-ink-600 hover:text-ink-900'
-                    }`}
+                    className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${waLinkMode === 'qr'
+                      ? 'bg-white text-ink-900 shadow-xs'
+                      : 'text-ink-600 hover:text-ink-900'
+                      }`}
                   >
                     <QrCode size={15} />
                     <span>Scan QR Code</span>
@@ -2928,11 +2981,10 @@ export function ChannelOutreachHub({
                   <button
                     type="button"
                     onClick={() => setWaLinkMode('pairing')}
-                    className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${
-                      waLinkMode === 'pairing'
-                        ? 'bg-white text-ink-900 shadow-xs'
-                        : 'text-ink-600 hover:text-ink-900'
-                    }`}
+                    className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-all ${waLinkMode === 'pairing'
+                      ? 'bg-white text-ink-900 shadow-xs'
+                      : 'text-ink-600 hover:text-ink-900'
+                      }`}
                   >
                     <Smartphone size={15} />
                     <span>8-Digit Pairing Code</span>
@@ -3446,22 +3498,20 @@ export function ChannelOutreachHub({
               <button
                 type="button"
                 onClick={() => setAddToListMode('existing')}
-                className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  addToListMode === 'existing'
-                    ? 'bg-white text-ink-900 shadow-2xs'
-                    : 'text-ink-500 hover:text-ink-800'
-                }`}
+                className={`py-1.5 text-xs font-bold rounded-lg transition-all ${addToListMode === 'existing'
+                  ? 'bg-white text-ink-900 shadow-2xs'
+                  : 'text-ink-500 hover:text-ink-800'
+                  }`}
               >
                 Choose Existing List ({lists.length})
               </button>
               <button
                 type="button"
                 onClick={() => setAddToListMode('new')}
-                className={`py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  addToListMode === 'new'
-                    ? 'bg-white text-ink-900 shadow-2xs'
-                    : 'text-ink-500 hover:text-ink-800'
-                }`}
+                className={`py-1.5 text-xs font-bold rounded-lg transition-all ${addToListMode === 'new'
+                  ? 'bg-white text-ink-900 shadow-2xs'
+                  : 'text-ink-500 hover:text-ink-800'
+                  }`}
               >
                 + Create New List
               </button>

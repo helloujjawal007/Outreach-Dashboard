@@ -302,10 +302,6 @@ export class EmailAdapter {
           text: plainText,
           html: htmlBody,
           attachments: params.attachments,
-          headers: {
-            'List-Unsubscribe': `<mailto:${cleanReplyTo}?subject=Unsubscribe>`,
-            'X-Mailer': 'Apollo-Grade Multi-Inbox Dispatcher',
-          },
         });
 
         liveDelivery = 'sent_live';
@@ -352,10 +348,6 @@ export class EmailAdapter {
           text: plainText,
           html: htmlBody,
           attachments: params.attachments,
-          headers: {
-            'List-Unsubscribe': `<mailto:${cleanReplyTo}?subject=Unsubscribe>`,
-            'X-Mailer': 'ClientConnect Outreach Engine',
-          },
         });
         liveDelivery = 'sent_live';
 

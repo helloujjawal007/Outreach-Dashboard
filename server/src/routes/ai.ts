@@ -51,14 +51,17 @@ Channel: ${channel}
 Offer / Topic: ${intent || 'Complimentary local SEO & visibility audit'}
 
 CRITICAL RULES:
+- Write 100% naturally like an individual consultant sending a personal note directly from their email/phone.
+- NEVER include automated footers, unsubscribe instructions, or references to "lists", "campaigns", or "databases".
+- Absolutely NO AI buzzwords or clichés (do NOT use "I hope this email finds you well", "in today's digital landscape", "cutting-edge", "revolutionize", "testament", "delve").
 - Never make unrealistic promises, exaggerated claims, or fake guarantees (no 'double bookings', no '10x revenue', no 'guaranteed top rankings', no 'calls on autopilot').
 - Keep tone consultative, polite, respectful, and transparent.
 - Word count limits: WhatsApp under 45 words, Email under 85 words, LinkedIn under 70 words, Instagram under 45 words, Facebook under 55 words.
-- End with a low-friction question (e.g. asking if they'd be open to seeing a quick 3-minute review).`;
+- End with a low-friction question (e.g. asking if they'd be open to seeing a quick 2-minute review).`;
 
     const result = await ollamaService.generateCompletion({
       prompt,
-      system: 'You are an outreach specialist for Online Digital Solution writing realistic, grounded, and high-converting messages without marketing buzzwords.',
+      system: 'You are an outreach consultant for Online Digital Solution writing 100% human, genuine, grounded messages without marketing buzzwords or automated bot disclaimers.',
     });
 
     res.json({

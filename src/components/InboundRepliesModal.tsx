@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Mail,
   MessageCircle,
@@ -27,10 +27,15 @@ import {
   Trash2,
   Zap,
   Edit3,
+  Bot,
+  MessageSquare,
+  FileText,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '@/services/api';
-import type { InboundReplyMessage, WhatsAppSessionStatus } from '@/types';
+import type { InboundReplyMessage, WhatsAppSessionStatus, Channel, ConversationMessage } from '@/types';
 
 interface InboundRepliesModalProps {
   isOpen: boolean;
@@ -49,6 +54,146 @@ interface InboundRepliesModalProps {
 type ChannelFilter = 'all' | 'whatsapp' | 'email' | 'instagram' | 'linkedin';
 type ViewTab = 'recent' | 'unread' | 'pending' | 'inbound' | 'outbound' | 'unmatched';
 type DateFilter = 'all' | 'today' | '7d' | '30d';
+type LayoutMode = 'messenger' | 'feed';
+
+interface ChatThread {
+  key: string;
+  entityId: string;
+  entityType: 'lead' | 'client';
+  businessName: string;
+  email?: string;
+  phone?: string;
+  whatsapp?: string;
+  facebook?: string;
+  instagram?: string;
+  category?: string;
+  channel: Channel;
+  messages: InboundReplyMessage[];
+  lastMessage: InboundReplyMessage;
+  lastMessageAt: string;
+  unreadCount: number;
+  hasAiDraft: boolean;
+  hasBounced: boolean;
+}
+
+function toThreadMessage(
+  m: InboundReplyMessage | ConversationMessage,
+  defaults: Partial<InboundReplyMessage> = {}
+): InboundReplyMessage {
+  const id = m.id;
+  const channel = m.channel;
+  const direction = m.direction;
+  const text = m.text;
+  const sent_at = 'sent_at' in m ? m.sent_at : (m as ConversationMessage).timestamp;
+  const status = m.status;
+  const is_read = m.is_read;
+  const read_at = m.read_at;
+  const is_replied = m.is_replied;
+  const inbox_email = m.inbox_email;
+  const lead_id = 'lead_id' in m ? m.lead_id : (m as ConversationMessage).leadId;
+  const client_id = 'client_id' in m ? m.client_id : undefined;
+  const business_name = ('business_name' in m ? m.business_name : defaults.business_name) || '';
+  const email = ('email' in m ? m.email : defaults.email) || '';
+  const phone = ('phone' in m ? m.phone : defaults.phone) || '';
+  const whatsapp = ('whatsapp' in m ? m.whatsapp : defaults.whatsapp) || '';
+  const facebook = ('facebook' in m ? m.facebook : defaults.facebook) || '';
+  const instagram = ('instagram' in m ? m.instagram : defaults.instagram) || '';
+  const category = ('category' in m ? m.category : defaults.category) || '';
+  const inbound_intent = 'inbound_intent' in m ? m.inbound_intent : undefined;
+  const inbound_intent_confidence = 'inbound_intent_confidence' in m ? m.inbound_intent_confidence : undefined;
+  const ai_suggested_reply = 'ai_suggested_reply' in m ? m.ai_suggested_reply : undefined;
+  const entity_type = ('entity_type' in m ? m.entity_type : defaults.entity_type) || 'lead';
+
+  return {
+    id,
+    conversation_id: 'conversation_id' in m ? m.conversation_id : id,
+    channel,
+    direction,
+    text,
+    sent_at: sent_at || new Date().toISOString(),
+    status: status || 'delivered',
+    is_read,
+    read_at,
+    is_replied,
+    inbox_email,
+    inbound_intent,
+    inbound_intent_confidence,
+    ai_suggested_reply,
+    metadata: m.metadata,
+    entity_type,
+    lead_id,
+    client_id,
+    business_name,
+    email,
+    phone,
+    whatsapp,
+    facebook,
+    instagram,
+    category,
+  };
+}
+
+function getInitials(name?: string) {
+  if (!name || name.trim() === '' || name === 'Contact') return 'CO';
+  const clean = name.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'CO';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function formatChatTime(dateStr?: string) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatThreadDate(dateStr?: string) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    if (isToday) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) {
+      return 'Yesterday';
+    }
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function formatChatDateDivider(dateStr?: string): string {
+  if (!dateStr) return 'Recent';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'Today';
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString([], {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+    });
+  } catch {
+    return dateStr;
+  }
+}
 
 export function InboundRepliesModal({
   isOpen,
@@ -62,6 +207,9 @@ export function InboundRepliesModal({
   onMarkHandled,
   onDeleteLead,
 }: InboundRepliesModalProps) {
+  // Mode: messenger (new messaging app experience) vs feed (legacy card list)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('messenger');
+
   const [search, setSearch] = useState('');
   const [viewTab, setViewTab] = useState<ViewTab>('recent');
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all');
@@ -91,57 +239,14 @@ export function InboundRepliesModal({
   const [draftOverrides, setDraftOverrides] = useState<Record<string, string>>({});
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
 
-  const handleApproveAndSend = async (msg: InboundReplyMessage) => {
-    const replyText = draftOverrides[msg.id] ?? msg.ai_suggested_reply;
-    if (!replyText || !replyText.trim()) return;
-
-    setApprovingReplyId(msg.id);
-    try {
-      const res = await api.sendReply({
-        leadId: msg.lead_id || undefined,
-        clientId: msg.client_id || undefined,
-        channel: msg.channel,
-        text: replyText.trim(),
-      });
-      if (res.success) {
-        setActionFeedback(`AI reply dispatched to ${msg.business_name} via ${msg.channel}!`);
-        if (onMarkHandled) await onMarkHandled(msg.id);
-        fetchRecentMessages();
-        fetchInboundHistory();
-      } else {
-        setActionFeedback(`Failed to send: ${res.message || 'Unknown error'}`);
-      }
-    } catch (err: any) {
-      setActionFeedback(`Error: ${err.message || 'Failed to dispatch reply'}`);
-    } finally {
-      setApprovingReplyId(null);
-    }
-  };
-
-  const handleClearAllUnmatched = async () => {
-    if (!confirm(`Are you sure you want to dismiss all ${unmatchedEmails.length} unmatched notices?`)) {
-      return;
-    }
-    try {
-      await api.clearAllUnmatchedEmails();
-      setUnmatchedEmails([]);
-      setActionFeedback('All unmatched notices cleared successfully');
-      setTimeout(() => setActionFeedback(null), 3000);
-    } catch (err) {
-      console.error('Failed to clear unmatched emails:', err);
-    }
-  };
-
-  const handleDismissUnmatched = async (item: { id: string; senderEmail: string }) => {
-    try {
-      await api.dismissUnmatchedEmail(item.id);
-      setUnmatchedEmails((prev) => prev.filter((u) => u.id !== item.id));
-      setActionFeedback(`Dismissed notice from ${item.senderEmail}`);
-      setTimeout(() => setActionFeedback(null), 3000);
-    } catch (err) {
-      console.error('Failed to dismiss unmatched item:', err);
-    }
-  };
+  // Messenger-specific state
+  const [selectedThreadKey, setSelectedThreadKey] = useState<string | null>(null);
+  const [composerText, setComposerText] = useState('');
+  const [composerChannel, setComposerChannel] = useState<Channel>('whatsapp');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+  const [threadHistoryMap, setThreadHistoryMap] = useState<Record<string, InboundReplyMessage[]>>({});
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch recent messages across all channels
   const fetchRecentMessages = useCallback(async () => {
@@ -216,23 +321,19 @@ export function InboundRepliesModal({
       );
     }
     if (viewTab === 'pending') {
-      // Unhandled / pending replies (Needs Attention)
       return replies.filter(
         (m) => m.status !== 'bounced' && !m.text?.startsWith('[DELIVERY FAILURE')
       );
     }
     if (viewTab === 'inbound') {
-      // All received inbound replies
       const pool = allInboundHistory.length > 0 ? allInboundHistory : replies;
       return pool.filter(
         (m) => m.status !== 'bounced' && !m.text?.startsWith('[DELIVERY FAILURE')
       );
     }
     if (viewTab === 'outbound') {
-      // Dispatched / outbound messages
       return allRecentMessages.filter((m) => m.direction === 'outbound');
     }
-    // Default 'recent': All messages (inbound + outbound across WA, Email, FB, IG)
     return allRecentMessages.length > 0 ? allRecentMessages : replies;
   }, [viewTab, replies, allInboundHistory, allRecentMessages]);
 
@@ -247,16 +348,14 @@ export function InboundRepliesModal({
     };
   }, [baseDataset]);
 
-  // Filter dataset by channel, date, and search query
+  // Filter dataset by channel, date, and search query for Feed View
   const filteredMessages = useMemo(() => {
     let list = baseDataset;
 
-    // Filter by channel
     if (channelFilter !== 'all') {
       list = list.filter((m) => m.channel === channelFilter);
     }
 
-    // Filter by date
     if (dateFilter !== 'all') {
       const now = Date.now();
       const oneDay = 24 * 60 * 60 * 1000;
@@ -269,7 +368,6 @@ export function InboundRepliesModal({
       });
     }
 
-    // Filter by search query
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -300,6 +398,222 @@ export function InboundRepliesModal({
     );
   }, [unmatchedEmails, search]);
 
+  // Group all messages into conversation threads for Messenger View
+  const allThreads = useMemo<ChatThread[]>(() => {
+    const pool = allRecentMessages.length > 0 ? allRecentMessages : replies;
+    const map = new Map<string, ChatThread>();
+
+    for (const m of pool) {
+      const key =
+        m.lead_id ? `lead_${m.lead_id}` :
+        m.client_id ? `client_${m.client_id}` :
+        m.whatsapp ? `wa_${m.whatsapp.replace(/\D/g, '')}` :
+        m.phone ? `ph_${m.phone.replace(/\D/g, '')}` :
+        m.email ? `em_${m.email.toLowerCase().trim()}` :
+        `msg_${m.id}`;
+
+      const existing = map.get(key);
+      const isUnread =
+        m.direction === 'inbound' &&
+        !m.is_read &&
+        !m.is_replied &&
+        m.status !== 'bounced' &&
+        !m.text?.startsWith('[DELIVERY FAILURE');
+      const hasAi = Boolean(m.ai_suggested_reply && !m.is_replied);
+      const isBounce = m.status === 'bounced' || Boolean(m.text?.startsWith('[DELIVERY FAILURE'));
+
+      if (!existing) {
+        map.set(key, {
+          key,
+          entityId: m.lead_id || m.client_id || '',
+          entityType: m.entity_type || (m.client_id ? 'client' : 'lead'),
+          businessName: m.business_name || 'Contact',
+          email: m.email,
+          phone: m.phone,
+          whatsapp: m.whatsapp,
+          facebook: m.facebook,
+          instagram: m.instagram,
+          category: m.category,
+          channel: m.channel,
+          messages: [m],
+          lastMessage: m,
+          lastMessageAt: m.sent_at || '',
+          unreadCount: isUnread ? 1 : 0,
+          hasAiDraft: hasAi,
+          hasBounced: isBounce,
+        });
+      } else {
+        existing.messages.push(m);
+        if ((!existing.businessName || existing.businessName === 'Contact') && m.business_name) {
+          existing.businessName = m.business_name;
+        }
+        if (!existing.email && m.email) existing.email = m.email;
+        if (!existing.phone && m.phone) existing.phone = m.phone;
+        if (!existing.whatsapp && m.whatsapp) existing.whatsapp = m.whatsapp;
+        if (!existing.category && m.category) existing.category = m.category;
+        if (isUnread) existing.unreadCount += 1;
+        if (hasAi) existing.hasAiDraft = true;
+        if (isBounce) existing.hasBounced = true;
+      }
+    }
+
+    const threadList = Array.from(map.values());
+    for (const t of threadList) {
+      t.messages.sort(
+        (a, b) => new Date(a.sent_at || 0).getTime() - new Date(b.sent_at || 0).getTime()
+      );
+      t.lastMessage = t.messages[t.messages.length - 1];
+      t.lastMessageAt = t.lastMessage.sent_at;
+    }
+
+    threadList.sort(
+      (a, b) => new Date(b.lastMessageAt || 0).getTime() - new Date(a.lastMessageAt || 0).getTime()
+    );
+    return threadList;
+  }, [allRecentMessages, replies]);
+
+  // Filter threads for Messenger sidebar
+  const filteredThreads = useMemo(() => {
+    let list = allThreads;
+
+    if (viewTab === 'unread') {
+      list = list.filter((t) => t.unreadCount > 0);
+    } else if (viewTab === 'pending') {
+      list = list.filter(
+        (t) =>
+          t.hasAiDraft ||
+          replies.some((r) => r.lead_id === t.entityId || r.client_id === t.entityId)
+      );
+    } else if (viewTab === 'inbound') {
+      list = list.filter((t) => t.messages.some((m) => m.direction === 'inbound'));
+    } else if (viewTab === 'outbound') {
+      list = list.filter((t) => t.messages.some((m) => m.direction === 'outbound'));
+    }
+
+    if (channelFilter !== 'all') {
+      list = list.filter(
+        (t) =>
+          t.channel === channelFilter ||
+          t.messages.some((m) => m.channel === channelFilter)
+      );
+    }
+
+    if (dateFilter !== 'all') {
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      list = list.filter((t) => {
+        const time = new Date(t.lastMessageAt || Date.now()).getTime();
+        if (dateFilter === 'today') return now - time <= oneDay;
+        if (dateFilter === '7d') return now - time <= 7 * oneDay;
+        if (dateFilter === '30d') return now - time <= 30 * oneDay;
+        return true;
+      });
+    }
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.businessName.toLowerCase().includes(q) ||
+          t.email?.toLowerCase().includes(q) ||
+          t.phone?.toLowerCase().includes(q) ||
+          t.whatsapp?.toLowerCase().includes(q) ||
+          t.category?.toLowerCase().includes(q) ||
+          t.messages.some((m) => m.text?.toLowerCase().includes(q))
+      );
+    }
+
+    return list;
+  }, [allThreads, viewTab, channelFilter, dateFilter, search, replies]);
+
+  // Currently active thread in messenger view
+  const activeThread = useMemo(() => {
+    if (!selectedThreadKey) {
+      return filteredThreads[0] || null;
+    }
+    return (
+      allThreads.find((t) => t.key === selectedThreadKey) ||
+      filteredThreads[0] ||
+      null
+    );
+  }, [selectedThreadKey, filteredThreads, allThreads]);
+
+  // Automatically select first thread if none selected
+  useEffect(() => {
+    if (!selectedThreadKey && filteredThreads.length > 0) {
+      setSelectedThreadKey(filteredThreads[0].key);
+    }
+  }, [filteredThreads, selectedThreadKey]);
+
+  // Set default composer channel whenever active thread changes
+  useEffect(() => {
+    if (activeThread) {
+      const rawWa = (activeThread.whatsapp || activeThread.phone || '').replace(/\D/g, '');
+      if (activeThread.channel === 'whatsapp' || rawWa.length >= 8) {
+        setComposerChannel('whatsapp');
+      } else if (activeThread.email) {
+        setComposerChannel('email');
+      } else {
+        setComposerChannel(activeThread.channel || 'email');
+      }
+    }
+  }, [activeThread?.key]);
+
+  // Asynchronously fetch full historical messages for active thread
+  useEffect(() => {
+    if (!activeThread || !activeThread.entityId) return;
+    const key = activeThread.key;
+    if (threadHistoryMap[key]) return;
+
+    let isMounted = true;
+    const loadExtraHistory = async () => {
+      try {
+        let rawMsgs: ConversationMessage[] = [];
+        if (activeThread.entityType === 'client') {
+          rawMsgs = await api.getMessagesByClient(activeThread.entityId);
+        } else {
+          rawMsgs = await api.getMessagesByLead(activeThread.entityId);
+        }
+        if (!isMounted) return;
+        const mapped = rawMsgs.map((m) => toThreadMessage(m, activeThread));
+        setThreadHistoryMap((prev) => ({ ...prev, [key]: mapped }));
+      } catch (err) {
+        console.warn('Could not load extended thread history:', err);
+      }
+    };
+
+    loadExtraHistory();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeThread?.key, activeThread?.entityId, activeThread?.entityType, threadHistoryMap]);
+
+  // Unified chronological message list for the active thread
+  const activeThreadMessages = useMemo(() => {
+    if (!activeThread) return [];
+    const base = activeThread.messages;
+    const extra = threadHistoryMap[activeThread.key] || [];
+    const map = new Map<string, InboundReplyMessage>();
+    for (const m of [...base, ...extra]) {
+      map.set(m.id, m);
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(a.sent_at || 0).getTime() - new Date(b.sent_at || 0).getTime()
+    );
+  }, [activeThread, threadHistoryMap]);
+
+  // Auto-scroll chat area to bottom
+  useEffect(() => {
+    if (layoutMode === 'messenger' && activeThread) {
+      setTimeout(() => {
+        if (chatScrollRef.current) {
+          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+  }, [layoutMode, activeThread?.key, activeThreadMessages.length]);
+
+  // Handlers
   const handleSyncClick = async () => {
     setSyncFeedback(null);
     try {
@@ -322,10 +636,14 @@ export function InboundRepliesModal({
       }
       const readTimestamp = targetRead ? new Date().toISOString() : null;
       setAllRecentMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, is_read: targetRead, read_at: readTimestamp } : m))
+        prev.map((m) =>
+          m.id === messageId ? { ...m, is_read: targetRead, read_at: readTimestamp } : m
+        )
       );
       setAllInboundHistory((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, is_read: targetRead, read_at: readTimestamp } : m))
+        prev.map((m) =>
+          m.id === messageId ? { ...m, is_read: targetRead, read_at: readTimestamp } : m
+        )
       );
       setActionFeedback(targetRead ? 'Message marked as read' : 'Message marked as unread');
       setTimeout(() => setActionFeedback(null), 3000);
@@ -360,14 +678,149 @@ export function InboundRepliesModal({
         await api.deleteLead(leadId);
       }
       setActionFeedback(`Moved "${businessName}" to Trash`);
-      // Filter out messages for this contact from active lists
-      setAllRecentMessages((prev) => prev.filter((m) => m.lead_id !== leadId && m.client_id !== leadId));
-      setAllInboundHistory((prev) => prev.filter((m) => m.lead_id !== leadId && m.client_id !== leadId));
+      setAllRecentMessages((prev) =>
+        prev.filter((m) => m.lead_id !== leadId && m.client_id !== leadId)
+      );
+      setAllInboundHistory((prev) =>
+        prev.filter((m) => m.lead_id !== leadId && m.client_id !== leadId)
+      );
       setTimeout(() => setActionFeedback(null), 3500);
     } catch (err: any) {
       console.error('Failed to move lead to trash:', err);
       setActionFeedback(`Failed to move to trash: ${err?.message || 'Error'}`);
       setTimeout(() => setActionFeedback(null), 4000);
+    }
+  };
+
+  const handleClearAllUnmatched = async () => {
+    if (!confirm(`Are you sure you want to dismiss all ${unmatchedEmails.length} unmatched notices?`)) {
+      return;
+    }
+    try {
+      await api.clearAllUnmatchedEmails();
+      setUnmatchedEmails([]);
+      setActionFeedback('All unmatched notices cleared successfully');
+      setTimeout(() => setActionFeedback(null), 3000);
+    } catch (err) {
+      console.error('Failed to clear unmatched emails:', err);
+    }
+  };
+
+  const handleDismissUnmatched = async (item: { id: string; senderEmail: string }) => {
+    try {
+      await api.dismissUnmatchedEmail(item.id);
+      setUnmatchedEmails((prev) => prev.filter((u) => u.id !== item.id));
+      setActionFeedback(`Dismissed notice from ${item.senderEmail}`);
+      setTimeout(() => setActionFeedback(null), 3000);
+    } catch (err) {
+      console.error('Failed to dismiss unmatched item:', err);
+    }
+  };
+
+  const handleApproveAndSend = async (msg: InboundReplyMessage) => {
+    const replyText = draftOverrides[msg.id] ?? msg.ai_suggested_reply;
+    if (!replyText || !replyText.trim()) return;
+
+    setApprovingReplyId(msg.id);
+    try {
+      const res = await api.sendReply({
+        leadId: msg.lead_id || undefined,
+        clientId: msg.client_id || undefined,
+        channel: msg.channel,
+        text: replyText.trim(),
+      });
+      if (res.success) {
+        setActionFeedback(`AI reply dispatched to ${msg.business_name} via ${msg.channel}!`);
+        if (onMarkHandled) await onMarkHandled(msg.id);
+        fetchRecentMessages();
+        fetchInboundHistory();
+      } else {
+        setActionFeedback(`Failed to send: ${res.message || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      setActionFeedback(`Error: ${err.message || 'Failed to dispatch reply'}`);
+    } finally {
+      setApprovingReplyId(null);
+    }
+  };
+
+  // Messenger Composer Send Handler
+  const handleSendComposerReply = async () => {
+    if (!activeThread || !composerText.trim() || isSendingReply) return;
+    const textToSend = composerText.trim();
+    setIsSendingReply(true);
+
+    try {
+      const res = await api.sendReply({
+        leadId: activeThread.entityType === 'lead' && activeThread.entityId ? activeThread.entityId : undefined,
+        clientId: activeThread.entityType === 'client' && activeThread.entityId ? activeThread.entityId : undefined,
+        channel: composerChannel,
+        text: textToSend,
+      });
+
+      if (res.success) {
+        setComposerText('');
+        setActionFeedback(`Sent via ${composerChannel.toUpperCase()} to ${activeThread.businessName}!`);
+
+        // Optimistically add to messages
+        const optimisticMsg: InboundReplyMessage = {
+          id: `opt_${Date.now()}`,
+          conversation_id: activeThread.messages[0]?.conversation_id || `conv_${Date.now()}`,
+          channel: composerChannel,
+          direction: 'outbound',
+          text: textToSend,
+          sent_at: new Date().toISOString(),
+          status: 'delivered',
+          entity_type: activeThread.entityType,
+          lead_id: activeThread.entityType === 'lead' ? activeThread.entityId : null,
+          client_id: activeThread.entityType === 'client' ? activeThread.entityId : null,
+          business_name: activeThread.businessName,
+          email: activeThread.email || '',
+          phone: activeThread.phone || '',
+          whatsapp: activeThread.whatsapp || '',
+          category: activeThread.category || '',
+        };
+
+        setAllRecentMessages((prev) => [optimisticMsg, ...prev]);
+        setThreadHistoryMap((prev) => ({
+          ...prev,
+          [activeThread.key]: [...(prev[activeThread.key] || activeThread.messages), optimisticMsg],
+        }));
+
+        setTimeout(() => setActionFeedback(null), 3500);
+        fetchRecentMessages();
+      } else {
+        setActionFeedback(`Send failed: ${res.message || 'Error'}`);
+      }
+    } catch (err: any) {
+      setActionFeedback(`Send error: ${err.message || 'Failed to dispatch'}`);
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  // Generate AI Draft for composer
+  const handleGenerateAiReply = async () => {
+    if (!activeThread || isGeneratingAi) return;
+    setIsGeneratingAi(true);
+    try {
+      const res = await api.generateAiDraft({
+        businessName: activeThread.businessName,
+        category: activeThread.category,
+        channel: composerChannel,
+        intent: activeThread.lastMessage?.inbound_intent || 'consultative_reply',
+      });
+      if (res.draft) {
+        setComposerText(res.draft);
+        setActionFeedback('✨ AI consultative reply generated!');
+        setTimeout(() => setActionFeedback(null), 3000);
+      }
+    } catch (err: any) {
+      console.error('Failed to generate AI reply:', err);
+      setActionFeedback('Failed to generate AI draft. Please type directly.');
+      setTimeout(() => setActionFeedback(null), 3000);
+    } finally {
+      setIsGeneratingAi(false);
     }
   };
 
@@ -387,28 +840,58 @@ export function InboundRepliesModal({
   };
 
   return (
-    <Modal open={isOpen} onClose={onClose} title="" width="xl">
-      <div className="space-y-3.5 -mt-1">
-        {/* Custom Header with Title and Live Sync Status */}
+    <Modal open={isOpen} onClose={onClose} title="" maxWidth="max-w-7xl w-full">
+      <div className="flex flex-col -mt-1 h-full">
+        {/* Top Header: Title, Status, View Switcher & Sync */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-purple-600 text-white shadow-sm">
-              <Layers size={20} />
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-600 to-purple-600 text-white shadow-sm">
+              <Layers size={22} />
             </span>
             <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span>Multi-Channel Messages &amp; Inbox</span>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900">Multi-Channel Messages &amp; Inbox</h2>
                 <span className="rounded-full bg-brand-50 border border-brand-200 px-2 py-0.5 text-xs font-extrabold text-brand-700">
                   WA • Email • FB • IG
                 </span>
-              </h2>
+              </div>
               <p className="text-xs text-slate-500">
-                Live message center with verified source tracking and explicit read controls
+                Interactive real-time messenger with verified channel attribution and instant 1-click replies
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* View Mode Toggle Switcher: Messenger View vs Card Feed View */}
+            <div className="flex items-center rounded-xl bg-slate-100 p-1 border border-slate-200 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setLayoutMode('messenger')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                  layoutMode === 'messenger'
+                    ? 'bg-white text-brand-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Switch to modern messaging app layout"
+              >
+                <MessageSquare size={13} className="text-brand-600" />
+                <span>💬 Messenger View</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLayoutMode('feed')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                  layoutMode === 'feed'
+                    ? 'bg-white text-brand-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Switch to classic card feed list"
+              >
+                <Layers size={13} className="text-slate-600" />
+                <span>📋 Feed View</span>
+              </button>
+            </div>
+
             {/* Live WhatsApp Status indicator */}
             {waStatus?.isConnected ? (
               <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-bold text-emerald-800 shadow-2xs">
@@ -426,7 +909,7 @@ export function InboundRepliesModal({
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-60 shadow-2xs"
+              className="flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-60 shadow-2xs cursor-pointer"
               title="Check Gmail inbox for new client replies"
             >
               <RefreshCw size={12} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
@@ -435,242 +918,729 @@ export function InboundRepliesModal({
           </div>
         </div>
 
-        {/* View Mode Tabs (Recent Messages, Unread, Needs Attention, Inbound, Outbound) */}
-        <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2 flex-wrap">
-          <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 flex-wrap">
-            <button
-              onClick={() => setViewTab('recent')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                viewTab === 'recent'
-                  ? 'bg-white text-brand-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <History size={13} />
-              <span>All Messages</span>
-              <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold">
-                {allRecentMessages.length}
-              </span>
-            </button>
-
-            {/* Unread Only Tab */}
-            <button
-              onClick={() => setViewTab('unread')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                viewTab === 'unread'
-                  ? 'bg-white text-rose-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Mail size={13} />
-              <span>Unread Only</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  unreadCount > 0
-                    ? 'bg-rose-500 text-white animate-pulse'
-                    : 'bg-slate-200 text-slate-700'
-                }`}
-              >
-                {unreadCount}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setViewTab('pending')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                viewTab === 'pending'
-                  ? 'bg-white text-blue-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Inbox size={13} />
-              <span>Needs Attention</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  replies.length > 0
-                    ? 'bg-amber-100 text-amber-800 font-bold'
-                    : 'bg-slate-200 text-slate-700'
-                }`}
-              >
-                {replies.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setViewTab('inbound')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                viewTab === 'inbound'
-                  ? 'bg-white text-emerald-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Inbox size={13} />
-              <span>Inbound History</span>
-              <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold">
-                {allInboundHistory.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setViewTab('outbound')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                viewTab === 'outbound'
-                  ? 'bg-white text-indigo-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Send size={13} />
-              <span>Outbound Sent</span>
-              <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold">
-                {allRecentMessages.filter((m) => m.direction === 'outbound').length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setViewTab('unmatched')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                viewTab === 'unmatched'
-                  ? 'bg-white text-rose-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <AlertTriangle size={13} />
-              <span>Unmatched & Bounces</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  unmatchedEmails.length > 0 ? 'bg-rose-100 text-rose-800' : 'bg-slate-200 text-slate-700'
-                }`}
-              >
-                {unmatchedEmails.length}
-              </span>
-            </button>
-          </div>
-
-          {/* Quick Search & Date Filter */}
-          <div className="flex items-center gap-2 flex-1 min-w-[280px] max-w-md ml-auto">
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value as any)}
-              className="rounded-lg border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-700 font-medium focus:border-brand-500 focus:outline-none shadow-2xs shrink-0"
-              title="Filter messages by date received"
-            >
-              <option value="all">All Dates</option>
-              <option value="today">Today</option>
-              <option value="7d">Past 7 Days</option>
-              <option value="30d">Past 30 Days</option>
-            </select>
-
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search text, phone, email, inbox..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Channel Filter Pills (WhatsApp, Email, Facebook, Instagram) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1 shrink-0">
-            <Filter size={12} />
-            <span>Filter Channel:</span>
-          </span>
-
-          <button
-            onClick={() => setChannelFilter('all')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
-              channelFilter === 'all'
-                ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <span>All Channels</span>
-            <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">
-              {channelCounts.all}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setChannelFilter('whatsapp')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
-              channelFilter === 'whatsapp'
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-            }`}
-          >
-            <span>WhatsApp</span>
-            <span className="rounded-full bg-emerald-200/80 px-1.5 py-0.5 text-[10px]">
-              {channelCounts.whatsapp}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setChannelFilter('email')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
-              channelFilter === 'email'
-                ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
-            }`}
-          >
-            <span>Email</span>
-            <span className="rounded-full bg-blue-200/80 px-1.5 py-0.5 text-[10px]">
-              {channelCounts.email}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setChannelFilter('instagram')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
-              channelFilter === 'instagram'
-                ? 'bg-pink-600 text-white border-pink-600 shadow-2xs'
-                : 'bg-pink-50 text-pink-800 border-pink-200 hover:bg-pink-100'
-            }`}
-          >
-            <span>Instagram</span>
-            <span className="rounded-full bg-pink-200/80 px-1.5 py-0.5 text-[10px]">
-              {channelCounts.instagram}
-            </span>
-          </button>
-
-          <button
-            onClick={() => setChannelFilter('linkedin')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold border transition-all ${
-              channelFilter === 'linkedin'
-                ? 'bg-[#0a66c2] text-white border-[#0a66c2] shadow-2xs'
-                : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
-            }`}
-          >
-            <Linkedin size={12} />
-            <span>LinkedIn</span>
-            <span className="rounded-full bg-sky-200/80 px-1.5 py-0.5 text-[10px]">
-              {channelCounts.linkedin}
-            </span>
-          </button>
-        </div>
-
         {/* Feedback alerts */}
         {syncFeedback && (
-          <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs font-medium text-blue-800 animate-fadeIn">
+          <div className="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs font-medium text-blue-800 animate-fadeIn">
             <RefreshCw size={14} className="text-blue-600" />
             <span>{syncFeedback}</span>
           </div>
         )}
-
         {actionFeedback && (
-          <div className="flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-medium text-emerald-800 animate-fadeIn">
+          <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-medium text-emerald-800 animate-fadeIn">
             <CheckCircle2 size={14} className="text-emerald-600" />
             <span>{actionFeedback}</span>
           </div>
         )}
 
-        {/* Messages List Stream */}
-        <div className="max-h-[58vh] overflow-y-auto space-y-3 pr-1">
-          {viewTab === 'unmatched' ? (
-            filteredUnmatched.length === 0 ? (
+        {/* ========================================================================= */}
+        {/* LAYOUT 1: MODERN MESSAGING APP VIEW (DEFAULT)                            */}
+        {/* ========================================================================= */}
+        {layoutMode === 'messenger' && viewTab !== 'unmatched' ? (
+          <div className="mt-3 flex flex-col md:flex-row h-[74vh] rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
+            {/* ----------------- LEFT PANE: THREADS SIDEBAR ----------------- */}
+            <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-200 bg-slate-50/60 shrink-0">
+              {/* Sidebar Header: Search & View Tabs */}
+              <div className="p-3 border-b border-slate-200 space-y-2.5 bg-white">
+                {/* Search */}
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search chats, leads, phone, email..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-3 text-xs focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-inner"
+                  />
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('recent')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition cursor-pointer ${
+                      viewTab === 'recent'
+                        ? 'bg-brand-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    All ({allThreads.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('unread')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition cursor-pointer ${
+                      viewTab === 'unread'
+                        ? 'bg-rose-600 text-white shadow-2xs'
+                        : 'text-rose-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    <span>Unread</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.2 text-[9px] font-extrabold ${
+                        unreadCount > 0 ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {unreadCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('pending')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition cursor-pointer ${
+                      viewTab === 'pending'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'text-amber-800 hover:bg-amber-50'
+                    }`}
+                  >
+                    Needs Attention ({replies.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('outbound')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition cursor-pointer ${
+                      viewTab === 'outbound'
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Sent
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewTab('unmatched')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold whitespace-nowrap transition cursor-pointer ${
+                      (viewTab as string) === 'unmatched'
+                        ? 'bg-rose-700 text-white shadow-2xs'
+                        : 'text-rose-600 hover:bg-rose-50'
+                    }`}
+                  >
+                    <AlertTriangle size={11} />
+                    <span>Bounces ({unmatchedEmails.length})</span>
+                  </button>
+                </div>
+
+                {/* Channel Filter Pills */}
+                <div className="flex items-center gap-1 overflow-x-auto pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setChannelFilter('all')}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      channelFilter === 'all'
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChannelFilter('whatsapp')}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      channelFilter === 'whatsapp'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <MessageCircle size={10} />
+                    <span>WhatsApp</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChannelFilter('email')}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      channelFilter === 'email'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
+                    }`}
+                  >
+                    <Mail size={10} />
+                    <span>Email</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChannelFilter('linkedin')}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
+                      channelFilter === 'linkedin'
+                        ? 'bg-[#0a66c2] text-white border-[#0a66c2]'
+                        : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
+                    }`}
+                  >
+                    <Linkedin size={10} />
+                    <span>LinkedIn</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Thread List Items */}
+              <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                {isLoading ? (
+                  <div className="p-8 text-center text-slate-400">
+                    <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-brand-600" />
+                    <p className="text-xs font-semibold">Loading conversation threads...</p>
+                  </div>
+                ) : filteredThreads.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400">
+                    <Inbox size={28} className="mx-auto mb-2 text-slate-300" />
+                    <p className="text-xs font-bold text-slate-600">No chats found</p>
+                    <p className="text-[11px] text-slate-400 mt-1">Try clearing filters or search query</p>
+                  </div>
+                ) : (
+                  filteredThreads.map((thread) => {
+                    const isSelected = activeThread?.key === thread.key;
+                    const isOutboundLast = thread.lastMessage.direction === 'outbound';
+                    const ch = thread.channel;
+
+                    return (
+                      <button
+                        key={thread.key}
+                        type="button"
+                        onClick={() => setSelectedThreadKey(thread.key)}
+                        className={`w-full text-left p-3 flex items-start gap-3 transition-colors relative cursor-pointer ${
+                          isSelected
+                            ? 'bg-brand-50/90 border-l-4 border-brand-600'
+                            : thread.unreadCount > 0
+                            ? 'bg-rose-50/30 hover:bg-rose-50/60'
+                            : 'hover:bg-slate-100/70'
+                        }`}
+                      >
+                        {/* Contact Avatar with Channel icon corner badge */}
+                        <div className="relative shrink-0">
+                          <div
+                            className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-xs shadow-2xs ${
+                              ch === 'whatsapp'
+                                ? 'bg-gradient-to-tr from-emerald-500 to-teal-600 text-white'
+                                : ch === 'email'
+                                ? 'bg-gradient-to-tr from-blue-500 to-indigo-600 text-white'
+                                : ch === 'linkedin'
+                                ? 'bg-gradient-to-tr from-sky-600 to-blue-700 text-white'
+                                : 'bg-gradient-to-tr from-purple-500 to-pink-600 text-white'
+                            }`}
+                          >
+                            {getInitials(thread.businessName)}
+                          </div>
+                          {/* Corner Channel Icon */}
+                          <div
+                            className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full flex items-center justify-center text-white ring-2 ring-white text-[9px] ${
+                              ch === 'whatsapp'
+                                ? 'bg-emerald-600'
+                                : ch === 'email'
+                                ? 'bg-blue-600'
+                                : ch === 'linkedin'
+                                ? 'bg-[#0a66c2]'
+                                : 'bg-pink-600'
+                            }`}
+                          >
+                            {ch === 'whatsapp' && <MessageCircle size={9} />}
+                            {ch === 'email' && <Mail size={9} />}
+                            {ch === 'linkedin' && <Linkedin size={9} />}
+                            {ch === 'instagram' && <Instagram size={9} />}
+                          </div>
+                        </div>
+
+                        {/* Thread Preview Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            <h4
+                              className={`text-xs font-bold truncate ${
+                                isSelected ? 'text-brand-950' : 'text-slate-900'
+                              }`}
+                            >
+                              {thread.businessName}
+                            </h4>
+                            <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0">
+                              {formatThreadDate(thread.lastMessageAt)}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span
+                              className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded-full ${
+                                ch === 'whatsapp'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : ch === 'email'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {ch}
+                            </span>
+                            {thread.category && (
+                              <span className="text-[10px] text-slate-500 truncate max-w-[120px]">
+                                {thread.category}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Last message snippet */}
+                          <div className="flex items-center justify-between gap-2">
+                            <p
+                              className={`text-xs truncate flex items-center gap-1 ${
+                                thread.unreadCount > 0
+                                  ? 'font-bold text-slate-900'
+                                  : 'text-slate-500 font-normal'
+                              }`}
+                            >
+                              {isOutboundLast && (
+                                <CheckCheck size={12} className="text-brand-600 shrink-0" />
+                              )}
+                              <span className="truncate">
+                                {thread.lastMessage.text || 'No message content'}
+                              </span>
+                            </p>
+
+                            {/* Unread Pill or AI Draft Badge */}
+                            {thread.unreadCount > 0 ? (
+                              <span className="shrink-0 h-4 min-w-[16px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center shadow-2xs">
+                                {thread.unreadCount}
+                              </span>
+                            ) : thread.hasAiDraft ? (
+                              <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-extrabold px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-700">
+                                <Sparkles size={8} /> AI
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* ----------------- RIGHT PANE: CHAT MESSAGING APP WINDOW ----------------- */}
+            <div className="flex-1 flex flex-col min-w-0 bg-white">
+              {activeThread ? (
+                <>
+                  {/* Chat Top Header: Contact identity, channel deep links & profile action */}
+                  <div className="border-b border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3 shadow-2xs shrink-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-2xs ${
+                          activeThread.channel === 'whatsapp'
+                            ? 'bg-gradient-to-tr from-emerald-500 to-teal-600'
+                            : 'bg-gradient-to-tr from-brand-600 to-indigo-600'
+                        }`}
+                      >
+                        {getInitials(activeThread.businessName)}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-bold text-slate-900 truncate">
+                            {activeThread.businessName}
+                          </h3>
+                          {activeThread.category && (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                              {activeThread.category}
+                            </span>
+                          )}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                              activeThread.channel === 'whatsapp'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {activeThread.channel}
+                          </span>
+                        </div>
+
+                        {/* Contact details line */}
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5 truncate">
+                          {(activeThread.whatsapp || activeThread.phone) && (
+                            <span className="flex items-center gap-1 font-mono text-emerald-700">
+                              <Phone size={11} className="text-emerald-600" />
+                              {activeThread.whatsapp || activeThread.phone}
+                            </span>
+                          )}
+                          {activeThread.email && (
+                            <span className="flex items-center gap-1 font-mono text-blue-700">
+                              <Mail size={11} className="text-blue-600" />
+                              {activeThread.email}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Chat Action Shortcuts */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Deep links */}
+                      {(activeThread.whatsapp || activeThread.phone) && (
+                        <a
+                          href={`https://wa.me/${(activeThread.whatsapp || activeThread.phone || '').replace(/\D/g, '')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 shadow-2xs"
+                          title="Open WhatsApp web chat"
+                        >
+                          <ExternalLink size={12} />
+                          <span>wa.me</span>
+                        </a>
+                      )}
+
+                      {/* Open Profile Button */}
+                      {onOpenProfile && activeThread.entityId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenProfile(activeThread.entityId, activeThread.entityType);
+                            onClose();
+                          }}
+                          className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1 text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 shadow-2xs cursor-pointer"
+                          title="Open full contact CRM profile"
+                        >
+                          <User size={12} className="text-indigo-600" />
+                          <span>Profile ↗</span>
+                        </button>
+                      )}
+
+                      {/* Move to Trash */}
+                      {activeThread.entityId && (
+                        <button
+                          type="button"
+                          onClick={() => handleMoveLeadToTrash(activeThread.entityId, activeThread.businessName)}
+                          className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
+                          title="Move lead to Trash"
+                        >
+                          <Trash2 size={12} className="text-rose-600" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Chat Message Stream Viewport */}
+                  <div
+                    ref={chatScrollRef}
+                    className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-50/70"
+                    style={{
+                      backgroundImage: 'radial-gradient(#cbd5e1 0.75px, transparent 0.75px)',
+                      backgroundSize: '16px 16px',
+                    }}
+                  >
+                    {activeThreadMessages.length === 0 ? (
+                      <div className="py-12 text-center text-slate-400">
+                        <MessageSquare size={28} className="mx-auto mb-2 text-slate-300" />
+                        <p className="text-xs font-semibold">No messages in this conversation yet</p>
+                      </div>
+                    ) : (
+                      activeThreadMessages.map((msg, index) => {
+                        const isInbound = msg.direction === 'inbound';
+                        const isBounce = msg.status === 'bounced' || msg.text?.startsWith('[DELIVERY FAILURE');
+                        const isRead = Boolean(msg.is_read);
+                        const isReplied = Boolean(msg.is_replied);
+
+                        // Date divider calculation
+                        const prevMsg = activeThreadMessages[index - 1];
+                        const showDateDivider =
+                          !prevMsg ||
+                          new Date(prevMsg.sent_at || 0).toDateString() !==
+                            new Date(msg.sent_at || 0).toDateString();
+
+                        return (
+                          <div key={msg.id} className="space-y-2">
+                            {/* Sticky Date Divider */}
+                            {showDateDivider && (
+                              <div className="flex justify-center my-3">
+                                <span className="rounded-full bg-slate-200/90 backdrop-blur-sm px-3 py-0.5 text-[10px] font-bold text-slate-700 shadow-2xs border border-slate-300/60">
+                                  {formatChatDateDivider(msg.sent_at)}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Message Bubble Container */}
+                            <div className={`flex ${isInbound ? 'justify-start' : 'justify-end'}`}>
+                              <div
+                                className={`group relative max-w-[82%] rounded-2xl p-3.5 shadow-2xs transition-all ${
+                                  isInbound
+                                    ? 'bg-white text-slate-900 border border-slate-200 rounded-tl-xs'
+                                    : msg.channel === 'whatsapp'
+                                    ? 'bg-[#dcf8c6] text-emerald-950 border border-emerald-300/70 rounded-tr-xs'
+                                    : 'bg-[#eef2ff] text-indigo-950 border border-indigo-200 rounded-tr-xs'
+                                }`}
+                              >
+                                {/* Header inside Bubble: Source attribution or Channel badge */}
+                                <div className="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-black/5 text-[10px]">
+                                  {isInbound ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap font-semibold">
+                                      <span className="flex items-center gap-1 font-bold text-slate-800">
+                                        {msg.channel === 'whatsapp' ? (
+                                          <MessageCircle size={11} className="text-emerald-600" />
+                                        ) : (
+                                          <Mail size={11} className="text-blue-600" />
+                                        )}
+                                        <span>
+                                          {msg.channel === 'whatsapp' ? 'WhatsApp Direct' : 'Email Reply'}
+                                        </span>
+                                      </span>
+                                      <span className="text-slate-400">•</span>
+                                      <span className="text-slate-600 font-mono text-[10px]">
+                                        {msg.inbox_email || msg.phone || activeThread.businessName}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-700">
+                                      <span>
+                                        {msg.channel === 'whatsapp'
+                                          ? '📤 Outbound via WhatsApp Direct'
+                                          : '📤 Outbound via Gmail'}
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* AI Intent Badge on Inbound */}
+                                  {msg.inbound_intent && (
+                                    <span
+                                      className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
+                                        msg.inbound_intent === 'meeting_request'
+                                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                          : msg.inbound_intent === 'interested'
+                                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                          : 'bg-blue-100 text-blue-900'
+                                      }`}
+                                    >
+                                      <Zap size={9} />
+                                      {msg.inbound_intent === 'meeting_request'
+                                        ? 'Meeting'
+                                        : msg.inbound_intent === 'interested'
+                                        ? 'Interested'
+                                        : msg.inbound_intent}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Message Content */}
+                                <p className="text-xs leading-relaxed whitespace-pre-wrap font-normal select-text">
+                                  {msg.text}
+                                </p>
+
+                                {/* SEO Audit Attachment pill if mentioned */}
+                                {msg.text?.toLowerCase().includes('technical_audit_report.pdf') && (
+                                  <div className="mt-2 flex items-center gap-2 rounded-lg bg-white/80 border border-slate-200/90 p-2 text-xs font-semibold text-slate-800 shadow-2xs">
+                                    <FileText size={16} className="text-rose-600 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate font-bold">Technical_Audit_Report.pdf</p>
+                                      <p className="text-[10px] text-slate-500 font-normal">
+                                        SEO Diagnostic &amp; Core Web Vitals Pitch
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Bubble Footer: Timestamp & delivery checkmarks */}
+                                <div className="mt-1.5 flex items-center justify-between gap-3 pt-1 text-[10px] text-slate-500">
+                                  <div className="flex items-center gap-2">
+                                    {isInbound && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleRead(msg.id, !isRead)}
+                                        className="text-[10px] font-semibold text-blue-600 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                      >
+                                        {isRead ? <EyeOff size={10} /> : <CheckCircle2 size={10} />}
+                                        <span>{isRead ? 'Mark unread' : 'Mark read'}</span>
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <span>{formatChatTime(msg.sent_at)}</span>
+                                    {!isInbound && (
+                                      <CheckCheck size={13} className="text-emerald-700 inline" />
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Embedded AI Autonomous Consultative Draft Box (if present on inbound) */}
+                                {msg.ai_suggested_reply && isInbound && !isReplied && (
+                                  <div className="mt-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 via-purple-50/50 to-pink-50/40 p-3 shadow-2xs space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950">
+                                        <Sparkles size={13} className="text-indigo-600" />
+                                        <span>AI Autonomous Consultative Draft</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setEditingDraftId(editingDraftId === msg.id ? null : msg.id)
+                                        }
+                                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <Edit3 size={11} />
+                                        <span>{editingDraftId === msg.id ? 'Done' : 'Edit'}</span>
+                                      </button>
+                                    </div>
+
+                                    {editingDraftId === msg.id ? (
+                                      <textarea
+                                        value={draftOverrides[msg.id] ?? msg.ai_suggested_reply}
+                                        onChange={(e) =>
+                                          setDraftOverrides((prev) => ({
+                                            ...prev,
+                                            [msg.id]: e.target.value,
+                                          }))
+                                        }
+                                        rows={3}
+                                        className="w-full rounded-lg border border-indigo-300 bg-white p-2 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-inner"
+                                      />
+                                    ) : (
+                                      <p className="text-xs text-slate-800 leading-relaxed italic bg-white/90 p-2 rounded-lg border border-indigo-100">
+                                        "{draftOverrides[msg.id] ?? msg.ai_suggested_reply}"
+                                      </p>
+                                    )}
+
+                                    <div className="flex items-center justify-end">
+                                      <button
+                                        type="button"
+                                        disabled={approvingReplyId === msg.id}
+                                        onClick={() => handleApproveAndSend(msg)}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-3 py-1.5 text-xs font-bold shadow-xs transition disabled:opacity-50 cursor-pointer"
+                                      >
+                                        {approvingReplyId === msg.id ? (
+                                          <>
+                                            <RefreshCw size={12} className="animate-spin" />
+                                            <span>Sending...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Send size={12} />
+                                            <span>Approve &amp; Send Reply</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* ----------------- CHAT COMPOSER DOCK (BOTTOM) ----------------- */}
+                  <div className="border-t border-slate-200 bg-white p-3 space-y-2 shrink-0">
+                    {/* Channel Selector Pills & AI Draft Generator */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-500">Send via:</span>
+
+                        {/* WhatsApp pill */}
+                        <button
+                          type="button"
+                          onClick={() => setComposerChannel('whatsapp')}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            composerChannel === 'whatsapp'
+                              ? 'bg-emerald-600 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-700 hover:bg-emerald-50'
+                          }`}
+                        >
+                          <MessageCircle size={12} />
+                          <span>WhatsApp</span>
+                        </button>
+
+                        {/* Email pill */}
+                        <button
+                          type="button"
+                          onClick={() => setComposerChannel('email')}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            composerChannel === 'email'
+                              ? 'bg-blue-600 text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-700 hover:bg-blue-50'
+                          }`}
+                        >
+                          <Mail size={12} />
+                          <span>Email</span>
+                        </button>
+
+                        {/* LinkedIn pill */}
+                        <button
+                          type="button"
+                          onClick={() => setComposerChannel('linkedin')}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            composerChannel === 'linkedin'
+                              ? 'bg-[#0a66c2] text-white shadow-2xs'
+                              : 'bg-slate-100 text-slate-700 hover:bg-sky-50'
+                          }`}
+                        >
+                          <Linkedin size={12} />
+                          <span>LinkedIn</span>
+                        </button>
+                      </div>
+
+                      {/* Quick AI consultative reply generator button */}
+                      <button
+                        type="button"
+                        onClick={handleGenerateAiReply}
+                        disabled={isGeneratingAi}
+                        className="btn-secondary py-1 px-2.5 text-xs font-bold flex items-center gap-1.5 text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 transition shadow-2xs cursor-pointer"
+                        title="Auto-draft an intelligent consultative response"
+                      >
+                        <Sparkles size={12} className={isGeneratingAi ? 'animate-spin text-indigo-600' : 'text-indigo-600'} />
+                        <span>{isGeneratingAi ? 'Drafting...' : '✨ AI Auto-Reply'}</span>
+                      </button>
+                    </div>
+
+                    {/* Chat Text Input and Send Button */}
+                    <div className="flex items-end gap-2">
+                      <div className="relative flex-1">
+                        <textarea
+                          value={composerText}
+                          onChange={(e) => setComposerText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendComposerReply();
+                            }
+                          }}
+                          placeholder={`Type a message to ${activeThread.businessName}... (Press Enter to send, Shift+Enter for new line)`}
+                          rows={2}
+                          className="w-full rounded-xl border border-slate-300 bg-slate-50/50 p-2.5 text-xs text-slate-900 focus:bg-white focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-inner resize-none font-sans"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={!composerText.trim() || isSendingReply}
+                        onClick={handleSendComposerReply}
+                        className="h-10 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                      >
+                        {isSendingReply ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <>
+                            <Send size={14} />
+                            <span>Send</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400">
+                  <MessageSquare size={48} className="text-slate-300 mb-3" />
+                  <h3 className="text-sm font-bold text-slate-700">Select a Conversation</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mt-1">
+                    Choose a contact from the list on the left to start messaging in real-time across WhatsApp, Email, or LinkedIn.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ========================================================================= */}
+        {/* LAYOUT 2: UNMATCHED EMAILS & BOUNCES VIEW                                */}
+        {/* ========================================================================= */}
+        {viewTab === 'unmatched' && (
+          <div className="mt-3 space-y-3 max-h-[64vh] overflow-y-auto pr-1">
+            {filteredUnmatched.length === 0 ? (
               <div className="rounded-2xl border-2 border-dashed border-slate-200 py-12 text-center">
                 <CheckCircle2 size={32} className="mx-auto text-emerald-500 mb-2" />
                 <p className="text-sm font-bold text-slate-700">No Unmatched or Bounced Emails</p>
@@ -696,6 +1666,7 @@ export function InboundRepliesModal({
                     </button>
                   )}
                 </div>
+
                 {filteredUnmatched.map((item) => (
                   <div
                     key={item.id}
@@ -755,553 +1726,320 @@ export function InboundRepliesModal({
                   </div>
                 ))}
               </>
-            )
-          ) : isLoading ? (
-            <div className="py-12 text-center text-slate-400">
-              <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-brand-600" />
-              <p className="text-xs font-semibold">Loading messages across all channels...</p>
-            </div>
-          ) : filteredMessages.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-slate-200 py-12 text-center">
-              <Inbox size={32} className="mx-auto text-slate-300 mb-2" />
-              <p className="text-sm font-bold text-slate-700">
-                {viewTab === 'unread'
-                  ? 'All caught up! No unread messages'
-                  : viewTab === 'pending'
-                  ? 'Inbox Zero! No pending messages'
-                  : 'No messages found'}
-              </p>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                {search
-                  ? `No messages match "${search}". Try clearing your search or switching channels.`
-                  : viewTab === 'unread'
-                  ? 'All received messages have been read or replied to! Click "All Messages" to see full history.'
-                  : `No recent messages recorded for ${channelFilter.toUpperCase()}.`}
-              </p>
-              {viewTab === 'unread' && (
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* LAYOUT 3: CLASSIC CARD FEED VIEW (PRESERVED)                             */}
+        {/* ========================================================================= */}
+        {layoutMode === 'feed' && viewTab !== 'unmatched' && (
+          <div className="space-y-3.5 mt-2">
+            {/* View Mode Tabs (Recent Messages, Unread, Needs Attention, Inbound, Outbound) */}
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-2 flex-wrap">
+              <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 flex-wrap">
                 <button
                   onClick={() => setViewTab('recent')}
-                  className="btn-primary py-1.5 px-3.5 text-xs font-bold inline-flex items-center gap-1.5 mt-2"
-                >
-                  <History size={13} />
-                  <span>View All Messages</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            filteredMessages.map((msg) => {
-              const targetId = msg.client_id || msg.lead_id || '';
-              const entityType = msg.entity_type || (msg.client_id ? 'client' : 'lead');
-              const isReplied = Boolean(msg.is_replied);
-              const isInbound = msg.direction === 'inbound';
-              const isRead = Boolean(msg.is_read);
-              const channel = msg.channel || 'email';
-              const isBounce = msg.status === 'bounced' || msg.text?.startsWith('[DELIVERY FAILURE');
-
-              // Clean phone number for WhatsApp deep link
-              const rawPhone = (msg.whatsapp || msg.phone || '').trim();
-              const cleanWaNumber = rawPhone.replace(/\D/g, '');
-
-              return (
-                <div
-                  key={msg.id}
-                  className={`group relative rounded-xl border p-3.5 shadow-2xs transition-all hover:shadow-md ${
-                    isBounce
-                      ? 'border-rose-200 bg-rose-50/30'
-                      : isInbound && !isRead && !isReplied
-                      ? 'border-rose-300 bg-rose-50/20 ring-1 ring-rose-400/30'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    viewTab === 'recent'
+                      ? 'bg-white text-brand-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
-                    {/* Contact identity & Channel icon */}
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      {/* Channel Icon container */}
-                      <div
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-                          isBounce
-                            ? 'bg-rose-100 text-rose-700 border-rose-300'
-                            : channel === 'whatsapp'
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                            : channel === 'email'
-                            ? 'bg-blue-50 text-blue-600 border-blue-200'
-                            : channel === 'facebook'
-                            ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
-                            : 'bg-pink-50 text-pink-600 border-pink-200'
-                        }`}
-                      >
-                        {isBounce ? (
-                          <AlertTriangle size={18} />
-                        ) : (
-                          <>
+                  <History size={13} />
+                  <span>All Messages</span>
+                  <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold">
+                    {allRecentMessages.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewTab('unread')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    viewTab === 'unread'
+                      ? 'bg-white text-rose-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Mail size={13} />
+                  <span>Unread Only</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      unreadCount > 0
+                        ? 'bg-rose-500 text-white animate-pulse'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {unreadCount}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewTab('pending')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    viewTab === 'pending'
+                      ? 'bg-white text-blue-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Inbox size={13} />
+                  <span>Needs Attention</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      replies.length > 0
+                        ? 'bg-amber-100 text-amber-800 font-bold'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {replies.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewTab('inbound')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    viewTab === 'inbound'
+                      ? 'bg-white text-emerald-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Inbox size={13} />
+                  <span>Inbound History</span>
+                  <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold">
+                    {allInboundHistory.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setViewTab('outbound')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                    viewTab === 'outbound'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Send size={13} />
+                  <span>Outbound Sent</span>
+                  <span className="rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold">
+                    {allRecentMessages.filter((m) => m.direction === 'outbound').length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Quick Search & Date Filter */}
+              <div className="flex items-center gap-2 flex-1 min-w-[280px] max-w-md ml-auto">
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value as any)}
+                  className="rounded-lg border border-slate-200 bg-white py-1.5 px-2.5 text-xs text-slate-700 font-medium focus:border-brand-500 focus:outline-none shadow-2xs shrink-0"
+                >
+                  <option value="all">All Dates</option>
+                  <option value="today">Today</option>
+                  <option value="7d">Past 7 Days</option>
+                  <option value="30d">Past 30 Days</option>
+                </select>
+
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search text, phone, email, inbox..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Messages Feed Stream */}
+            <div className="max-h-[58vh] overflow-y-auto space-y-3 pr-1">
+              {isLoading ? (
+                <div className="py-12 text-center text-slate-400">
+                  <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-brand-600" />
+                  <p className="text-xs font-semibold">Loading messages across all channels...</p>
+                </div>
+              ) : filteredMessages.length === 0 ? (
+                <div className="rounded-2xl border-2 border-dashed border-slate-200 py-12 text-center">
+                  <Inbox size={32} className="mx-auto text-slate-300 mb-2" />
+                  <p className="text-sm font-bold text-slate-700">No messages found</p>
+                </div>
+              ) : (
+                filteredMessages.map((msg) => {
+                  const targetId = msg.client_id || msg.lead_id || '';
+                  const entityType = msg.entity_type || (msg.client_id ? 'client' : 'lead');
+                  const isReplied = Boolean(msg.is_replied);
+                  const isInbound = msg.direction === 'inbound';
+                  const isRead = Boolean(msg.is_read);
+                  const channel = msg.channel || 'email';
+                  const isBounce = msg.status === 'bounced' || msg.text?.startsWith('[DELIVERY FAILURE');
+                  const rawPhone = (msg.whatsapp || msg.phone || '').trim();
+                  const cleanWaNumber = rawPhone.replace(/\D/g, '');
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`group relative rounded-xl border p-3.5 shadow-2xs transition-all hover:shadow-md ${
+                        isBounce
+                          ? 'border-rose-200 bg-rose-50/30'
+                          : isInbound && !isRead && !isReplied
+                          ? 'border-rose-300 bg-rose-50/20 ring-1 ring-rose-400/30'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <div
+                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
+                              isBounce
+                                ? 'bg-rose-100 text-rose-700 border-rose-300'
+                                : channel === 'whatsapp'
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                : channel === 'email'
+                                ? 'bg-blue-50 text-blue-600 border-blue-200'
+                                : 'bg-pink-50 text-pink-600 border-pink-200'
+                            }`}
+                          >
                             {channel === 'whatsapp' && <MessageCircle size={18} />}
                             {channel === 'email' && <Mail size={18} />}
                             {channel === 'facebook' && <Facebook size={18} />}
                             {channel === 'instagram' && <Instagram size={18} />}
-                          </>
-                        )}
+                            {channel === 'linkedin' && <Linkedin size={18} />}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {onOpenProfile && targetId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onOpenProfile(targetId, entityType as 'lead' | 'client');
+                                    onClose();
+                                  }}
+                                  className="text-sm font-bold text-slate-900 hover:text-brand-600 hover:underline truncate text-left flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <span>{msg.business_name || 'Contact'}</span>
+                                  <span className="text-[10px] text-brand-600 font-semibold bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                                    Profile ↗
+                                  </span>
+                                </button>
+                              ) : (
+                                <h4 className="text-sm font-bold text-slate-900 truncate">
+                                  {msg.business_name || 'Contact'}
+                                </h4>
+                              )}
+
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                  channel === 'whatsapp'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-blue-100 text-blue-800'
+                                }`}
+                              >
+                                {channel}
+                              </span>
+
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                  isInbound
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                }`}
+                              >
+                                {isInbound ? '📥 Inbound' : '📤 Outbound'}
+                              </span>
+
+                              {isInbound && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleRead(msg.id, !isRead)}
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold border transition ${
+                                    !isRead
+                                      ? 'bg-rose-500 text-white border-rose-500 animate-pulse'
+                                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  }`}
+                                >
+                                  {isRead ? 'Read' : 'UNREAD'}
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="mt-1 flex items-center gap-3 text-xs text-slate-500">
+                              {rawPhone && <span className="font-mono">{rawPhone}</span>}
+                              {msg.email && <span className="font-mono">{msg.email}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0">
+                          <Clock size={12} />
+                          <span>{formatDate(msg.sent_at)}</span>
+                        </div>
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {onOpenProfile && targetId ? (
+                      <div className="mt-2.5 rounded-lg bg-slate-50 p-2.5 border border-slate-200/80">
+                        <p className="text-xs text-slate-800 whitespace-pre-wrap">{msg.text}</p>
+                      </div>
+
+                      {/* Card Action Toolbar */}
+                      <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                        <span className="text-[11px] text-slate-500">
+                          {isInbound ? 'Inbound Reply' : 'Outbound Outreach'}
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          {cleanWaNumber && (
+                            <a
+                              href={`https://wa.me/${cleanWaNumber}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-emerald-700 bg-emerald-50 border-emerald-200"
+                            >
+                              <ExternalLink size={12} />
+                              <span>wa.me</span>
+                            </a>
+                          )}
+                          {targetId && (
                             <button
                               type="button"
                               onClick={() => {
-                                onOpenProfile(targetId, entityType as 'lead' | 'client');
+                                onOpenConversation(targetId, entityType as 'lead' | 'client');
                                 onClose();
                               }}
-                              className="text-sm font-bold text-slate-900 hover:text-brand-600 hover:underline truncate text-left flex items-center gap-1.5 group cursor-pointer transition"
-                              title="Click to open full contact profile with details & Google information"
+                              className="btn-primary py-1 px-3 text-xs font-bold flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white border-0 shadow-2xs"
                             >
-                              <span>{msg.business_name || 'Contact'}</span>
-                              <span className="opacity-0 group-hover:opacity-100 text-[10px] text-brand-600 font-semibold flex items-center gap-0.5 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200 transition">
-                                <User size={10} />
-                                Profile ↗
-                              </span>
+                              <Sparkles size={12} />
+                              <span>Open Thread &amp; Reply</span>
+                              <ArrowRight size={12} />
                             </button>
-                          ) : (
-                            <h4 className="text-sm font-bold text-slate-900 truncate">
-                              {msg.business_name || 'Contact'}
-                            </h4>
-                          )}
-
-                          {/* Channel Badge */}
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                              isBounce
-                                ? 'bg-rose-100 text-rose-800'
-                                : channel === 'whatsapp'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : channel === 'email'
-                                ? 'bg-blue-100 text-blue-800'
-                                : channel === 'facebook'
-                                ? 'bg-indigo-100 text-indigo-800'
-                                : 'bg-pink-100 text-pink-800'
-                            }`}
-                          >
-                            {channel}
-                          </span>
-
-                          {/* Direction Badge / Bounce Badge */}
-                          {isBounce ? (
-                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300">
-                              <AlertTriangle size={10} />
-                              Delivery Bounced
-                            </span>
-                          ) : (
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                                isInbound
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
-                              }`}
-                            >
-                              {isInbound ? '📥 Inbound' : '📤 Outbound'}
-                            </span>
-                          )}
-
-                          {/* Read / Unread Status Badge for Inbound */}
-                          {!isBounce && isInbound && (
-                            <>
-                              {!isRead && !isReplied ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-2xs animate-pulse">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping" />
-                                  UNREAD
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                  <CheckCircle2 size={10} />
-                                  Read
-                                </span>
-                              )}
-
-                              {isReplied && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                                  <CheckCheck size={10} /> Replied
-                                </span>
-                              )}
-                            </>
-                          )}
-
-                          {/* AI Intent Classification Badge */}
-                          {msg.inbound_intent && (
-                            <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                msg.inbound_intent === 'meeting_request'
-                                  ? 'bg-amber-100 text-amber-900 border border-amber-300 shadow-xs'
-                                  : msg.inbound_intent === 'interested'
-                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-xs'
-                                  : msg.inbound_intent === 'question'
-                                  ? 'bg-blue-100 text-blue-900 border border-blue-300'
-                                  : msg.inbound_intent === 'not_now'
-                                  ? 'bg-slate-100 text-slate-800 border border-slate-300'
-                                  : 'bg-rose-100 text-rose-800 border border-rose-300'
-                              }`}
-                              title={`AI Intent: ${msg.inbound_intent}${msg.inbound_intent_confidence ? ` (${Math.round(msg.inbound_intent_confidence * 100)}% confidence)` : ''}`}
-                            >
-                              <Zap size={10} className={msg.inbound_intent === 'meeting_request' || msg.inbound_intent === 'interested' ? 'text-amber-600 fill-amber-500' : ''} />
-                              {msg.inbound_intent === 'meeting_request' && '🔥 Meeting Request'}
-                              {msg.inbound_intent === 'interested' && '✨ Interested'}
-                              {msg.inbound_intent === 'question' && '❓ Question'}
-                              {msg.inbound_intent === 'not_now' && '⏳ Not Now'}
-                              {msg.inbound_intent === 'opt_out' && '🛑 Opt-Out'}
-                              {msg.inbound_intent_confidence ? ` (${Math.round(msg.inbound_intent_confidence * 100)}%)` : ''}
-                            </span>
-                          )}
-
-                          {msg.category && (
-                            <span className="flex items-center gap-1 text-[11px] text-slate-500">
-                              <Tag size={10} />
-                              {msg.category}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Contact details */}
-                        <div className="mt-1 flex items-center gap-3 text-xs text-slate-500 flex-wrap">
-                          {channel === 'whatsapp' && (rawPhone || msg.phone) && (
-                            <span className="flex items-center gap-1 text-emerald-700 font-mono font-medium">
-                              <Phone size={11} className="text-emerald-600" />
-                              {rawPhone || msg.phone}
-                            </span>
-                          )}
-                          {channel === 'email' && msg.email && (
-                            <span className="font-mono text-blue-600">{msg.email}</span>
-                          )}
-                          {channel === 'facebook' && (msg.facebook || msg.business_name) && (
-                            <span className="font-mono text-indigo-600 flex items-center gap-1">
-                              <Facebook size={11} />
-                              {msg.facebook || msg.business_name}
-                            </span>
-                          )}
-                          {channel === 'instagram' && (msg.instagram || msg.business_name) && (
-                            <span className="font-mono text-pink-600 flex items-center gap-1">
-                              <Instagram size={11} />
-                              @{String(msg.instagram || msg.business_name).replace(/^@/, '')}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* PROMINENT SOURCE ATTRIBUTION: Always show exact source! */}
-                        <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-md bg-slate-100/90 px-2.5 py-1 text-xs text-slate-700 border border-slate-200">
-                          <span className="font-bold text-slate-900 flex items-center gap-1 shrink-0">
-                            <Layers size={12} className="text-brand-600" />
-                            <span>Source:</span>
-                          </span>
-
-                          {channel === 'email' && (
-                            <div className="flex items-center gap-1 flex-wrap text-[11px]">
-                              <span className="rounded bg-blue-100 px-1.5 py-0.5 font-bold text-blue-900">
-                                Email Inbox
-                              </span>
-                              <span className="text-slate-400">via</span>
-                              <span className="font-mono font-bold text-blue-700">
-                                {msg.inbox_email || 'team.onlinedigitalsolution@gmail.com'}
-                              </span>
-                              {msg.email && (
-                                <>
-                                  <span className="text-slate-400">• sender:</span>
-                                  <span className="font-mono text-slate-800">{msg.email}</span>
-                                </>
-                              )}
-                            </div>
-                          )}
-
-                          {channel === 'whatsapp' && (
-                            <div className="flex items-center gap-1 flex-wrap text-[11px]">
-                              <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-900">
-                                WhatsApp Direct
-                              </span>
-                              <span className="text-slate-400">from</span>
-                              <span className="font-mono font-bold text-emerald-800">
-                                {rawPhone || msg.phone || 'Prospect'}
-                              </span>
-                              <span className="text-slate-400">via</span>
-                              <span className="text-emerald-700 font-medium">
-                                {waStatus?.phoneNumber ? `Account ${waStatus.phoneNumber}` : 'Connected Session'}
-                              </span>
-                            </div>
-                          )}
-
-                          {channel === 'instagram' && (
-                            <div className="flex items-center gap-1 flex-wrap text-[11px]">
-                              <span className="rounded bg-pink-100 px-1.5 py-0.5 font-bold text-pink-900">
-                                Instagram DM
-                              </span>
-                              <span className="text-slate-400">handle:</span>
-                              <span className="font-mono font-bold text-pink-800">
-                                @{String(msg.instagram || msg.business_name).replace(/^@/, '')}
-                              </span>
-                            </div>
-                          )}
-
-                          {channel === 'facebook' && (
-                            <div className="flex items-center gap-1 flex-wrap text-[11px]">
-                              <span className="rounded bg-indigo-100 px-1.5 py-0.5 font-bold text-indigo-900">
-                                Facebook Messenger
-                              </span>
-                              <span className="text-slate-400">page:</span>
-                              <span className="font-mono font-bold text-indigo-800">
-                                {msg.facebook || msg.business_name}
-                              </span>
-                            </div>
                           )}
                         </div>
                       </div>
                     </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
 
-                    {/* Timestamp */}
-                    <div className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0">
-                      <Clock size={12} />
-                      <span>{formatDate(msg.sent_at)}</span>
-                    </div>
-                  </div>
-
-                  {/* Message body */}
-                  <div className="mt-2.5 rounded-lg bg-slate-50 p-2.5 border border-slate-200/80">
-                    <p className="text-xs text-slate-800 font-normal leading-relaxed whitespace-pre-wrap">
-                      {msg.text}
-                    </p>
-                  </div>
-
-                  {/* AI Autonomous Consultative Draft Response */}
-                  {msg.ai_suggested_reply && isInbound && !isReplied && (
-                    <div className="mt-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 via-indigo-50/30 to-purple-50/50 p-3 shadow-2xs">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950">
-                          <Sparkles size={13} className="text-indigo-600" />
-                          <span>AI Autonomous Consultative Draft</span>
-                          <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-indigo-700">
-                            Ready to Dispatch
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setEditingDraftId(editingDraftId === msg.id ? null : msg.id)}
-                          className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer transition"
-                        >
-                          <Edit3 size={11} />
-                          <span>{editingDraftId === msg.id ? 'Done' : 'Edit Draft'}</span>
-                        </button>
-                      </div>
-
-                      {editingDraftId === msg.id ? (
-                        <textarea
-                          value={draftOverrides[msg.id] ?? msg.ai_suggested_reply}
-                          onChange={(e) => setDraftOverrides((prev) => ({ ...prev, [msg.id]: e.target.value }))}
-                          rows={3}
-                          className="w-full rounded-lg border border-indigo-300 bg-white p-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner font-sans"
-                          placeholder="Customize your response before sending..."
-                        />
-                      ) : (
-                        <p className="text-xs text-slate-800 leading-relaxed italic bg-white/85 p-2.5 rounded-lg border border-indigo-100">
-                          "{draftOverrides[msg.id] ?? msg.ai_suggested_reply}"
-                        </p>
-                      )}
-
-                      <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
-                        <span className="text-[10px] text-indigo-700 font-medium">
-                          ✨ Tailored to {msg.category || 'business'} • Zero manual drafting required
-                        </span>
-                        <button
-                          type="button"
-                          disabled={approvingReplyId === msg.id}
-                          onClick={() => handleApproveAndSend(msg)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:shadow transition disabled:opacity-50 cursor-pointer"
-                        >
-                          {approvingReplyId === msg.id ? (
-                            <>
-                              <RefreshCw size={12} className="animate-spin" />
-                              <span>Sending...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Send size={12} />
-                              <span>Approve &amp; Send Reply</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Bottom action toolbar */}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-slate-500 font-medium">
-                        {isBounce ? 'Delivery Failure (Bounce)' : isInbound ? 'Client Reply' : 'Outreach Message'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Delete bounce notice button */}
-                      {isBounce && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await api.deleteFailedMessages([msg.id]);
-                              setAllRecentMessages((prev) => prev.filter((m) => m.id !== msg.id));
-                              setAllInboundHistory((prev) => prev.filter((m) => m.id !== msg.id));
-                              setActionFeedback('Bounce notice deleted');
-                              setTimeout(() => setActionFeedback(null), 3000);
-                            } catch (err) {
-                              console.error('Failed to delete bounce notice:', err);
-                            }
-                          }}
-                          className="btn-secondary py-1 px-2.5 text-xs flex items-center gap-1 text-rose-700 hover:bg-rose-100 bg-rose-50 border-rose-200 transition shadow-2xs cursor-pointer"
-                          title="Permanently remove this delivery bounce notice"
-                        >
-                          <Trash2 size={12} className="text-rose-600" />
-                          <span>Delete Notice</span>
-                        </button>
-                      )}
-
-                      {/* Direct channel links */}
-                      {channel === 'whatsapp' && cleanWaNumber && (
-                        <a
-                          href={`https://wa.me/${cleanWaNumber}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-emerald-700 hover:bg-emerald-50 border-emerald-200"
-                          title="Open WhatsApp chat"
-                        >
-                          <ExternalLink size={12} />
-                          <span>wa.me</span>
-                        </a>
-                      )}
-
-                      {channel === 'email' && msg.email && (
-                        <a
-                          href={`mailto:${msg.email}`}
-                          className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-blue-700 hover:bg-blue-50 border-blue-200"
-                          title="Compose email"
-                        >
-                          <Mail size={12} />
-                          <span>Email</span>
-                        </a>
-                      )}
-
-                      {channel === 'facebook' && (
-                        <a
-                          href={
-                            msg.facebook?.startsWith('http')
-                              ? msg.facebook
-                              : `https://m.me/${String(msg.facebook || '').replace(/^[/@]/, '')}`
-                          }
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-indigo-700 hover:bg-indigo-50 border-indigo-200"
-                        >
-                          <ExternalLink size={12} />
-                          <span>Messenger</span>
-                        </a>
-                      )}
-
-                      {channel === 'instagram' && msg.instagram && (
-                        <a
-                          href={`https://instagram.com/${msg.instagram.replace(/^@/, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-pink-700 hover:bg-pink-50 border-pink-200"
-                        >
-                          <ExternalLink size={12} />
-                          <span>IG DM</span>
-                        </a>
-                      )}
-
-                      {/* Explicit Mark as Read / Mark as Unread Button */}
-                      {isInbound && (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleRead(msg.id, !isRead)}
-                          className={`btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1.5 transition ${
-                            !isRead
-                              ? 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100 font-bold'
-                              : 'text-slate-600 bg-slate-50 border-slate-200 hover:bg-slate-100'
-                          }`}
-                          title={isRead ? 'Mark as unread' : 'Mark as read'}
-                        >
-                          {isRead ? <EyeOff size={12} /> : <CheckCircle2 size={12} />}
-                          <span>{isRead ? 'Mark Unread' : 'Mark as Read'}</span>
-                        </button>
-                      )}
-
-                      {/* Mark handled button */}
-                      {isInbound && !isReplied && (
-                        <button
-                          type="button"
-                          onClick={() => handleMarkHandledClick(msg.id, msg.business_name)}
-                          className="btn-secondary py-1 px-2 text-xs font-semibold flex items-center gap-1 text-slate-700 hover:bg-slate-100 border-slate-200"
-                          title="Mark this inbound message as handled"
-                        >
-                          <CheckCheck size={12} className="text-slate-500" />
-                          <span>Mark Done</span>
-                        </button>
-                      )}
-
-                      {/* View Full Profile Button */}
-                      {onOpenProfile && targetId && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onOpenProfile(targetId, entityType as 'lead' | 'client');
-                            onClose();
-                          }}
-                          className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1.5 text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100 transition shadow-2xs"
-                          title="Open full contact profile with Google details and activity"
-                        >
-                          <User size={12} className="text-indigo-600" />
-                          <span>View Profile</span>
-                        </button>
-                      )}
-
-                      {/* Move Lead to Trash Button */}
-                      {targetId && (
-                        <button
-                          type="button"
-                          onClick={() => handleMoveLeadToTrash(targetId, msg.business_name || 'Contact')}
-                          className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 hover:border-rose-300 transition shadow-2xs"
-                          title="No use of this lead (address missing or invalid). Move contact to Trash"
-                        >
-                          <Trash2 size={12} className="text-rose-600" />
-                          <span>Move to Trash</span>
-                        </button>
-                      )}
-
-                      {/* Open full thread button: NOTE: Does NOT mark as read! */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (targetId) {
-                            onOpenConversation(targetId, entityType as 'lead' | 'client');
-                            onClose();
-                          }
-                        }}
-                        className="btn-primary py-1 px-3 text-xs font-bold flex items-center gap-1 bg-brand-600 hover:bg-brand-700 text-white border-0 shadow-2xs"
-                      >
-                        <Sparkles size={12} />
-                        <span>Open Thread &amp; Reply</span>
-                        <ArrowRight size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-2.5 border-t border-slate-200">
+        {/* Footer info bar */}
+        <div className="flex items-center justify-between pt-3 border-t border-slate-200 mt-2">
           <p className="text-[11px] text-slate-500">
-            Showing <strong>{viewTab === 'unmatched' ? filteredUnmatched.length : filteredMessages.length}</strong> {viewTab === 'unmatched' ? 'unmatched email(s)' : 'message(s)'} •{' '}
-            {viewTab === 'unmatched' ? 'Gmail Inbound' : channelFilter === 'all' ? 'All Channels' : channelFilter.toUpperCase()}
+            {layoutMode === 'messenger' ? (
+              <>
+                💬 <strong>{allThreads.length} active threads</strong> • {unreadCount} unread • Multi-channel real-time messaging
+              </>
+            ) : (
+              <>
+                Showing <strong>{filteredMessages.length}</strong> message(s) •{' '}
+                {channelFilter === 'all' ? 'All Channels' : channelFilter.toUpperCase()}
+              </>
+            )}
           </p>
           <button
             onClick={onClose}
-            className="btn-secondary py-1.5 px-4 text-xs font-semibold text-slate-700"
+            className="btn-secondary py-1.5 px-4 text-xs font-semibold text-slate-700 cursor-pointer"
           >
             Close
           </button>

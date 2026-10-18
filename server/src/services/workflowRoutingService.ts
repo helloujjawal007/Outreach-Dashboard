@@ -250,11 +250,12 @@ export class WorkflowRoutingService {
       cleanSubject = cleanSubject.charAt(0).toUpperCase() + cleanSubject.slice(1).toLowerCase();
     }
 
-    // Ensure opt-out footer is present
-    const hasOptOut = /unsubscribe|opt-out|remove you from our list|stop/i.test(cleanBody);
-    if (!hasOptOut) {
-      cleanBody = `${cleanBody}\n\n---\nIf you prefer not to receive further emails, simply reply with "Unsubscribe" or "Stop".`;
-    }
+    // Strip any robotic unsubscribe / automated list disclaimers if present
+    cleanBody = cleanBody
+      .replace(/\n*---\s*\n*If you prefer not to receive further emails[^\n]*/gi, '')
+      .replace(/\n*If you'd prefer not to receive further emails[^\n]*/gi, '')
+      .replace(/\n*simply reply with "?unsubscribe"?[^\n]*/gi, '')
+      .trim();
 
     return {
       isCompliant: warnings.length === 0,

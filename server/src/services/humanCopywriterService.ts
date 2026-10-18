@@ -81,25 +81,12 @@ export class HumanCopywriterService {
     return `Best regards,\n${this.agencyName}`;
   }
 
-  /**
-   * Compliance footer (opt-out + optional postal address via BUSINESS_ADDRESS)
-   */
-  private buildFooter(): string {
-    const address = process.env.BUSINESS_ADDRESS?.trim();
-    return [
-      address,
-      `If you'd prefer not to receive further emails, simply reply with "unsubscribe" and I will remove you from our list.`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-
   private compose(bodyLines: string[]): string {
-    return `${bodyLines.join('\n')}\n\n${this.buildSignoff()}\n\n${this.buildFooter()}`;
+    return `${bodyLines.join('\n')}\n\n${this.buildSignoff()}`;
   }
 
   /**
-   * Generates professional, plain-spoken copy free of hype and unverifiable claims
+   * Generates professional, plain-spoken copy free of hype, AI clichés, and automated disclaimers
    */
   public getEmailCopy(lead: LeadContext, stage: Stage): HumanCopyResult {
     const business = this.cleanBusinessName(lead.businessName || 'your business');
@@ -119,24 +106,22 @@ export class HumanCopywriterService {
 
         return {
           subject: this.pick([
-            `Capturing missing local search clients in ${indLoc} for ${business}`,
-            `${business} – Google Business visibility & customer inquiries`,
+            `Quick note regarding ${business}`,
+            `${business} – Google Business visibility & inquiries`,
+            `Question regarding ${business}`,
           ]),
           body: this.compose([
             `Hi ${salutation},`,
             ``,
-            `I came across ${business} while researching top-rated service providers in ${indLoc}. You've built a strong local reputation on Google (${gmbStatus}).`,
+            `I came across ${business} while looking up top-rated service providers in ${indLoc}. You have built a strong local reputation on Google (${gmbStatus}).`,
             ``,
-            `However, I noticed that when prospective local customers search for your services, there is no active, dedicated mobile website linked to your listing. Over 73% of local high-intent searchers look for a fast mobile website to inspect pricing, reviews, and credentials before calling or requesting an estimate. Right now, those visitors are dropping off and booking with local competitors who have direct websites in place.`,
+            `I noticed that when potential customers search for your services on mobile, there is no direct website linked to your listing where they can view your services, credentials, or submit an inquiry. Many local customers browsing on their phones end up contacting competitors who have an active mobile site in place.`,
             ``,
-            `At ${this.agencyName}, we help local businesses plug this leak through a two-part growth engine:`,
+            `We build clean, fast-loading mobile websites and handle ongoing Google Maps optimization so you stay in the local top results without technical headaches.`,
             ``,
-            `1. Turnkey Custom Website Build: Modern, ultra-fast architecture built on Next.js/SSR—engineered to load instantly on smartphones, rank on Google, and convert searchers into booked clients and inquiry submissions 24/7.`,
-            `2. Weekly Google Business Profile (GMB) Optimization: Ongoing map-pack optimization, weekly geo-tagged posts, and review alignment to keep you ranking in the local Top 3 "Map Pack".`,
+            `I put together a preliminary layout concept specifically for ${business} showing how this would look and work.`,
             ``,
-            `We recently put together a preliminary layout concept specifically for ${business} showing how this setup would look and perform.`,
-            ``,
-            `Would you be open to a complimentary 5-minute preview of the mockup and a quick look at the local competitors ranking above you in ${indLoc}?`,
+            `Would you like me to send over a quick 2-minute preview?`,
           ]),
           stage: 'initial',
           stageLabel: '1st Email (Turnkey Web & GMB Pitch)',
@@ -146,15 +131,15 @@ export class HumanCopywriterService {
 
       if (stage === 'followup_1') {
         return {
-          subject: `Following up: Website & local visibility for ${business}`,
+          subject: `Following up: ${business}`,
           body: this.compose([
             `Hello ${salutation},`,
             ``,
-            `I'm following up on my previous note in case it was missed. As mentioned, ${business} could capture significantly more local customer calls with an active, modern mobile website.`,
+            `I'm following up on my previous note in case it was missed. As mentioned, ${business} could capture more direct customer calls with an active, fast mobile website.`,
             ``,
-            `We build complete websites with local Google SEO and monthly maintenance included so you don't have to manage any technical headaches.`,
+            `We take care of the entire setup including local Google SEO and maintenance so you don't have to manage anything technical.`,
             ``,
-            `Would you like me to send over 2-3 sample layout ideas for your review?`,
+            `Would you like me to send over a couple of sample layout ideas to review?`,
           ]),
           stage: 'followup_1',
           stageLabel: '2nd Email (Day 3 Follow-up)',
@@ -164,15 +149,15 @@ export class HumanCopywriterService {
 
       if (stage === 'followup_2') {
         return {
-          subject: `Local customer enquiries for ${business}`,
+          subject: `Customer inquiries for ${business}`,
           body: this.compose([
             `Hello ${salutation},`,
             ``,
-            `Many local ${categoryPhrase} miss out on high-value customers simply because they lack an online presence where clients can view services, reviews, and submit enquiries after hours.`,
+            `Many local ${categoryPhrase} miss out on high-intent clients simply because they don't have an easy mobile page where clients can view services and reach out after hours.`,
             ``,
-            `If modernizing ${business}'s web presence and getting found on Google is a priority this quarter, I'd be glad to walk you through a simple, phased approach.`,
+            `If modernizing ${business}'s online presence is something you're considering this quarter, I'd be glad to share a straightforward approach.`,
             ``,
-            `Would later this week suit you for a brief chat, or should I follow up next month?`,
+            `Would later this week suit you for a brief chat, or should I check back next month?`,
           ]),
           stage: 'followup_2',
           stageLabel: '3rd Email (Day 6 Follow-up)',
@@ -227,19 +212,15 @@ export class HumanCopywriterService {
         body: this.compose([
           `Hi ${salutation},`,
           ``,
-          `I hope your week is off to a productive start.`,
+          `I took a quick look at ${websiteUrl} earlier today while reviewing ${categoryPhrase} in your area.`,
           ``,
-          `My technical team at ${this.agencyName} recently conducted a brief performance and technical SEO diagnostic on ${websiteUrl}${scoreNote}. Rather than sending a generic cold pitch, we compiled our key findings into a concise 1-page report, which I’ve attached for your reference (${pdfName}).`,
-          ``,
-          `Two priority takeaways stood out that may be holding back your organic search ranking and mobile conversion rate:`,
+          `A couple of technical points stood out that may be holding back your organic Google ranking and mobile page speed:`,
           ``,
           `• ${keyTakeaways}`,
           ``,
-          `Most legacy websites hit these roadblocks due to render-blocking scripts, unoptimized asset delivery, or missing structured schema that Google's crawler expects. At ${this.agencyName}, we engineer high-performance web architecture—typically moving teams toward lightning-fast Next.js SSR and headless setups that achieve sub-second load times and near-perfect Core Web Vitals out of the box.`,
+          `We put together a concise 1-page diagnostic summary and attached it here (${pdfName}) in case it's helpful for your team to review.`,
           ``,
-          `I’d be glad to share how your team can fix these quick wins—no sales pitch, just practical engineering guidance.`,
-          ``,
-          `Are you open to a brief 10-minute walkthrough later this week?`,
+          `Would you be open to a quick 5-minute chat sometime this week? Happy to share how to resolve these without any sales pitch.`,
         ]),
         stage: 'initial',
         stageLabel: '1st Email (Technical Audit & Next.js Pitch)',
@@ -261,14 +242,14 @@ export class HumanCopywriterService {
           ``,
           `I'm following up on my previous email in case it was missed. I have a short audit prepared for ${business} covering your Google Maps presence, website performance, and how quickly enquiries are being handled.`,
           ``,
-          `If it would be useful, I can send it across or walk you through it in 10 minutes at a time that suits you.`,
+          `If it would be useful, I can send it across or walk you through it in 5 minutes at a time that suits you.`,
         ]),
         this.compose([
           `Hello ${salutation},`,
           ``,
           `I wanted to check whether you had a chance to see my earlier note about improving ${business}'s visibility on Google.`,
           ``,
-          `The audit is ready whenever you are. Just let me know whether you'd prefer to receive it by email or discuss it briefly over a call.`,
+          `The audit is ready whenever you are. Just let me know whether you'd prefer to receive it by email or discuss it briefly over a quick call.`,
         ]),
       ];
 
@@ -333,7 +314,7 @@ export class HumanCopywriterService {
       this.compose([
         `Hello ${salutation},`,
         ``,
-        `As I have not received a response, I will pause my outreach here so as not to crowd your inbox. Should you wish to revisit this in the future, I'd be glad to help ${business} with Google visibility, website performance, or enquiry automation.`,
+        `As I have not received a response, I will pause my outreach here so as not to crowd your inbox. Should you wish to revisit this in the future, I'd be glad to help ${business} with Google visibility, website performance, or enquiry handling.`,
         ``,
         `All the best to you and your team.`,
       ]),

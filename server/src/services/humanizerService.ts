@@ -71,21 +71,8 @@ export class HumanizerService {
     return `Best regards,\n${this.agencyName}`;
   }
 
-  /**
-   * Opt-out line (+ optional postal address via BUSINESS_ADDRESS), needed for CAN-SPAM
-   */
-  private buildFooter(): string {
-    const address = process.env.BUSINESS_ADDRESS?.trim();
-    return [
-      address,
-      `If you'd prefer not to receive further emails, simply reply with "unsubscribe" and I will remove you from our list.`,
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
-
   private compose(bodyLines: string[]): string {
-    return `${bodyLines.join('\n')}\n\n${this.buildSignoff()}\n\n${this.buildFooter()}`;
+    return `${bodyLines.join('\n')}\n\n${this.buildSignoff()}`;
   }
 
   /**
@@ -220,9 +207,11 @@ ${this.agencyName}
           if (!body.includes(this.agencyName)) {
             body += `\n\n${this.buildSignoff()}`;
           }
-          if (!/unsubscribe/i.test(body)) {
-            body += `\n\n${this.buildFooter()}`;
-          }
+          // Strip any accidental unsubscribe / list disclaimers
+          body = body
+            .replace(/\n*If you'd prefer not to receive further emails[^\n]*/gi, '')
+            .replace(/\n*simply reply with "?unsubscribe"?[^\n]*/gi, '')
+            .trim();
 
           return {
             subject,

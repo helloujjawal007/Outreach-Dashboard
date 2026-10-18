@@ -373,12 +373,24 @@ export class EmailSchedulerService {
       `[Scheduler] Batch scheduling ${eligibleLeads.length} leads on ${channel.toUpperCase()} starting ${baseTime.toISOString()} with ${intervalSeconds}s pacing interval...`
     );
 
-    for (let i = 0; i < eligibleLeads.length; i++) {
-      const lead = eligibleLeads[i];
-      const staggerMs = i * intervalSeconds * 1000;
-      const leadTargetTime = new Date(baseTime.getTime() + staggerMs);
-      lastScheduledAt = leadTargetTime;
+    const seenLeadIds = new Set<string>();
+    const seenDestinations = new Set<string>();
+    const deduplicatedLeads = eligibleLeads.filter((lead) => {
+      if (seenLeadIds.has(lead.id)) return false;
+      seenLeadIds.add(lead.id);
 
+      const dest =
+        channel === 'email'
+          ? (lead.email || '').toLowerCase().trim()
+          : (lead.whatsapp || lead.phone || '').replace(/\D/g, '');
+      if (dest && seenDestinations.has(dest)) return false;
+      if (dest) seenDestinations.add(dest);
+
+      return true;
+    });
+
+    for (let i = 0; i < deduplicatedLeads.length; i++) {
+      const lead = deduplicatedLeads[i];
       const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
       const recipientEmail = channel === 'email' ? lead.email.trim() : null;
       const recipientPhone = channel === 'whatsapp' ? (lead.whatsapp || lead.phone || '').trim() : null;
@@ -394,6 +406,24 @@ export class EmailSchedulerService {
           console.log(`[Scheduler] Lead ${lead.id} (${lead.business_name}) has completed sequence. Skipping.`);
           continue;
         }
+
+        // Avoid duplicate active scheduled dispatches for the same lead/recipient
+        const existingScheduled = await query<{ id: string }>(
+          `SELECT id FROM scheduled_dispatches 
+           WHERE (lead_id = $1 OR ($2 != '' AND LOWER(recipient_email) = LOWER($2)))
+             AND channel = $3 
+             AND status = 'scheduled'
+           LIMIT 1`,
+          [lead.id, recipientEmail || '', channel]
+        );
+        if (existingScheduled.rows.length > 0) {
+          console.log(`[Scheduler] Lead ${lead.id} (${recipientEmail}) already has a pending scheduled dispatch. Skipping duplicate.`);
+          continue;
+        }
+
+        const staggerMs = insertedCount * intervalSeconds * 1000;
+        const leadTargetTime = new Date(baseTime.getTime() + staggerMs);
+        lastScheduledAt = leadTargetTime;
 
         let targetStage = stage;
         if (targetStage === 'auto' || targetStage === 'initial') {
@@ -614,11 +644,26 @@ export class EmailSchedulerService {
       `[Scheduler] Generating outreach copy for ${eligibleLeads.length} leads in "${list.name}" (${channel.toUpperCase()}, Scheduled for: ${baseTime.toISOString()})...`
     );
 
+    const seenLeadIds = new Set<string>();
+    const seenDestinations = new Set<string>();
+    const deduplicatedLeads = eligibleLeads.filter((lead) => {
+      if (seenLeadIds.has(lead.id)) return false;
+      seenLeadIds.add(lead.id);
+
+      const dest =
+        channel === 'email'
+          ? (lead.email || '').toLowerCase().trim()
+          : (lead.whatsapp || lead.phone || '').replace(/\D/g, '');
+      if (dest && seenDestinations.has(dest)) return false;
+      if (dest) seenDestinations.add(dest);
+
+      return true;
+    });
+
     let insertedCount = 0;
 
-    for (let i = 0; i < eligibleLeads.length; i++) {
-      const lead = eligibleLeads[i];
-      const leadTargetTime = new Date(baseTime.getTime() + i * intervalSeconds * 1000);
+    for (let i = 0; i < deduplicatedLeads.length; i++) {
+      const lead = deduplicatedLeads[i];
       const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
 
       const recipientEmail = channel === 'email' ? lead.email.trim() : null;
@@ -632,14 +677,6 @@ export class EmailSchedulerService {
           ? (lead.linkedin || lead.business_name || '').trim()
           : null;
 
-      // Assign rotational inbox for 50/50 distribution
-      let assignedInboxId: string | null = null;
-      let assignedInboxEmail: string | null = null;
-      if (channel === 'email' && params.inboxIds && params.inboxIds.length > 0) {
-        assignedInboxId = params.inboxIds[i % params.inboxIds.length];
-        assignedInboxEmail = inboxMap.get(assignedInboxId) || null;
-      }
-
       try {
         // Pre-send check if older message exists for this lead
         // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
@@ -649,6 +686,31 @@ export class EmailSchedulerService {
           console.log(`[Scheduler] Lead ${lead.id} (${lead.business_name}) has completed sequence. Skipping.`);
           continue;
         }
+
+        // Avoid duplicate active scheduled dispatches for the same lead/recipient
+        const existingScheduled = await query<{ id: string }>(
+          `SELECT id FROM scheduled_dispatches 
+           WHERE (lead_id = $1 OR ($2 != '' AND LOWER(recipient_email) = LOWER($2)))
+             AND channel = $3 
+             AND status = 'scheduled'
+           LIMIT 1`,
+          [lead.id, recipientEmail || '', channel]
+        );
+        if (existingScheduled.rows.length > 0) {
+          console.log(`[Scheduler] Lead ${lead.id} (${recipientEmail}) already has a pending scheduled dispatch. Skipping duplicate.`);
+          continue;
+        }
+
+        // Assign rotational inbox for 50/50 distribution based on actually inserted dispatches
+        let assignedInboxId: string | null = null;
+        let assignedInboxEmail: string | null = null;
+        if (channel === 'email' && params.inboxIds && params.inboxIds.length > 0) {
+          assignedInboxId = params.inboxIds[insertedCount % params.inboxIds.length];
+          assignedInboxEmail = inboxMap.get(assignedInboxId) || null;
+        }
+
+        const staggerMs = insertedCount * intervalSeconds * 1000;
+        const leadTargetTime = new Date(baseTime.getTime() + staggerMs);
 
         let targetStage: string = stage === 'auto' ? history.resolvedStage : stage;
         if (targetStage === 'initial' && history.hasPriorContact) {
@@ -734,7 +796,7 @@ export class EmailSchedulerService {
 
     // Requirement: "if a list is selected and scheduled it show automatically run the audit for each site. Time for sending eaach email is 2 mins. in the meantime TA will do audit give you data you will append with email based on the satatus and send to propsects."
     if (channel === 'email') {
-      this.runBackgroundAuditsForList(eligibleLeads, list.id).catch((err) =>
+      this.runBackgroundAuditsForList(deduplicatedLeads, list.id).catch((err) =>
         console.error('[Scheduler] runBackgroundAuditsForList error:', err)
       );
     }

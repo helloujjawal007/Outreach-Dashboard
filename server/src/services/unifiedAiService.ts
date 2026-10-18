@@ -84,8 +84,8 @@ export class UnifiedAiService {
         sentiment: 'negative',
         summary: 'Lead requested to be removed / unsubscribed.',
         recommendedAction: 'suppress',
-        suggestedReplySubject: `Unsubscribe confirmation: ${params.subject || 'Outreach'}`,
-        suggestedReplyBody: `Understood completely. You have been removed from our contact list and won't receive any further messages from us.\n\nBest regards,\nOnline Digital Solution`,
+        suggestedReplySubject: `Re: ${params.subject || 'Outreach'}`,
+        suggestedReplyBody: `Understood completely, thanks for letting me know. I won't follow up further.\n\nBest regards,\nOnline Digital Solution`,
       };
     }
 

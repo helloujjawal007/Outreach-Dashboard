@@ -73,9 +73,6 @@ export class EmailSentSyncService {
         subject: params.subject,
         text: params.text || '',
         html: params.html || undefined,
-        headers: {
-          'X-Mailer': 'Online Digital Solution Outreach Engine',
-        },
       });
 
       const rawBuffer = await composer.compile().build();

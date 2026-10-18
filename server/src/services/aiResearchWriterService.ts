@@ -209,6 +209,9 @@ We specialize in:
 • Business Workflow Automations & Done-For-You Outbound Lead Systems
 
 CRITICAL RULES:
+- Write 100% naturally as an individual consultant sending a personal message directly from your phone/inbox.
+- NEVER add unsubscribe instructions, automated footers, or references to "lists", "campaigns", or "databases".
+- No AI clichés like "I hope this email finds you well", "In today's fast-paced digital world", "cutting-edge", "game-changer", "revolutionize", "testament", "delve".
 - Ground the pitch in the recipient's specific industry and the research brief below.
 - Keep the outreach consultative, modern, realistic, and authentic with a low-friction question at the end.
 - Mention our relevant capabilities (GMB/SEO/GEO, modern website development, Shopify/BigCommerce, or workflow automations).
@@ -226,7 +229,7 @@ Return only the final message text.`;
 
         const result = await ollamaService.generateCompletion({
           prompt,
-          system: 'You write human, punchy, hyper-personalized outreach without buzzwords, robotic introductions, or unrealistic false promises.',
+          system: 'You write 100% human, genuine, conversational outreach without marketing buzzwords, robotic introductions, or automated bot disclaimers.',
         });
 
         if (!result.fallback && result.response) {

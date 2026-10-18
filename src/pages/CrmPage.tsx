@@ -5585,6 +5585,7 @@ export function CrmPage({
         onClose={() => setAuditModalLead(null)}
         lead={auditModalLead}
         store={store}
+        selectedListId={selectedListFilter !== 'all' ? selectedListFilter : undefined}
       />
     </div>
   );

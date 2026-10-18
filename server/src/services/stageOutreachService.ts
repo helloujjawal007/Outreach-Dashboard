@@ -7,6 +7,7 @@ import { whatsappSessionService } from './whatsappSessionService';
 import { workflowRoutingService } from './workflowRoutingService';
 import { clientAuditService } from './clientAuditIntelligenceService';
 import { technicalAuditPdfService } from './technicalAuditPdfService';
+import { leadIsolationService } from './leadIsolationService';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -46,7 +47,9 @@ export interface StageDispatchResult {
 
 export class StageOutreachService {
   /**
-   * Determine a lead's current outreach stage based on prior outbound touches and stored stage
+   * Determine a lead's current outreach stage based on prior outbound touches and stored stage.
+   * Requirement: Pre-send check if a message has already been sent to this lead.
+   * If an older message is there, automatically select follow-up stage copy.
    */
   async getLeadStage(leadId: string): Promise<{
     stage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
@@ -56,6 +59,8 @@ export class StageOutreachService {
     outboundCount?: number;
     subject: string;
     body: string;
+    isBlocked?: boolean;
+    blockReason?: string;
   }> {
     const leadRes = await query<{
       id: string;
@@ -64,6 +69,8 @@ export class StageOutreachService {
       email: string;
       outreach_stage: string | null;
       consent_status: string;
+      status: string;
+      manual_review_reason?: string;
       website?: string;
       location?: string;
       primary_contact_name?: string;
@@ -72,7 +79,7 @@ export class StageOutreachService {
       audit_pdf_path?: string;
       gmb_notes?: string;
     }>(
-      `SELECT id, business_name, category, email, outreach_stage, consent_status, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes FROM leads WHERE id = $1`,
+      `SELECT id, business_name, category, email, outreach_stage, consent_status, status, manual_review_reason, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -82,26 +89,24 @@ export class StageOutreachService {
 
     const lead = leadRes.rows[0];
 
-    const msgCountRes = await query<{ count: string }>(
-      `SELECT COUNT(m.id)::int as count
-       FROM messages m
-       JOIN conversations c ON m.conversation_id = c.id
-       WHERE c.entity_type = 'lead' AND c.lead_id = $1 AND m.direction = 'outbound'`,
-      [leadId]
-    );
+    // Check message history across outbound messages, sent scheduled dispatches, and contact timestamps
+    const history = await leadIsolationService.getLeadMessageHistory(leadId);
+    const effectiveTouchCount = history.effectiveTouchCount;
 
-    const messageSentCount = Number(msgCountRes.rows[0]?.count || 0);
-
-    // Map lead.outreach_stage to numeric equivalent
-    const stageMap: Record<string, number> = {
-      initial: 0,
-      followup_1: 1,
-      followup_2: 2,
-      followup_3: 3,
-      completed: 4,
-    };
-    const leadStageNum = lead.outreach_stage ? (stageMap[lead.outreach_stage] ?? 0) : 0;
-    const effectiveTouchCount = Math.max(messageSentCount, leadStageNum);
+    // If lead is currently quarantined in 'Need to Check' (manual_review), block outreach
+    if (lead.status === 'manual_review') {
+      return {
+        stage: history.resolvedStage,
+        stageLabel: 'Need to Check (Manual Review)',
+        nextStepLabel: 'Blocked (In Need to Check - Retrieve Lead to Resume)',
+        sentCount: effectiveTouchCount,
+        outboundCount: effectiveTouchCount,
+        subject: `[Blocked in Need to Check]`,
+        body: ``,
+        isBlocked: true,
+        blockReason: `Lead is in 'Need to Check' (Manual Review: ${lead.manual_review_reason || 'Previous message failed'}). No messages can be sent unless retrieved back.`,
+      };
+    }
 
     if (effectiveTouchCount >= 4 || lead.outreach_stage === 'completed') {
       return {
@@ -115,14 +120,8 @@ export class StageOutreachService {
       };
     }
 
-    const resolvedStage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' =
-      effectiveTouchCount === 0
-        ? 'initial'
-        : effectiveTouchCount === 1
-        ? 'followup_1'
-        : effectiveTouchCount === 2
-        ? 'followup_2'
-        : 'followup_3';
+    // Resolved stage is strictly based on whether older messages exist
+    const resolvedStage = history.resolvedStage;
 
     const stageLabel =
       resolvedStage === 'initial'
@@ -155,7 +154,7 @@ export class StageOutreachService {
         auditPdfPath: lead.audit_pdf_path,
         gmbNotes: lead.gmb_notes,
       },
-      resolvedStage
+      resolvedStage === 'completed' ? 'followup_3' : resolvedStage
     );
 
     return {
@@ -189,11 +188,12 @@ export class StageOutreachService {
       outreach_stage: string | null;
       outreach_workflow: string | null;
       audit_status: string | null;
-      deleted_at: string | null;
+      deleted_at?: string | null;
       audit_pdf_path?: string;
       audit_pdf_name?: string;
       audit_key_takeaways?: string;
-    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, status, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways FROM leads WHERE id = $1`, [leadId]);
+      manual_review_reason?: string;
+    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, status, manual_review_reason, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways FROM leads WHERE id = $1`, [leadId]);
 
     if (leadRes.rows.length === 0) {
       return {
@@ -224,6 +224,23 @@ export class StageOutreachService {
         success: false,
         skipped: true,
         reason: 'Lead is in deletion trash',
+      };
+    }
+
+    // Safeguard: Check if lead is in 'Need to Check' (manual_review)
+    // Requirement: "after that unless retrieved back no msg needs to sent to them."
+    if (lead.status === 'manual_review') {
+      return {
+        leadId,
+        businessName: lead.business_name,
+        email: lead.email,
+        phone: lead.phone,
+        stage: (lead.outreach_stage as any) || 'initial',
+        stageLabel: 'Need to Check',
+        subject: '',
+        success: false,
+        skipped: true,
+        reason: `Outreach blocked: Lead is in 'Need to Check' (Manual Review: ${lead.manual_review_reason || 'Previous message failed'}). No messages can be sent unless retrieved back/approved.`,
       };
     }
 
@@ -593,16 +610,20 @@ export class StageOutreachService {
     }
 
     // If none of the channels succeeded
+    // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
+    const failureReason = emailResult?.reason || websiteFormResult?.reason || whatsappResult?.reason || 'All channel dispatches failed';
+    await leadIsolationService.isolateFailedLead(leadId, failureReason);
+
     return {
       leadId,
       businessName: lead.business_name,
       email: lead.email,
       phone: lead.phone,
       stage: stageInfo.stage,
-      stageLabel: stageInfo.stageLabel,
+      stageLabel: 'Need to Check',
       subject: stageInfo.subject,
       success: false,
-      reason: emailResult?.reason || websiteFormResult?.reason || whatsappResult?.reason || 'All channel dispatches failed',
+      reason: `Delivery failed: ${failureReason}. Lead has been removed from all lists and moved to 'Need to Check'.`,
       emailResult,
       websiteFormSubmission: websiteFormResult,
       whatsappResult,

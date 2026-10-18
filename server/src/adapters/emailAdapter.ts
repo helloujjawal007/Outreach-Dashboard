@@ -5,6 +5,7 @@ import { emailValidatorService } from '../services/emailValidatorService';
 import { inboxRotationService, type ConnectedInboxRecord, type InboxPoolSummary } from '../services/inboxRotationService';
 import { emailSentSyncService } from '../services/emailSentSyncService';
 import { workflowRoutingService } from '../services/workflowRoutingService';
+import { leadIsolationService } from '../services/leadIsolationService';
 
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
@@ -146,7 +147,26 @@ export class EmailAdapter {
     liveDelivery?: string;
     inboxUsed?: { id: string; email: string; name: string };
   }> {
-    // 0. Rigorous Pre-Send Email Validation: check validity before dispatching
+    // 0a. Check if lead is in 'Need to Check' (manual_review)
+    // Requirement: "after that unless retrieved back no msg needs to sent to them."
+    if (params.leadId) {
+      const reviewCheck = await query<{ status: string; manual_review_reason?: string }>(
+        `SELECT status, manual_review_reason FROM leads WHERE id = $1`,
+        [params.leadId]
+      );
+      if (reviewCheck.rows.length > 0 && reviewCheck.rows[0].status === 'manual_review') {
+        const reviewReason = reviewCheck.rows[0].manual_review_reason || 'Previous message failed';
+        console.warn(`[EmailAdapter] Blocked email dispatch to lead ${params.leadId}: Lead is in 'Need to Check' (${reviewReason}).`);
+        return {
+          success: false,
+          throttled: false,
+          liveDelivery: 'blocked_manual_review',
+          reason: `Outreach blocked: Lead is in 'Need to Check' (Manual Review: ${reviewReason}). Must be retrieved/approved before sending any messages.`,
+        };
+      }
+    }
+
+    // 0b. Rigorous Pre-Send Email Validation: check validity before dispatching
     const cleanTo = (params.to || '').trim().toLowerCase();
     const validation = await emailValidatorService.verifyEmail(cleanTo);
 
@@ -154,20 +174,19 @@ export class EmailAdapter {
       const failureReason = validation.reason || 'Invalid or non-deliverable email address';
 
       if (params.leadId) {
-        await emailValidatorService.flagAndMoveLeadToInvalidList(
+        // Requirement: "if msg is failed lead should directly removed from list and move to need to check"
+        await leadIsolationService.isolateFailedLead(
           params.leadId,
-          cleanTo,
-          failureReason,
-          validation.status
+          `[Invalid Email] ${failureReason}`
         );
       }
 
-      console.warn(`[EmailAdapter] ⚠️ Recipient "${cleanTo}" failed pre-send email validation (${failureReason}). Moved contact to Invalid List.`);
+      console.warn(`[EmailAdapter] ⚠️ Recipient "${cleanTo}" failed pre-send email validation (${failureReason}). Lead removed from all lists and moved to 'Need to Check'.`);
       return {
         success: false,
         throttled: false,
         liveDelivery: 'failed_invalid_email',
-        reason: `Email address "${cleanTo}" is invalid (${failureReason}). Contact has been moved to Invalid List.`,
+        reason: `Email address "${cleanTo}" is invalid (${failureReason}). Lead removed from all lists and moved to 'Need to Check'.`,
       };
     }
 
@@ -357,33 +376,19 @@ export class EmailAdapter {
       console.log(`[EmailAdapter] Simulation mode: recording to database timeline.`);
     }
 
-    // Check if live delivery resulted in permanent rejection/bounce
+    // Check if live delivery resulted in permanent rejection/bounce or general SMTP delivery failure
     const isPermanentBounce =
       liveDelivery === 'smtp_failed' &&
       /55\d|no such user|address not found|recipient rejected|mailbox unavailable|user unknown/i.test(
         liveError || ''
       );
 
-    if (isPermanentBounce && params.leadId) {
-      const bounceReason = `SMTP Rejection: ${liveError}`;
-      await query(
-        `UPDATE leads 
-         SET status = 'manual_review', 
-             manual_review_reason = $1, 
-             manual_review_at = NOW(),
-             updated_at = NOW() 
-         WHERE id = $2`,
-        [bounceReason, params.leadId]
-      );
-
-      await query(
-        `UPDATE send_queue 
-         SET status = 'discarded', 
-             error_details = $1, 
-             updated_at = NOW() 
-         WHERE lead_id = $2 AND status = 'draft'`,
-        [bounceReason, params.leadId]
-      );
+    // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
+    if (liveDelivery === 'smtp_failed' && params.leadId) {
+      const failReason = isPermanentBounce
+        ? `SMTP Bounce / Rejection: ${liveError}`
+        : `SMTP Delivery Failure: ${liveError || 'Failed to deliver email'}`;
+      await leadIsolationService.isolateFailedLead(params.leadId, failReason);
     }
 
     // 3. Register outbound message in PostgreSQL conversation thread
@@ -443,11 +448,11 @@ export class EmailAdapter {
         []
       );
 
-      if (params.leadId) {
+      const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
+
+      if (params.leadId && isSuccess) {
         await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [params.leadId]);
       }
-
-      const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
 
       return {
         success: isSuccess,

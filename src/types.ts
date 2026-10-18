@@ -124,6 +124,7 @@ export interface AutoSendNextResult {
   liveDelivery?: string;
   skipped?: boolean;
   reason?: string;
+  error?: string;
 }
 
 export interface CustomList {
@@ -673,6 +674,25 @@ export interface EmailVerificationTestResponse {
   };
 }
 
+export interface SemrushSiteIssue {
+  type: 'error' | 'warning' | 'notice';
+  title: string;
+  affectedPagesCount: number;
+  detail: string;
+}
+
+export interface SemrushSiteAuditSummary {
+  crawlScope: 'whole_site';
+  pagesCrawled: number;
+  totalPagesDiscovered: number;
+  maxPagesLimit: number;
+  healthScore: number;
+  errorsCount: number;
+  warningsCount: number;
+  noticesCount: number;
+  topSiteIssues: SemrushSiteIssue[];
+}
+
 export interface ClientAuditReport {
   targetUrl: string;
   finalDestinationUrl?: string;
@@ -683,6 +703,7 @@ export interface ClientAuditReport {
   grade: 'Good' | 'Needs Work' | 'Poor';
   responseTimeMs: number;
   mobileFriendly: boolean;
+  semrushAudit?: SemrushSiteAuditSummary;
   crawlStatus?: {
     httpStatus: number;
     redirectFollowed: boolean;

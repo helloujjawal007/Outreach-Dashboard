@@ -172,8 +172,9 @@ export class OutreachEngineService {
       whatsapp: string;
       facebook: string;
       linkedin: string;
+      status: string;
     }>(
-      `SELECT id, business_name, consent_status, email, phone, instagram, whatsapp, facebook, linkedin FROM leads WHERE id = $1`,
+      `SELECT id, business_name, consent_status, email, phone, instagram, whatsapp, facebook, linkedin, status FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -187,6 +188,17 @@ export class OutreachEngineService {
     }
 
     const lead = leadRes.rows[0];
+
+    // Safeguard: Check if lead is in 'Need to Check' (manual_review)
+    // Requirement: "after that unless retrieved back no msg needs to sent to them."
+    if (lead.status === 'manual_review') {
+      return {
+        allowed: false,
+        channel,
+        actionTaken: 'blocked_consent',
+        reason: "Lead is quarantined in 'Need to Check' (manual review). Outreach is blocked unless retrieved back.",
+      };
+    }
 
     if (lead.consent_status === 'opted_out') {
       return {
@@ -340,18 +352,25 @@ export class OutreachEngineService {
       };
     }
 
-    if (emailResult.success) {
-      try {
-        const { websiteFormService } = await import('./websiteFormService');
-        await websiteFormService.submitContactForm(leadId, {
-          senderName: 'Online Digital Solution',
-          senderEmail: 'team.onlinedigitalsolution@gmail.com',
-          subject: `Introduction for ${lead.business_name}`,
-          message: text,
-        });
-      } catch (fErr: any) {
-        console.warn(`[OutreachEngine] Form submission skipped for lead ${leadId}:`, fErr?.message);
-      }
+    if (!emailResult.success) {
+      return {
+        allowed: false,
+        channel: 'email',
+        actionTaken: 'blocked_channel_rule',
+        reason: emailResult.reason || "Email delivery failed; lead quarantined to 'Need to Check'.",
+      };
+    }
+
+    try {
+      const { websiteFormService } = await import('./websiteFormService');
+      await websiteFormService.submitContactForm(leadId, {
+        senderName: 'Online Digital Solution',
+        senderEmail: 'team.onlinedigitalsolution@gmail.com',
+        subject: `Introduction for ${lead.business_name}`,
+        message: text,
+      });
+    } catch (fErr: any) {
+      console.warn(`[OutreachEngine] Form submission skipped for lead ${leadId}:`, fErr?.message);
     }
 
     return {

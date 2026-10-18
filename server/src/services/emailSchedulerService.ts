@@ -7,6 +7,7 @@ import { aiResearchWriterService } from './aiResearchWriterService';
 import { workflowRoutingService } from './workflowRoutingService';
 import { clientAuditService } from './clientAuditIntelligenceService';
 import { technicalAuditPdfService } from './technicalAuditPdfService';
+import { leadIsolationService } from './leadIsolationService';
 
 export interface ScheduleListParams {
   listId: string;
@@ -128,6 +129,15 @@ export class EmailSchedulerService {
       instagram: string;
       category: string;
       notes: string;
+      status: string;
+      manual_review_reason?: string;
+      website?: string;
+      location?: string;
+      primary_contact_name?: string;
+      audit_key_takeaways?: string;
+      audit_pdf_name?: string;
+      audit_pdf_path?: string;
+      gmb_notes?: string;
     }>(`SELECT * FROM leads WHERE id = $1`, [params.leadId]);
 
     if (leadRes.rows.length === 0) {
@@ -135,34 +145,80 @@ export class EmailSchedulerService {
     }
 
     const lead = leadRes.rows[0];
+
+    // Safeguard: Check if lead is in 'Need to Check' (manual_review)
+    // Requirement: "after that unless retrieved back no msg needs to sent to them."
+    if (lead.status === 'manual_review') {
+      throw new Error(
+        `Outreach blocked: Lead is in 'Need to Check' (Manual Review: ${lead.manual_review_reason || 'Previous message failed'}). Must be retrieved/approved before sending.`
+      );
+    }
+
+    // Pre-send check if older message was already sent to this lead
+    // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
+    const history = await leadIsolationService.getLeadMessageHistory(lead.id);
+
+    let resolvedStage: string = params.stage || 'auto';
+    if (resolvedStage === 'auto' || resolvedStage === 'initial') {
+      resolvedStage = history.hasPriorContact ? history.resolvedStage : 'initial';
+    }
+
+    if (resolvedStage === 'completed') {
+      throw new Error(`Outreach sequence already completed (maximum touches reached) for ${lead.business_name}`);
+    }
+
     const recipientEmail = (lead.email || '').trim();
     const recipientPhone = (lead.whatsapp || lead.phone || '').trim();
     const recipientHandle = (lead.facebook || lead.instagram || '').trim();
     let subject = params.subject?.trim() || '';
     let body = params.body?.trim() || '';
 
-    // If body not provided, generate personalized message via AI copywriter
+    // If body not provided, generate personalized message (follow-up if older msg exists)
     if (!body) {
-      const generated = await aiResearchWriterService.researchAndWrite(
-        {
-          businessName: lead.business_name,
-          category: lead.category,
-          phone: lead.phone,
-          email: lead.email,
-          instagram: lead.instagram,
-          facebook: lead.facebook,
-          notes: lead.notes,
-        },
-        channel
-      );
-      body = generated.body;
-      if (channel === 'email' && !subject) {
-        subject = generated.subject || `Quick question regarding ${lead.business_name}`;
+      if (channel === 'email') {
+        const copy = humanCopywriterService.getEmailCopy(
+          {
+            id: lead.id,
+            businessName: lead.business_name,
+            category: lead.category,
+            website: lead.website,
+            primaryContactName: lead.primary_contact_name,
+            city: lead.location,
+            auditKeyTakeaways: lead.audit_key_takeaways,
+            auditPdfName: lead.audit_pdf_name,
+            auditPdfPath: lead.audit_pdf_path,
+            gmbNotes: lead.gmb_notes,
+          },
+          resolvedStage as any
+        );
+        subject = copy.subject;
+        body = copy.body;
+      } else {
+        const generated = await aiResearchWriterService.researchAndWrite(
+          {
+            businessName: lead.business_name,
+            category: lead.category,
+            phone: lead.phone,
+            email: lead.email,
+            instagram: lead.instagram,
+            facebook: lead.facebook,
+            notes: lead.notes,
+          },
+          channel
+        );
+        body = generated.body;
+        if (!subject) {
+          subject = history.hasPriorContact
+            ? `Following up: regarding ${lead.business_name}`
+            : generated.subject || `Quick question regarding ${lead.business_name}`;
+        }
       }
     }
 
     if (channel === 'email' && !subject) {
-      subject = `Follow up regarding ${lead.business_name}`;
+      subject = history.hasPriorContact
+        ? `Following up: regarding ${lead.business_name}`
+        : `Quick question regarding ${lead.business_name}`;
     }
 
     const insertRes = await query<{ id: string }>(
@@ -181,7 +237,7 @@ export class EmailSchedulerService {
         lead.business_name,
         subject,
         body,
-        params.stage || 'initial',
+        resolvedStage,
         params.style || 'conversational',
         scheduledDate,
       ]
@@ -235,7 +291,7 @@ export class EmailSchedulerService {
       throw new Error('At least one lead must be selected for scheduling');
     }
 
-    // Fetch leads
+    // Fetch leads (filtering out deleted leads and manual_review 'Need to Check' leads)
     const leadsRes = await query<{
       id: string;
       business_name: string;
@@ -248,6 +304,12 @@ export class EmailSchedulerService {
       category: string;
       notes: string;
       outreach_stage: string;
+      website?: string;
+      location?: string;
+      audit_key_takeaways?: string;
+      audit_pdf_name?: string;
+      audit_pdf_path?: string;
+      gmb_notes?: string;
     }>(
       `SELECT id,
               business_name,
@@ -259,9 +321,15 @@ export class EmailSchedulerService {
               instagram,
               category,
               notes,
-              outreach_stage
+              outreach_stage,
+              website,
+              location,
+              audit_key_takeaways,
+              audit_pdf_name,
+              audit_pdf_path,
+              gmb_notes
        FROM leads
-       WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+       WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND status != 'manual_review'
        ORDER BY created_at ASC`,
       [leadIds]
     );
@@ -282,7 +350,7 @@ export class EmailSchedulerService {
         channel,
         firstScheduledAt: new Date(),
         lastScheduledAt: new Date(),
-        message: `None of the selected leads have valid contact details for ${channel.toUpperCase()}.`,
+        message: `None of the selected leads have valid contact details for ${channel.toUpperCase()} (or all selected are in Need to Check).`,
       };
     }
 
@@ -315,20 +383,59 @@ export class EmailSchedulerService {
         channel === 'facebook' ? lead.facebook.trim() : channel === 'instagram' ? lead.instagram.trim() : null;
 
       try {
-        // Generate tailored copy per lead
-        const contact = {
-          id: lead.id,
-          businessName: lead.business_name,
-          category: lead.category,
-          phone: lead.phone,
-          email: lead.email,
-          instagram: lead.instagram,
-          facebook: lead.facebook,
-          whatsapp: lead.whatsapp,
-          notes: lead.notes,
-        };
+        // Pre-send check if older message exists for this lead
+        // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
+        const history = await leadIsolationService.getLeadMessageHistory(lead.id);
 
-        const aiOutreach = await aiResearchWriterService.researchAndWrite(contact, channel, customInstructions);
+        if (history.resolvedStage === 'completed') {
+          console.log(`[Scheduler] Lead ${lead.id} (${lead.business_name}) has completed sequence. Skipping.`);
+          continue;
+        }
+
+        let targetStage = stage;
+        if (targetStage === 'auto' || targetStage === 'initial') {
+          targetStage = history.hasPriorContact ? history.resolvedStage : 'initial';
+        }
+
+        let subject = '';
+        let body = '';
+
+        if (channel === 'email') {
+          const copy = humanCopywriterService.getEmailCopy(
+            {
+              id: lead.id,
+              businessName: lead.business_name,
+              category: lead.category,
+              website: lead.website,
+              primaryContactName: lead.primary_contact_name,
+              city: lead.location,
+              auditKeyTakeaways: lead.audit_key_takeaways,
+              auditPdfName: lead.audit_pdf_name,
+              auditPdfPath: lead.audit_pdf_path,
+              gmbNotes: lead.gmb_notes,
+            },
+            targetStage as any
+          );
+          subject = copy.subject;
+          body = copy.body;
+        } else {
+          const contact = {
+            id: lead.id,
+            businessName: lead.business_name,
+            category: lead.category,
+            phone: lead.phone,
+            email: lead.email,
+            instagram: lead.instagram,
+            facebook: lead.facebook,
+            whatsapp: lead.whatsapp,
+            notes: lead.notes,
+          };
+          const aiOutreach = await aiResearchWriterService.researchAndWrite(contact, channel, customInstructions);
+          body = aiOutreach.body;
+          subject = history.hasPriorContact
+            ? `Following up: regarding ${lead.business_name}`
+            : aiOutreach.subject || `Quick question regarding ${lead.business_name}`;
+        }
 
         await query(
           `INSERT INTO scheduled_dispatches (
@@ -343,9 +450,9 @@ export class EmailSchedulerService {
             recipientPhone,
             recipientHandle,
             recipientName,
-            aiOutreach.subject || '',
-            aiOutreach.body,
-            stage,
+            subject,
+            body,
+            targetStage,
             style,
             leadTargetTime,
           ]
@@ -431,6 +538,7 @@ export class EmailSchedulerService {
        JOIN leads l ON l.id = m.lead_id
        WHERE m.list_id = $1
          AND l.deleted_at IS NULL
+         AND l.status != 'manual_review'
        ORDER BY l.created_at ASC`,
       [listId]
     );
@@ -511,6 +619,20 @@ export class EmailSchedulerService {
       }
 
       try {
+        // Pre-send check if older message exists for this lead
+        // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
+        const history = await leadIsolationService.getLeadMessageHistory(lead.id);
+
+        if (history.resolvedStage === 'completed') {
+          console.log(`[Scheduler] Lead ${lead.id} (${lead.business_name}) has completed sequence. Skipping.`);
+          continue;
+        }
+
+        let targetStage: string = stage === 'auto' ? history.resolvedStage : stage;
+        if (targetStage === 'initial' && history.hasPriorContact) {
+          targetStage = history.resolvedStage;
+        }
+
         let subject = '';
         let body = '';
 
@@ -525,7 +647,7 @@ export class EmailSchedulerService {
               entity_type: 'lead',
             },
             {
-              stage: stage === 'auto' ? undefined : stage,
+              stage: targetStage as any,
               style,
               customInstructions,
             }
@@ -547,7 +669,9 @@ export class EmailSchedulerService {
             channel === 'linkedin' ? 'linkedin' : channel,
             customInstructions
           );
-          subject = aiOutreach.subject || '';
+          subject = history.hasPriorContact
+            ? `Following up: regarding ${lead.business_name}`
+            : aiOutreach.subject || '';
           body = aiOutreach.body;
         }
 
@@ -760,14 +884,16 @@ export class EmailSchedulerService {
       return;
     }
 
-    // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
+    // Safety Pre-flight Check: If lead has already replied, opted out, in manual review, or was deleted, cancel immediately
     if (dispatch.lead_id) {
       const checkRes = await query<{
+        status: string;
+        manual_review_reason?: string;
         consent_status: string;
         deleted_at: string | null;
         has_replied: boolean;
       }>(
-        `SELECT l.consent_status, l.deleted_at,
+        `SELECT l.status, l.manual_review_reason, l.consent_status, l.deleted_at,
            (
              l.consent_status = 'replied' OR
              EXISTS (
@@ -781,6 +907,20 @@ export class EmailSchedulerService {
       );
       const leadRow = checkRes.rows[0];
       if (leadRow) {
+        if (leadRow.status === 'manual_review') {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is quarantined in 'Need to Check'. Cancelling scheduled WhatsApp dispatch.`);
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 error_message = 'Cancelled: Lead is in Need to Check (manual_review)',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR recipient_phone = $2)
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, rawPhone]
+          );
+          return;
+        }
+
         if (leadRow.has_replied || leadRow.consent_status === 'replied') {
           console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${rawPhone}) has replied. Suppressing WhatsApp outreach.`);
           await query(
@@ -817,6 +957,12 @@ export class EmailSchedulerService {
         `UPDATE scheduled_dispatches SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
         [waEval.reason || 'Invalid WhatsApp phone format', dispatch.id]
       );
+      if (dispatch.lead_id) {
+        await leadIsolationService.isolateFailedLead(
+          dispatch.lead_id,
+          waEval.reason || 'Invalid WhatsApp phone format'
+        );
+      }
       return;
     }
 
@@ -889,6 +1035,13 @@ export class EmailSchedulerService {
          WHERE id = $2`,
         [sendResult.error || 'WhatsApp send failed', dispatch.id]
       );
+
+      if (dispatch.lead_id) {
+        await leadIsolationService.isolateFailedLead(
+          dispatch.lead_id,
+          sendResult.error || 'Scheduled WhatsApp message send failed'
+        );
+      }
     }
   }
 
@@ -1019,6 +1172,22 @@ export class EmailSchedulerService {
           return false;
         }
 
+        // Safeguard: Check if lead is in 'Need to Check' (manual_review)
+        // Requirement: "after that unless retrieved back no msg needs to sent to them."
+        if (leadRow.status === 'manual_review') {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is quarantined in 'Need to Check' (manual_review). Cancelling scheduled dispatch.`);
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 error_message = 'Cancelled: Lead is in Need to Check (manual_review)',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, toEmail]
+          );
+          return false;
+        }
+
         if (leadRow.consent_status === 'opted_out' || leadRow.consent_status === 'unsubscribed' || leadRow.deleted_at) {
           console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) is opted out or deleted. Suppressing Shoot stage "${dispatch.stage}".`);
           await query(
@@ -1031,6 +1200,32 @@ export class EmailSchedulerService {
             [dispatch.lead_id, toEmail]
           );
           return false;
+        }
+
+        // Pre-send check: If this was scheduled as 'initial' but an older message has been sent, automatically switch to follow-up!
+        // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
+        if (dispatch.stage === 'initial') {
+          const history = await leadIsolationService.getLeadMessageHistory(dispatch.lead_id);
+          if (history.hasPriorContact) {
+            console.log(
+              `[Scheduler] ⚡ Older message detected for lead ${dispatch.lead_id} before dispatch. Automatically switching from initial to follow-up stage (${history.resolvedStage}).`
+            );
+            dispatch.stage = history.resolvedStage;
+            const followCopy = humanCopywriterService.getEmailCopy(
+              {
+                id: dispatch.lead_id,
+                businessName: dispatch.recipient_name || leadRow.business_name || 'Business',
+                category: (leadRow as any).category,
+                website: leadRow.website,
+                auditKeyTakeaways: leadRow.audit_key_takeaways,
+                auditPdfName: leadRow.audit_pdf_name,
+                auditPdfPath: leadRow.audit_pdf_path,
+              },
+              history.resolvedStage as any
+            );
+            dispatch.subject = followCopy.subject;
+            dispatch.body = followCopy.body;
+          }
         }
       }
     }
@@ -1221,6 +1416,14 @@ export class EmailSchedulerService {
          WHERE id = $2`,
         [sendRes.reason || 'Send failed', dispatch.id]
       );
+
+      // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
+      if (dispatch.lead_id) {
+        await leadIsolationService.isolateFailedLead(
+          dispatch.lead_id,
+          sendRes.reason || 'Scheduled email dispatch failed'
+        );
+      }
     }
 
     return false;
@@ -1230,6 +1433,18 @@ export class EmailSchedulerService {
    * Dispatches a scheduled Facebook message
    */
   private async executeFacebookDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    if (dispatch.lead_id) {
+      const reviewCheck = await leadIsolationService.isLeadInManualReview(dispatch.lead_id);
+      if (reviewCheck.inReview) {
+        console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is in Need to Check. Cancelling Facebook dispatch.`);
+        await query(
+          `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Cancelled: Lead in Need to Check', updated_at = NOW() WHERE id = $1`,
+          [dispatch.id]
+        );
+        return;
+      }
+    }
+
     const handle = (dispatch.recipient_handle || '').trim();
     if (!handle) {
       await query(
@@ -1269,6 +1484,18 @@ export class EmailSchedulerService {
    * Dispatches a scheduled Instagram message
    */
   private async executeInstagramDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    if (dispatch.lead_id) {
+      const reviewCheck = await leadIsolationService.isLeadInManualReview(dispatch.lead_id);
+      if (reviewCheck.inReview) {
+        console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is in Need to Check. Cancelling Instagram dispatch.`);
+        await query(
+          `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Cancelled: Lead in Need to Check', updated_at = NOW() WHERE id = $1`,
+          [dispatch.id]
+        );
+        return;
+      }
+    }
+
     const handle = (dispatch.recipient_handle || '').trim();
     if (!handle) {
       await query(
@@ -1308,6 +1535,18 @@ export class EmailSchedulerService {
    * Dispatches a scheduled LinkedIn outreach message
    */
   private async executeLinkedInDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
+    if (dispatch.lead_id) {
+      const reviewCheck = await leadIsolationService.isLeadInManualReview(dispatch.lead_id);
+      if (reviewCheck.inReview) {
+        console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is in Need to Check. Cancelling LinkedIn dispatch.`);
+        await query(
+          `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Cancelled: Lead in Need to Check', updated_at = NOW() WHERE id = $1`,
+          [dispatch.id]
+        );
+        return;
+      }
+    }
+
     const jitterMs = 2000 + Math.floor(Math.random() * 1200);
     await this.sleep(jitterMs);
 

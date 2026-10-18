@@ -400,6 +400,9 @@ export class EmailInboundService {
                 if (leadMatch.rows.length > 0) {
                   matchedLeadId = leadMatch.rows[0].id;
 
+                  // Requirement: "if msg is failed lead should directly removed from list and move to need to check"
+                  await query(`DELETE FROM lead_list_memberships WHERE lead_id = $1`, [matchedLeadId]);
+
                   // Move lead to manual_review status with explicit reason
                   await query(
                     `UPDATE leads 

@@ -157,21 +157,26 @@ adaptersRouter.post('/whatsapp/send-direct', async (req: Request, res: Response)
       return res.status(400).json({ success: false, error: 'recipientPhone and text are required' });
     }
 
+    // Safeguard: Check if lead is in 'Need to Check' (manual_review)
+    // Requirement: "after that unless retrieved back no msg needs to sent to them."
+    if (leadId) {
+      const { leadIsolationService } = await import('../services/leadIsolationService');
+      const reviewCheck = await leadIsolationService.isLeadInManualReview(leadId);
+      if (reviewCheck.inReview) {
+        return res.status(400).json({
+          success: false,
+          error: `Outreach blocked: Lead is in 'Need to Check' (${reviewCheck.reason}). Must be retrieved back before sending.`,
+        });
+      }
+    }
+
     const { whatsappSessionService } = await import('../services/whatsappSessionService');
     const result = await whatsappSessionService.sendMessage(recipientPhone, text);
 
     if (!result.success) {
       if (leadId) {
-        const { query } = await import('../config/db');
-        await query(
-          `UPDATE leads 
-           SET status = 'manual_review', 
-               manual_review_reason = $1, 
-               manual_review_at = NOW(), 
-               updated_at = NOW() 
-           WHERE id = $2`,
-          [`WhatsApp Delivery Failed: ${result.error}`, leadId]
-        );
+        const { leadIsolationService } = await import('../services/leadIsolationService');
+        await leadIsolationService.isolateFailedLead(leadId, `WhatsApp Delivery Failed: ${result.error}`);
       }
       return res.status(400).json({ success: false, error: result.error });
     }

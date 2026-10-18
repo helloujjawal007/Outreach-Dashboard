@@ -1,5 +1,6 @@
 import { query } from '../config/db';
 import { ollamaService } from './ollamaService';
+import { leadIsolationService } from './leadIsolationService';
 
 export interface HumanizerOptions {
   stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
@@ -110,30 +111,23 @@ export class HumanizerService {
     );
 
     // 1. Determine stage
+    // Requirement: Check if message has already been sent to this lead; if older message is there, send follow-up
     let resolvedStage = options.stage || 'auto';
-    if (resolvedStage === 'auto') {
-      if (isClient) {
-        resolvedStage = 'client_checkin';
-      } else if (isUuid) {
-        try {
-          const msgRes = await query<{ count: string }>(
-            `SELECT COUNT(m.id)::int as count 
-             FROM messages m 
-             JOIN conversations c ON m.conversation_id = c.id 
-             WHERE c.entity_type = 'lead' AND c.lead_id = $1 AND m.direction = 'outbound' AND m.channel = 'email'`,
-            [contact.id]
-          );
-          const count = Number(msgRes.rows[0]?.count || 0);
-          if (count === 0) resolvedStage = 'initial';
-          else if (count === 1) resolvedStage = 'followup_1';
-          else if (count === 2) resolvedStage = 'followup_2';
-          else resolvedStage = 'followup_3';
-        } catch {
-          resolvedStage = 'initial';
+    if (isClient) {
+      resolvedStage = 'client_checkin';
+    } else if (isUuid) {
+      try {
+        const history = await leadIsolationService.getLeadMessageHistory(contact.id);
+        if (resolvedStage === 'auto' || (resolvedStage === 'initial' && history.hasPriorContact)) {
+          resolvedStage = history.hasPriorContact
+            ? (history.resolvedStage === 'completed' ? 'followup_3' : history.resolvedStage)
+            : 'initial';
         }
-      } else {
-        resolvedStage = 'initial';
+      } catch {
+        if (resolvedStage === 'auto') resolvedStage = 'initial';
       }
+    } else if (resolvedStage === 'auto') {
+      resolvedStage = 'initial';
     }
 
     const style = options.style || 'conversational';

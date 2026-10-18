@@ -360,14 +360,17 @@ export class EmailValidatorService {
         );
       }
 
-      // 3. Remove from 'Email Leads' list if previously assigned
-      const emailListRes = await query<{ id: string }>(
-        `SELECT id FROM lists WHERE name = 'Email Leads' LIMIT 1`
-      );
-      if (emailListRes.rows.length > 0) {
+      // 3. Remove from all active outreach lists
+      // Requirement: "if msg is failed lead should directly removed from list and move to need to check"
+      if (invalidListId) {
         await query(
-          `DELETE FROM lead_list_memberships WHERE list_id = $1 AND lead_id = $2`,
-          [emailListRes.rows[0].id, leadId]
+          `DELETE FROM lead_list_memberships WHERE lead_id = $1 AND list_id != $2`,
+          [leadId, invalidListId]
+        );
+      } else {
+        await query(
+          `DELETE FROM lead_list_memberships WHERE lead_id = $1`,
+          [leadId]
         );
       }
 

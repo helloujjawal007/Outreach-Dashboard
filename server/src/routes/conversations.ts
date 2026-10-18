@@ -759,6 +759,8 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
       notes: string;
       whatsapp_eligible: boolean | null;
       whatsapp_decision_reason: string;
+      status: string;
+      manual_review_reason?: string;
     }>(`SELECT * FROM leads WHERE id = ANY($1) AND deleted_at IS NULL`, [targetIds]);
 
     const { whatsappValidator } = await import('../services/whatsappValidator');
@@ -781,7 +783,24 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
       messagePreview?: string;
     }> = [];
 
+    const { leadIsolationService } = await import('../services/leadIsolationService');
+    const { stageOutreachService } = await import('../services/stageOutreachService');
+
     for (const lead of leadsRes.rows) {
+      // 0. Manual Review Guard ("after that unless retrieved back no msg needs to sent to them")
+      if (lead.status === 'manual_review') {
+        skippedCount++;
+        results.push({
+          leadId: lead.id,
+          businessName: lead.business_name,
+          channel,
+          success: false,
+          status: 'skipped',
+          reason: `Lead is quarantined in 'Need to Check' (Manual Review: ${lead.manual_review_reason || 'Previous message failed'}). No messages can be sent unless retrieved back.`,
+        });
+        continue;
+      }
+
       // 1. Consent check
       if (lead.consent_status === 'opted_out') {
         skippedCount++;
@@ -796,26 +815,39 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
         continue;
       }
 
-      // 2. Determine or generate copy
-      let msgObj = messages[lead.id];
-      if (!msgObj || !msgObj.body) {
-        const generated = await aiResearchWriterService.researchAndWrite(
-          {
-            businessName: lead.business_name,
-            category: lead.category,
-            phone: lead.phone,
-            email: lead.email,
-            instagram: lead.instagram,
-            facebook: lead.facebook,
-            notes: lead.notes,
-          },
-          channel as 'email' | 'whatsapp' | 'facebook' | 'instagram'
-        );
-        msgObj = { subject: generated.subject, body: generated.body };
+      // 2. Pre-send check: Determine if older message was already sent and progress to follow-up
+      // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
+      const stageInfo = await stageOutreachService.getLeadStage(lead.id);
+
+      if (stageInfo.stage === 'completed') {
+        skippedCount++;
+        results.push({
+          leadId: lead.id,
+          businessName: lead.business_name,
+          channel,
+          success: false,
+          status: 'skipped',
+          reason: 'Outreach sequence already completed (maximum touches reached)',
+        });
+        continue;
       }
 
-      const bodyText = msgObj.body;
-      const subjectText = msgObj.subject || `Quick question regarding ${lead.business_name}`;
+      let msgObj = messages[lead.id];
+      let bodyText = '';
+      let subjectText = '';
+
+      if (msgObj && msgObj.body) {
+        bodyText = msgObj.body;
+        subjectText = msgObj.subject || stageInfo.subject;
+        // If older message was already sent and user custom message didn't have follow-up in subject, prepend follow-up
+        if (stageInfo.stage !== 'initial' && !subjectText.toLowerCase().includes('follow')) {
+          subjectText = `Following up: ${subjectText}`;
+        }
+      } else {
+        // Use dynamically resolved stage copy (follow-up 1, 2, 3 if older message exists)
+        subjectText = stageInfo.subject;
+        bodyText = stageInfo.body;
+      }
 
       // 3. Channel dispatch logic
       if (channel === 'email') {
@@ -841,9 +873,18 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
 
         if (emailSend.success) {
           sentCount++;
+          const nextStageName =
+            stageInfo.stage === 'initial'
+              ? 'followup_1'
+              : stageInfo.stage === 'followup_1'
+              ? 'followup_2'
+              : stageInfo.stage === 'followup_2'
+              ? 'followup_3'
+              : 'completed';
+
           await query(
-            `UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-            [lead.id]
+            `UPDATE leads SET first_contacted_at = COALESCE(first_contacted_at, NOW()), last_contacted_at = NOW(), outreach_stage = $1, updated_at = NOW() WHERE id = $2`,
+            [nextStageName, lead.id]
           );
 
           // Dual-Trigger: submit to website form if available
@@ -869,13 +910,17 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
           });
         } else {
           failedCount++;
+          // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
+          const failReason = emailSend.reason || 'Email delivery failed';
+          await leadIsolationService.isolateFailedLead(lead.id, failReason);
+
           results.push({
             leadId: lead.id,
             businessName: lead.business_name,
             channel: 'email',
             success: false,
             status: 'failed',
-            reason: emailSend.reason || 'SMTP delivery failed',
+            reason: `Delivery failed: ${failReason}. Lead removed from all lists and moved to 'Need to Check'.`,
           });
         }
       } else if (channel === 'whatsapp') {
@@ -918,32 +963,20 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
 
         const sendResult = await whatsappSessionService.sendMessage(waEval.cleanNumber, bodyText);
         if (!sendResult.success) {
-          const isNotRegistered = sendResult.error?.includes('not registered on WhatsApp');
-          if (isNotRegistered) {
-            skippedCount++;
-            results.push({
-              leadId: lead.id,
-              businessName: lead.business_name,
-              channel: 'whatsapp',
-              success: false,
-              status: 'skipped',
-              reason: sendResult.error,
-              deepLink: waDeepLink,
-              messagePreview: bodyText,
-            });
-          } else {
-            failedCount++;
-            results.push({
-              leadId: lead.id,
-              businessName: lead.business_name,
-              channel: 'whatsapp',
-              success: false,
-              status: 'failed',
-              reason: sendResult.error || 'Direct WhatsApp dispatch failed',
-              deepLink: waDeepLink,
-              messagePreview: bodyText,
-            });
-          }
+          failedCount++;
+          const failMsg = sendResult.error || 'Direct WhatsApp dispatch failed';
+          await leadIsolationService.isolateFailedLead(lead.id, failMsg);
+
+          results.push({
+            leadId: lead.id,
+            businessName: lead.business_name,
+            channel: 'whatsapp',
+            success: false,
+            status: 'failed',
+            reason: `WhatsApp delivery failed: ${failMsg}. Lead removed from all lists and moved to 'Need to Check'.`,
+            deepLink: waDeepLink,
+            messagePreview: bodyText,
+          });
           continue;
         }
 

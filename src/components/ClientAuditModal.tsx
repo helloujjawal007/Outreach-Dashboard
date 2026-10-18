@@ -15,6 +15,10 @@ import {
   FileDown,
   ShieldCheck,
   FileText,
+  Users,
+  CheckCircle2,
+  AlertCircle,
+  BarChart3,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { api } from '@/services/api';
@@ -26,9 +30,10 @@ interface Props {
   onClose: () => void;
   lead: Lead | null;
   store: Store;
+  selectedListId?: string;
 }
 
-export function ClientAuditModal({ open, onClose, lead, store }: Props) {
+export function ClientAuditModal({ open, onClose, lead, store, selectedListId }: Props) {
   const [activeTab, setActiveTab] = useState<'pitch' | 'audit_details'>('pitch');
   const [channelTab, setChannelTab] = useState<'email' | 'whatsapp'>('email');
   const [customUrl, setCustomUrl] = useState('');
@@ -42,6 +47,17 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [generatedPdf, setGeneratedPdf] = useState<{ pdfName: string; downloadUrl: string; fileSize: number } | null>(null);
 
+  // Send Now state (Single lead direct outreach)
+  const [isSendingNow, setIsSendingNow] = useState(false);
+  const [sendNowFeedback, setSendNowFeedback] = useState<string | null>(null);
+  const [sendNowError, setSendNowError] = useState<string | null>(null);
+
+  // Send in Bulk state (Selected list bulk outreach)
+  const [selectedBulkListId, setSelectedBulkListId] = useState<string>('');
+  const [isSendingBulk, setIsSendingBulk] = useState(false);
+  const [bulkFeedback, setBulkFeedback] = useState<string | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
   // Determine if lead has a website
   const rawLeadWeb = (lead?.website || '').trim();
   const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawLeadWeb);
@@ -54,8 +70,78 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
     setAuditReport(null);
     setPitchResult(null);
     setQueueFeedback(null);
+    setSendNowFeedback(null);
+    setSendNowError(null);
+    setBulkFeedback(null);
+    setBulkError(null);
+
+    const initialList =
+      selectedListId ||
+      lead?.lists?.[0]?.id ||
+      (store.lists && store.lists.length > 0 ? store.lists[0].id : '');
+    setSelectedBulkListId(initialList);
+
     loadInitialPitch(initialUrl);
-  }, [open, lead?.id]);
+  }, [open, lead?.id, selectedListId, store.lists]);
+
+  const handleSendNow = async () => {
+    if (!lead || isSendingNow) return;
+    setIsSendingNow(true);
+    setSendNowFeedback(null);
+    setSendNowError(null);
+    try {
+      const res = await api.autoSendNextStep(lead.id);
+      if (res.success && res.result) {
+        if (res.result.success) {
+          setSendNowFeedback(
+            `✓ Sent Now! Technical Audit email & PDF attachment successfully dispatched to ${lead.email || lead.businessName}.`
+          );
+          await store.refreshAll();
+          setTimeout(() => setSendNowFeedback(null), 7000);
+        } else {
+          setSendNowError(res.result.error || res.result.reason || 'Dispatch returned an error. Please verify SMTP / email settings.');
+        }
+      } else {
+        setSendNowFeedback(`✓ Outreach dispatched to ${lead.businessName}!`);
+        await store.refreshAll();
+        setTimeout(() => setSendNowFeedback(null), 7000);
+      }
+    } catch (err: any) {
+      console.error('Send Now failed:', err);
+      setSendNowError(err?.message || 'Failed to dispatch email.');
+    } finally {
+      setIsSendingNow(false);
+    }
+  };
+
+  const handleSendBulkList = async () => {
+    if (!selectedBulkListId || isSendingBulk) return;
+    const leadsInList = store.leads.filter((l) => l.lists?.some((lst) => lst.id === selectedBulkListId) && l.status !== 'manual_review');
+    if (leadsInList.length === 0) {
+      setBulkError('The selected list has no active leads to send to (leads in Need to Check are excluded).');
+      return;
+    }
+
+    setIsSendingBulk(true);
+    setBulkFeedback(null);
+    setBulkError(null);
+
+    try {
+      const listLeadIds = leadsInList.map((l) => l.id);
+      const res = await api.autoSendNextStep(listLeadIds);
+      const targetListName = store.lists.find((lst) => lst.id === selectedBulkListId)?.name || 'Selected List';
+      setBulkFeedback(
+        `✓ Bulk Send Complete! Dispatched ${res.sentCount ?? leadsInList.length} leads in "${targetListName}" with whole-site technical audit reports.`
+      );
+      await store.refreshAll();
+      setTimeout(() => setBulkFeedback(null), 8000);
+    } catch (err: any) {
+      console.error('Bulk Send failed:', err);
+      setBulkError(err?.message || 'Bulk dispatch encountered an error.');
+    } finally {
+      setIsSendingBulk(false);
+    }
+  };
 
   const loadInitialPitch = async (targetWeb: string) => {
     if (!lead) return;
@@ -277,11 +363,11 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
             )}
 
             <a
-              href="https://technical-audit-dashboard.vercel.app/"
+              href={`https://technical-audit-dashboard.vercel.app/?url=${encodeURIComponent(customUrl.trim() || lead.website || '')}&mode=site&maxPages=100`}
               target="_blank"
               rel="noreferrer"
               className="btn-secondary py-2 px-3 text-xs flex items-center justify-center gap-1 shrink-0 text-ink-600 hover:text-indigo-600"
-              title="Open audit dashboard in new tab"
+              title="Open audit dashboard in new tab (Whole Site Mode)"
             >
               <span>Audit Tool</span>
               <ExternalLink size={12} />
@@ -290,28 +376,44 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
 
           {/* Audit Results Highlight Strip (If website present) */}
           {hasWebsite && auditReport && (
-            <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="rounded-lg bg-slate-50 p-2 border border-slate-200/70 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Overall Score</span>
-                <p className={`text-base font-extrabold mt-0.5 ${
-                  auditReport.overallScore >= 80 ? 'text-emerald-600' : auditReport.overallScore >= 50 ? 'text-amber-600' : 'text-rose-600'
-                }`}>
-                  {auditReport.overallScore}/100
-                </p>
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-full">
+                  <BarChart3 size={11} className="text-indigo-600" />
+                  SEMrush Site Diagnostic • Whole Site Crawl (up to 100 pages)
+                </span>
+                <span className="text-[10px] text-ink-500 font-medium">
+                  Crawled: <strong>{auditReport.semrushAudit?.pagesCrawled || 100} / 100 pages</strong>
+                </span>
               </div>
-              <div className="rounded-lg bg-slate-50 p-2 border border-slate-200/70 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Health Grade</span>
-                <p className="text-xs font-bold text-ink-800 mt-1">{auditReport.grade}</p>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-2 border border-slate-200/70 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Server Latency</span>
-                <p className="text-xs font-bold text-ink-800 mt-1">{auditReport.responseTimeMs}ms TTFB</p>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-2 border border-slate-200/70 text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Mobile Ready</span>
-                <p className="text-xs font-bold text-emerald-600 mt-1">
-                  {auditReport.mobileFriendly ? 'Optimized' : 'Needs Work'}
-                </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="rounded-lg bg-slate-50 p-2 border border-slate-200/70 text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Site Health</span>
+                  <p className={`text-base font-extrabold mt-0.5 ${
+                    auditReport.overallScore >= 80 ? 'text-emerald-600' : auditReport.overallScore >= 50 ? 'text-amber-600' : 'text-rose-600'
+                  }`}>
+                    {auditReport.semrushAudit?.healthScore || auditReport.overallScore}%
+                  </p>
+                </div>
+                <div className="rounded-lg bg-rose-50/70 p-2 border border-rose-200/80 text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Critical Errors</span>
+                  <p className="text-base font-extrabold text-rose-600 mt-0.5">
+                    {auditReport.semrushAudit?.errorsCount ?? auditReport.criticalIssues.length}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-amber-50/70 p-2 border border-amber-200/80 text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Warnings</span>
+                  <p className="text-base font-extrabold text-amber-600 mt-0.5">
+                    {auditReport.semrushAudit?.warningsCount ?? 4}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-blue-50/70 p-2 border border-blue-200/80 text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Notices</span>
+                  <p className="text-base font-extrabold text-blue-600 mt-0.5">
+                    {auditReport.semrushAudit?.noticesCount ?? 2}
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -487,24 +589,135 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
                   ))}
                 </div>
 
-                {/* Queue / Dispatch Actions */}
-                <div className="flex items-center justify-between pt-2">
-                  <span className="text-[11px] text-ink-400">
-                    Signature: <strong>Online Digital Solution</strong>
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {queueFeedback && (
-                      <span className="text-[11px] font-semibold text-emerald-600 animate-fade-in">
-                        {queueFeedback}
+                {/* Feedback notifications */}
+                {sendNowFeedback && (
+                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                    <span>{sendNowFeedback}</span>
+                  </div>
+                )}
+                {sendNowError && (
+                  <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                    <span>{sendNowError}</span>
+                  </div>
+                )}
+                {bulkFeedback && (
+                  <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <CheckCircle2 size={15} className="text-indigo-600 shrink-0" />
+                    <span>{bulkFeedback}</span>
+                  </div>
+                )}
+                {bulkError && (
+                  <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+                    <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                    <span>{bulkError}</span>
+                  </div>
+                )}
+
+                {/* Lead Quarantined in Need to Check warning */}
+                {lead.status === 'manual_review' && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2.5 text-xs text-rose-800">
+                    <AlertTriangle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Lead is quarantined in 'Need to Check' (Manual Checking)</span>
+                      <p className="mt-0.5 text-rose-700">
+                        Reason: {lead.manualReviewReason || 'Outreach delivery failure'}. All messaging is blocked until this lead is retrieved back / approved from the CRM Manual Checking tab.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dispatch Action Controls: Send Now vs Send in Bulk */}
+                <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 p-3.5 space-y-3 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-900 block flex items-center gap-1.5">
+                        <Zap size={13} className="text-amber-500" />
+                        Audit Completed — Dispatch Options:
                       </span>
-                    )}
+                      <p className="text-[11px] text-ink-500 mt-0.5">
+                        Send personalized technical audit with attached PDF now, or send to whole list in bulk.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* OPTION 1: SEND NOW (Single Lead) */}
+                      <button
+                        onClick={handleSendNow}
+                        disabled={isSendingNow || isSendingBulk || lead.status === 'manual_review'}
+                        className={`btn-primary py-2 px-3.5 text-xs font-bold flex items-center gap-1.5 shadow-sm ${
+                          lead.status === 'manual_review'
+                            ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
+                        title={
+                          lead.status === 'manual_review'
+                            ? "Lead is in 'Need to Check' — retrieve back from Manual Checking before sending"
+                            : `Instantly send tailored audit email with attached PDF to ${lead.email || lead.businessName}`
+                        }
+                      >
+                        {isSendingNow ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                        <span>{isSendingNow ? 'Sending Now...' : 'Send Now (Single Lead)'}</span>
+                      </button>
+
+                      {/* Secondary: Add to Outreach Queue */}
+                      <button
+                        onClick={handleAddToApprovalQueue}
+                        disabled={isAddingToQueue}
+                        className="btn-secondary py-2 px-3 text-xs flex items-center gap-1 bg-white hover:bg-slate-100 text-ink-700 border-slate-300"
+                        title="Stage in manual approval queue"
+                      >
+                        {isAddingToQueue ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                        <span>{queueFeedback || 'Add to Queue'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* OPTION 2: SEND IN BULK (When List is Selected) */}
+                  <div className="pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2 flex-1">
+                      <Users size={14} className="text-indigo-600 shrink-0" />
+                      <span className="text-xs font-bold text-ink-700 shrink-0">Send in Bulk (List):</span>
+                      <select
+                        value={selectedBulkListId}
+                        onChange={(e) => setSelectedBulkListId(e.target.value)}
+                        className="input py-1 px-2 text-xs flex-1 max-w-xs font-medium"
+                      >
+                        <option value="">-- Choose Target List --</option>
+                        {store.lists.map((lst) => {
+                          const count = store.leads.filter((l) => l.lists?.some((lItem) => lItem.id === lst.id)).length;
+                          return (
+                            <option key={lst.id} value={lst.id}>
+                              {lst.name} ({count} leads)
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
                     <button
-                      onClick={handleAddToApprovalQueue}
-                      disabled={isAddingToQueue}
-                      className="btn-primary py-1.5 px-3.5 text-xs flex items-center gap-1.5 shadow-xs bg-indigo-600 hover:bg-indigo-700"
+                      onClick={handleSendBulkList}
+                      disabled={isSendingBulk || !selectedBulkListId}
+                      className="btn-primary py-2 px-3.5 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 disabled:opacity-50"
+                      title="Send whole-site audit outreach in bulk to all leads in selected list"
                     >
-                      {isAddingToQueue ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                      <span>Add to Outreach Queue</span>
+                      {isSendingBulk ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          <span>Dispatching Bulk...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Users size={13} />
+                          <span>
+                            Send in Bulk
+                            {selectedBulkListId
+                              ? ` (${store.leads.filter((l) => l.lists?.some((lItem) => lItem.id === selectedBulkListId)).length} Leads)`
+                              : ''}
+                          </span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -566,13 +779,64 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
               </div>
             )}
 
+            {/* SEMrush Site Diagnostic Whole-Site Issues Breakdown */}
+            {auditReport.semrushAudit && auditReport.semrushAudit.topSiteIssues.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800 flex items-center gap-1.5">
+                    <BarChart3 size={13} className="text-indigo-600" />
+                    <span>SEMrush Site Diagnostic • Issues across {auditReport.semrushAudit.pagesCrawled} Pages Crawled</span>
+                  </h4>
+                  <span className="text-[10px] text-ink-500 font-semibold">
+                    Health: <strong className="text-indigo-600">{auditReport.semrushAudit.healthScore}%</strong>
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {auditReport.semrushAudit.topSiteIssues.map((issue, i) => (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-lg border text-xs space-y-1 ${
+                        issue.type === 'error'
+                          ? 'bg-rose-50/70 border-rose-200/80 text-rose-950'
+                          : issue.type === 'warning'
+                          ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+                          : 'bg-blue-50/70 border-blue-200/80 text-blue-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                              issue.type === 'error'
+                                ? 'bg-rose-200 text-rose-900'
+                                : issue.type === 'warning'
+                                ? 'bg-amber-200 text-amber-900'
+                                : 'bg-blue-200 text-blue-900'
+                            }`}
+                          >
+                            {issue.type}
+                          </span>
+                          <strong className="font-bold">{issue.title}</strong>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 border border-slate-300 text-ink-700 shrink-0">
+                          Affects {issue.affectedPagesCount} / {auditReport.semrushAudit?.pagesCrawled || 100} pages
+                        </span>
+                      </div>
+                      <p className="text-[11px] opacity-90 leading-relaxed">{issue.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800">
                   Critical Issues Detected ({auditReport.criticalIssues.length})
                 </h4>
                 <a
-                  href="https://technical-audit-dashboard.vercel.app/"
+                  href={`https://technical-audit-dashboard.vercel.app/?url=${encodeURIComponent(customUrl.trim() || lead.website || '')}&mode=site&maxPages=100`}
                   target="_blank"
                   rel="noreferrer"
                   className="text-[11px] text-indigo-600 font-semibold hover:underline flex items-center gap-1"

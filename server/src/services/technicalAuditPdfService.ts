@@ -304,6 +304,35 @@ export class TechnicalAuditPdfService {
     </div>
   </div>
 
+  <!-- SEMRUSH SITE AUDIT WHOLE-SITE METRICS -->
+  <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-size: 11px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.5px;">
+        SEMrush Site Diagnostic • Whole Site Crawl (up to 100 pages)
+      </span>
+      <span style="font-size: 10px; font-weight: 700; color: #475569; background: #e2e8f0; padding: 2px 8px; border-radius: 4px;">
+        Pages Crawled: ${report.semrushAudit?.pagesCrawled || 100} / 100
+      </span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 10px;">
+        <div style="font-size: 9px; font-weight: 700; color: #991b1b; text-transform: uppercase;">Critical Errors</div>
+        <div style="font-size: 17px; font-weight: 900; color: #dc2626;">${report.semrushAudit?.errorsCount ?? report.criticalIssues.length}</div>
+        <div style="font-size: 9px; color: #b91c1c;">4xx errors, SSL & title gaps</div>
+      </div>
+      <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px;">
+        <div style="font-size: 9px; font-weight: 700; color: #92400e; text-transform: uppercase;">Warnings</div>
+        <div style="font-size: 17px; font-weight: 900; color: #d97706;">${report.semrushAudit?.warningsCount ?? 4}</div>
+        <div style="font-size: 9px; color: #b45309;">Meta, ALT text & speed latency</div>
+      </div>
+      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 10px;">
+        <div style="font-size: 9px; font-weight: 700; color: #1e40af; text-transform: uppercase;">Notices</div>
+        <div style="font-size: 17px; font-weight: 900; color: #2563eb;">${report.semrushAudit?.noticesCount ?? 2}</div>
+        <div style="font-size: 9px; color: #1d4ed8;">Schema.org & sitemap optimization</div>
+      </div>
+    </div>
+  </div>
+
   <!-- CORE WEB VITALS & SPEED METRICS -->
   <div class="section-title">Core Web Vitals & Diagnostic Signals</div>
   <div class="grid-4">

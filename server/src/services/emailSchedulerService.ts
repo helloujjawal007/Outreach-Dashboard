@@ -329,7 +329,10 @@ export class EmailSchedulerService {
               audit_pdf_path,
               gmb_notes
        FROM leads
-       WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL AND status != 'manual_review'
+       WHERE id = ANY($1::uuid[])
+         AND deleted_at IS NULL
+         AND status != 'manual_review'
+         AND (consent_status IS NULL OR consent_status NOT IN ('opted_out', 'unsubscribed'))
        ORDER BY created_at ASC`,
       [leadIds]
     );
@@ -557,6 +560,7 @@ export class EmailSchedulerService {
        WHERE m.list_id = $1
          AND l.deleted_at IS NULL
          AND l.status != 'manual_review'
+         AND (l.consent_status IS NULL OR l.consent_status NOT IN ('opted_out', 'unsubscribed'))
        ORDER BY l.created_at ASC`,
       [listId]
     );

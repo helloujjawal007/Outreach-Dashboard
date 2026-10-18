@@ -54,8 +54,9 @@ export class TechnicalAuditPdfService {
   /**
    * Sanitizes domain into a safe filename
    */
-  public sanitizeFilename(domain: string): string {
-    const clean = domain
+  public sanitizeFilename(domain?: string): string {
+    const raw = (domain || '').trim();
+    const clean = raw
       .toLowerCase()
       .replace(/^https?:\/\//, '')
       .replace(/^www\./, '')
@@ -317,7 +318,7 @@ export class TechnicalAuditPdfService {
     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
       <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 10px;">
         <div style="font-size: 9px; font-weight: 700; color: #991b1b; text-transform: uppercase;">Critical Errors</div>
-        <div style="font-size: 17px; font-weight: 900; color: #dc2626;">${report.semrushAudit?.errorsCount ?? report.criticalIssues.length}</div>
+        <div style="font-size: 17px; font-weight: 900; color: #dc2626;">${report.semrushAudit?.errorsCount ?? (report.criticalIssues?.length ?? 0)}</div>
         <div style="font-size: 9px; color: #b91c1c;">4xx errors, SSL & title gaps</div>
       </div>
       <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px;">
@@ -441,7 +442,8 @@ export class TechnicalAuditPdfService {
     report: ClientAuditReport,
     businessName?: string
   ): Promise<GeneratedPdfResult> {
-    const cleanDomain = this.sanitizeFilename(report.domain);
+    const rawDomain = report.domain || (report as any).website || 'website';
+    const cleanDomain = this.sanitizeFilename(rawDomain);
     const pdfName = `Technical_Audit_${cleanDomain}.pdf`;
     const targetPdfPath = path.join(this.AUDITS_DIR, pdfName);
     const tempHtmlPath = path.join(this.AUDITS_DIR, `temp_${cleanDomain}_${Date.now()}.html`);

@@ -134,8 +134,8 @@ export function ScheduleOutreachModal({
       setScheduledDateTime(isoLocal);
       setQuickPreset('1h');
 
-      // Adjust interval based on channel
-      setIntervalSeconds(defaultChannel === 'whatsapp' ? 45 : defaultChannel === 'email' ? 25 : 30);
+      // Adjust interval based on channel (120s for email to allow background technical audits)
+      setIntervalSeconds(defaultChannel === 'whatsapp' ? 45 : defaultChannel === 'email' ? 120 : 30);
 
       // Fetch WhatsApp status
       api.getWhatsAppSessionStatus().then(setWaStatus).catch(console.error);
@@ -502,7 +502,12 @@ export function ScheduleOutreachModal({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => setChannel(item.id)}
+                      onClick={() => {
+                        setChannel(item.id);
+                        if (item.id === 'email') setIntervalSeconds(120);
+                        else if (item.id === 'whatsapp') setIntervalSeconds(45);
+                        else setIntervalSeconds(30);
+                      }}
                       className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all ${
                         isSelected
                           ? item.activeClass
@@ -608,35 +613,79 @@ export function ScheduleOutreachModal({
 
             {/* 3. Anti-Ban Safe Pacing (for Batch scheduling) */}
             {isBatch && (
-              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3.5 space-y-2">
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3.5 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <ShieldCheck size={15} className="text-indigo-600" />
                     <span className="text-xs font-bold text-slate-800">
-                      Anti-Ban Staggered Pacing:
+                      Send Each {channel === 'email' ? 'Email' : channel === 'whatsapp' ? 'WhatsApp' : 'Message'} After:
                     </span>
                   </div>
-                  <span className="text-xs font-bold text-indigo-700">
-                    {intervalSeconds} seconds per lead
+                  <span className="text-xs font-bold text-indigo-700 bg-white border border-indigo-200 px-2 py-0.5 rounded-full">
+                    {intervalSeconds >= 60
+                      ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)} min${intervalSeconds > 60 ? 's' : ''} (${intervalSeconds}s)`
+                      : `${intervalSeconds}s delay`}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                {/* Quick Presets */}
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  {[
+                    { seconds: 30, label: '30s' },
+                    { seconds: 60, label: '1 min' },
+                    { seconds: 120, label: '2 mins (TA)', recommended: channel === 'email' },
+                    { seconds: 180, label: '3 mins' },
+                    { seconds: 300, label: '5 mins' },
+                    { seconds: 600, label: '10 mins' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.seconds}
+                      type="button"
+                      onClick={() => setIntervalSeconds(preset.seconds)}
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-semibold text-center transition-all ${
+                        intervalSeconds === preset.seconds
+                          ? 'border-indigo-600 bg-indigo-600 text-white shadow-2xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Range Slider + Exact Number Input */}
+                <div className="flex items-center gap-3">
                   <input
                     type="range"
                     min="15"
-                    max="120"
-                    step="5"
-                    value={intervalSeconds}
+                    max="600"
+                    step="15"
+                    value={Math.min(intervalSeconds, 600)}
                     onChange={(e) => setIntervalSeconds(Number(e.target.value))}
-                    className="w-full accent-indigo-600"
+                    className="w-full accent-indigo-600 cursor-pointer"
                   />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <input
+                      type="number"
+                      min="5"
+                      max="3600"
+                      step="5"
+                      value={intervalSeconds}
+                      onChange={(e) => setIntervalSeconds(Math.max(5, Math.min(3600, Number(e.target.value) || 0)))}
+                      className="input w-16 py-1 px-1.5 text-xs font-bold text-center bg-white border-indigo-200"
+                    />
+                    <span className="text-[11px] text-slate-500 font-medium">sec</span>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <div className="flex items-center justify-between text-[10px] text-slate-500">
                   <span>Fast (15s)</span>
-                  <span className="text-emerald-700 font-bold">Recommended: 45s for WhatsApp / 25s for Email</span>
-                  <span>Conservative (120s)</span>
+                  <span className="text-emerald-700 font-bold">
+                    {channel === 'email'
+                      ? 'Recommended: 2 mins (120s) for Technical Audits & Google inbox warm-up'
+                      : 'Recommended: 45s for WhatsApp anti-ban safe pacing'}
+                  </span>
+                  <span>Relaxed (600s / 10m)</span>
                 </div>
 
                 {batchScheduleTimeline && (

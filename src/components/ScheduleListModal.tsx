@@ -45,6 +45,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
   const [channel, setChannel] = useState<'email' | 'whatsapp' | 'linkedin'>('email');
   const [sendMode, setSendMode] = useState<'now' | 'later'>('later');
   const [scheduledDateTime, setScheduledDateTime] = useState<string>('');
+  const [intervalSeconds, setIntervalSeconds] = useState<number>(120);
+  const [intervalPreset, setIntervalPreset] = useState<string>('120s');
   const [style, setStyle] = useState<'conversational' | 'direct' | 'curious'>('conversational');
   const [stage, setStage] = useState<'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3'>('auto');
   const [customInstructions, setCustomInstructions] = useState<string>('');
@@ -288,6 +290,46 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     setSelectedInboxIds(inboxes.map((i) => i.id));
   };
 
+  // Channel change handler with safe default intervals
+  const handleSelectChannel = (newChannel: 'email' | 'whatsapp' | 'linkedin') => {
+    setChannel(newChannel);
+    if (newChannel === 'email') {
+      setIntervalSeconds(120);
+      setIntervalPreset('120s');
+    } else if (newChannel === 'whatsapp') {
+      setIntervalSeconds(45);
+      setIntervalPreset('45s');
+    } else {
+      setIntervalSeconds(60);
+      setIntervalPreset('60s');
+    }
+  };
+
+  // Dynamic Campaign Timeline calculation
+  const scheduleTimeline = useMemo(() => {
+    if (eligibleLeadsCount <= 0) return null;
+    let base = new Date();
+    if (sendMode === 'later' && scheduledDateTime) {
+      const parsed = new Date(scheduledDateTime);
+      if (!isNaN(parsed.getTime())) {
+        base = parsed;
+      }
+    }
+    const totalSeconds = Math.max(0, (eligibleLeadsCount - 1) * intervalSeconds);
+    const end = new Date(base.getTime() + totalSeconds * 1000);
+    const totalMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
+
+    const formatTime = (d: Date) =>
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    return {
+      startTime: sendMode === 'now' ? 'Immediate' : formatTime(base),
+      endTime: formatTime(end),
+      totalMinutes,
+      totalSeconds,
+    };
+  }, [eligibleLeadsCount, intervalSeconds, sendMode, scheduledDateTime]);
+
   // Fetch sample humanized email preview
   const fetchPreview = useCallback(async () => {
     if (!open) return;
@@ -359,20 +401,26 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
         inboxIds: channel === 'email' ? selectedInboxIds : undefined,
         linkedinAccountId: channel === 'linkedin' ? (selectedLinkedInAccountId || linkedInAccounts[0]?.id) : undefined,
         scheduledFor: targetScheduleTime,
+        intervalSeconds,
         style,
         stage,
         customInstructions: customInstructions.trim() || undefined,
       });
 
       if (result.success) {
+        const intervalDesc =
+          intervalSeconds >= 60
+            ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m`
+            : `${intervalSeconds}s`;
+
         const channelLabel =
           channel === 'email'
             ? selectedInboxIds.length > 1
-              ? `Split evenly across ${selectedInboxIds.length} inboxes (2-min intervals & background TA audits)`
-              : 'Email (2-min intervals & background TA audits)'
+              ? `Split evenly across ${selectedInboxIds.length} inboxes (${intervalDesc} intervals & background TA audits)`
+              : `Email (${intervalDesc} intervals & background TA audits)`
             : channel === 'whatsapp'
-            ? 'WhatsApp (45s anti-ban pacing)'
-            : 'LinkedIn';
+            ? `WhatsApp (${intervalDesc} anti-ban pacing)`
+            : `LinkedIn (${intervalDesc} pacing)`;
 
         setSubmitFeedback({
           type: 'success',
@@ -563,7 +611,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setChannel('email')}
+                    onClick={() => handleSelectChannel('email')}
                     className={`p-2.5 rounded-lg border text-left transition-all ${
                       channel === 'email'
                         ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/20 shadow-sm'
@@ -586,7 +634,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
 
                   <button
                     type="button"
-                    onClick={() => setChannel('whatsapp')}
+                    onClick={() => handleSelectChannel('whatsapp')}
                     className={`p-2.5 rounded-lg border text-left transition-all ${
                       channel === 'whatsapp'
                         ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/20 shadow-sm'
@@ -609,7 +657,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
 
                   <button
                     type="button"
-                    onClick={() => setChannel('linkedin')}
+                    onClick={() => handleSelectChannel('linkedin')}
                     className={`p-2.5 rounded-lg border text-left transition-all ${
                       channel === 'linkedin'
                         ? 'border-sky-600 bg-sky-50/80 ring-2 ring-sky-500/20 shadow-sm'
@@ -871,11 +919,135 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 )}
               </div>
 
-              {/* 4. Anti-AI Humanizer Tone & Style */}
+              {/* 4. Pacing Interval: Send Each Message After */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Clock size={13} className="text-brand-600" />
+                    <span>4. Send Each {channel === 'email' ? 'Email' : channel === 'whatsapp' ? 'WhatsApp' : 'Message'} After</span>
+                  </label>
+                  <span className="text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200/70 px-2 py-0.5 rounded-full">
+                    {intervalSeconds >= 60
+                      ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)} min${intervalSeconds > 60 ? 's' : ''} (${intervalSeconds}s delay)`
+                      : `${intervalSeconds} seconds delay`}
+                  </span>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  {[
+                    { id: '30s', seconds: 30, label: '30s', badge: 'Fast' },
+                    { id: '60s', seconds: 60, label: '1 min', badge: 'Standard' },
+                    { id: '120s', seconds: 120, label: '2 mins', badge: 'TA Safe', recommended: channel === 'email' },
+                    { id: '180s', seconds: 180, label: '3 mins', badge: 'Safe' },
+                    { id: '300s', seconds: 300, label: '5 mins', badge: 'Paced' },
+                    { id: '600s', seconds: 600, label: '10 mins', badge: 'Relaxed' },
+                  ].map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setIntervalSeconds(preset.seconds);
+                        setIntervalPreset(preset.id);
+                      }}
+                      className={`p-2 rounded-lg border text-center transition-all ${
+                        intervalSeconds === preset.seconds
+                          ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/20 text-brand-900 font-bold shadow-2xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{preset.label}</div>
+                      <div className={`text-[9px] mt-0.5 font-semibold ${preset.recommended ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {preset.badge}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Interactive Slider + Exact Second Input */}
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
+                    <span className="text-[11px] font-semibold text-slate-700">Fine-tune Delay (Slider):</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500">Exact delay:</span>
+                      <input
+                        type="number"
+                        min="5"
+                        max="3600"
+                        step="5"
+                        value={intervalSeconds}
+                        onChange={(e) => {
+                          const val = Math.max(5, Math.min(3600, Number(e.target.value) || 0));
+                          setIntervalSeconds(val);
+                          setIntervalPreset('custom');
+                        }}
+                        className="input w-20 py-0.5 px-2 text-xs font-bold text-center bg-white border-slate-300"
+                      />
+                      <span className="text-xs text-slate-500 font-semibold">sec</span>
+                    </div>
+                  </div>
+
+                  <input
+                    type="range"
+                    min="15"
+                    max="600"
+                    step="15"
+                    value={Math.min(intervalSeconds, 600)}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setIntervalSeconds(val);
+                      setIntervalPreset('custom');
+                    }}
+                    className="w-full accent-brand-600 cursor-pointer"
+                  />
+
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                    <span>15s (Rapid)</span>
+                    <span>60s (1m)</span>
+                    <span className="text-emerald-700 font-bold">120s (2m • TA Safe)</span>
+                    <span>300s (5m)</span>
+                    <span>600s (10m)</span>
+                  </div>
+
+                  {/* Dynamic Timeline Calculation */}
+                  {scheduleTimeline && (
+                    <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-700">
+                      <span className="flex items-center gap-1">
+                        🚀 Starts: <strong>{scheduleTimeline.startTime}</strong>
+                      </span>
+                      <span className="flex items-center gap-1">
+                        🏁 Completes: <strong>{scheduleTimeline.endTime}</strong>
+                      </span>
+                      <span className="text-brand-700 font-bold bg-brand-50 px-2 py-0.5 rounded border border-brand-200/60">
+                        ⏱️ Total: ~{scheduleTimeline.totalMinutes} mins ({eligibleLeadsCount} {channel === 'email' ? 'emails' : 'messages'})
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Contextual guidance */}
+                  {channel === 'email' && (
+                    <div className="text-[10px] text-slate-500 leading-relaxed pt-0.5">
+                      {intervalSeconds >= 120 ? (
+                        <span className="text-emerald-700 font-medium flex items-center gap-1">
+                          <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />
+                          <span>Optimal 2+ min pacing: Gives our Technical Audit engine sufficient time to crawl & audit each site, generate the branded PDF, and attach findings before dispatch.</span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 font-medium flex items-center gap-1">
+                          <AlertCircle size={12} className="shrink-0 text-amber-600" />
+                          <span>Fast pacing ({intervalSeconds}s): Emails will fire quickly. Background TA audits run concurrently, but 2+ minutes gives the best guarantee for every audit PDF to finish compiling before dispatch.</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 5. Anti-AI Humanizer Tone & Style */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    4. Anti-AI Humanizer Tone
+                    5. Anti-AI Humanizer Tone
                   </label>
                   <span className="text-[11px] text-brand-600 font-medium flex items-center gap-1">
                     <Sparkles size={11} />
@@ -925,10 +1097,10 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 </div>
               </div>
 
-              {/* 5. Sequence Stage Handling */}
+              {/* 6. Sequence Stage Handling */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  5. Sequence Stage Handling
+                  6. Sequence Stage Handling
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {[
@@ -957,10 +1129,10 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 </p>
               </div>
 
-              {/* 6. Custom AI Instructions */}
+              {/* 7. Custom AI Instructions */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  6. Custom AI Instructions (Optional)
+                  7. Custom AI Instructions (Optional)
                 </label>
                 <textarea
                   value={customInstructions}
@@ -976,17 +1148,17 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 <div className="text-[11px] text-emerald-900 space-y-0.5">
                   <p className="font-bold">
                     {channel === 'email'
-                      ? 'Automated 2-Minute Email Pacing & Background TA Audits Active'
+                      ? `Automated ${intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}-Minute` : `${intervalSeconds}-Second`} Email Pacing & Background TA Audits Active`
                       : channel === 'whatsapp'
-                      ? 'WhatsApp Anti-Ban 45s Randomized Pacing Active'
-                      : 'LinkedIn Safe Daily Limits & Anti-Detection Active'}
+                      ? `WhatsApp Anti-Ban ${intervalSeconds}s Randomized Pacing Active`
+                      : `LinkedIn Safe Daily Limits & ${intervalSeconds}s Pacing Active`}
                   </p>
                   <p className="text-emerald-700">
                     {channel === 'email'
-                      ? '2-minute intervals between emails (120s pacing • TA automatically audits each website in the background, extracts health scores & critical takeaways, and attaches the PDF report before sending).'
+                      ? `${intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}-minute` : `${intervalSeconds}-second`} intervals between emails (${intervalSeconds}s pacing • TA automatically audits each website in the background, extracts health scores & critical takeaways, and attaches the PDF report before sending).`
                       : channel === 'whatsapp'
-                      ? '45-second randomized intervals between mobile messages • Respects WhatsApp anti-spam policies.'
-                      : 'Humanized message dispatch prevents profile restrictions • Automatically respects daily connection limits.'}
+                      ? `${intervalSeconds}-second randomized intervals between mobile messages • Respects WhatsApp anti-spam policies.`
+                      : `Humanized message dispatch with ${intervalSeconds}s pacing prevents profile restrictions • Automatically respects daily connection limits.`}
                   </p>
                 </div>
               </div>
@@ -1015,6 +1187,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                       <span>
                         Shoot {eligibleLeadsCount} {channel === 'email' ? 'Emails' : channel === 'whatsapp' ? 'WhatsApp Messages' : 'LinkedIn Messages'} Now
                         {channel === 'email' && selectedInboxes.length === 2 && ' (50/50 Split)'}
+                        {' '}({intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m` : `${intervalSeconds}s`} intervals)
                       </span>
                     </>
                   ) : (
@@ -1022,6 +1195,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                       <Calendar size={14} />
                       <span>
                         Schedule {eligibleLeadsCount} {channel === 'email' ? 'Emails' : channel === 'whatsapp' ? 'WhatsApp Messages' : 'LinkedIn Messages'} for {scheduledDateTime || 'Selected Time'}
+                        {' '}({intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m` : `${intervalSeconds}s`} intervals)
                       </span>
                     </>
                   )}

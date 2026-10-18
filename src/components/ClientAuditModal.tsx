@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   AlertCircle,
   BarChart3,
+  Clock,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { api } from '@/services/api';
@@ -54,6 +55,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
 
   // Send in Bulk state (Selected list bulk outreach)
   const [selectedBulkListId, setSelectedBulkListId] = useState<string>('');
+  const [bulkIntervalSeconds, setBulkIntervalSeconds] = useState<number>(120);
   const [isSendingBulk, setIsSendingBulk] = useState(false);
   const [bulkFeedback, setBulkFeedback] = useState<string | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -127,12 +129,33 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
     setBulkError(null);
 
     try {
-      const listLeadIds = leadsInList.map((l) => l.id);
-      const res = await api.autoSendNextStep(listLeadIds);
       const targetListName = store.lists.find((lst) => lst.id === selectedBulkListId)?.name || 'Selected List';
-      setBulkFeedback(
-        `✓ Bulk Send Complete! Dispatched ${res.sentCount ?? leadsInList.length} leads in "${targetListName}" with whole-site technical audit reports.`
-      );
+
+      if (bulkIntervalSeconds > 0) {
+        // Staggered scheduled dispatch with automated background TA audits
+        await store.scheduleListDispatch({
+          listId: selectedBulkListId,
+          channel: 'email',
+          scheduledFor: 'now',
+          intervalSeconds: bulkIntervalSeconds,
+        });
+
+        const intervalDesc =
+          bulkIntervalSeconds >= 60
+            ? `${bulkIntervalSeconds % 60 === 0 ? bulkIntervalSeconds / 60 : (bulkIntervalSeconds / 60).toFixed(1)} min`
+            : `${bulkIntervalSeconds}s`;
+
+        setBulkFeedback(
+          `✓ Scheduled ${leadsInList.length} leads in "${targetListName}" to send every ${intervalDesc}. Technical audits are automatically running in the background for each site!`
+        );
+      } else {
+        // Instant send all at once
+        const listLeadIds = leadsInList.map((l) => l.id);
+        const res = await api.autoSendNextStep(listLeadIds);
+        setBulkFeedback(
+          `✓ Bulk Send Complete! Dispatched ${res.sentCount ?? leadsInList.length} leads in "${targetListName}" with whole-site technical audit reports.`
+        );
+      }
       await store.refreshAll();
       setTimeout(() => setBulkFeedback(null), 8000);
     } catch (err: any) {
@@ -675,25 +698,46 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
                   </div>
 
                   {/* OPTION 2: SEND IN BULK (When List is Selected) */}
-                  <div className="pt-2.5 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    <div className="flex items-center gap-2 flex-1">
-                      <Users size={14} className="text-indigo-600 shrink-0" />
-                      <span className="text-xs font-bold text-ink-700 shrink-0">Send in Bulk (List):</span>
-                      <select
-                        value={selectedBulkListId}
-                        onChange={(e) => setSelectedBulkListId(e.target.value)}
-                        className="input py-1 px-2 text-xs flex-1 max-w-xs font-medium"
-                      >
-                        <option value="">-- Choose Target List --</option>
-                        {store.lists.map((lst) => {
-                          const count = store.leads.filter((l) => l.lists?.some((lItem) => lItem.id === lst.id)).length;
-                          return (
-                            <option key={lst.id} value={lst.id}>
-                              {lst.name} ({count} leads)
-                            </option>
-                          );
-                        })}
-                      </select>
+                  <div className="pt-2.5 border-t border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2 flex-1">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
+                        <Users size={14} className="text-indigo-600 shrink-0" />
+                        <span className="text-xs font-bold text-ink-700 shrink-0">Send in Bulk (List):</span>
+                        <select
+                          value={selectedBulkListId}
+                          onChange={(e) => setSelectedBulkListId(e.target.value)}
+                          className="input py-1 px-2 text-xs flex-1 max-w-xs font-medium"
+                        >
+                          <option value="">-- Choose Target List --</option>
+                          {store.lists.map((lst) => {
+                            const count = store.leads.filter((l) => l.lists?.some((lItem) => lItem.id === lst.id)).length;
+                            return (
+                              <option key={lst.id} value={lst.id}>
+                                {lst.name} ({count} leads)
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      {/* Interval selector: Send each email after how much time */}
+                      <div className="flex items-center gap-1.5 shrink-0 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+                        <Clock size={13} className="text-indigo-600 shrink-0" />
+                        <span className="text-[11px] font-semibold text-slate-600">Send each email after:</span>
+                        <select
+                          value={bulkIntervalSeconds}
+                          onChange={(e) => setBulkIntervalSeconds(Number(e.target.value))}
+                          className="input py-0.5 px-1.5 text-xs font-bold bg-white text-ink-900 border-slate-300"
+                        >
+                          <option value={120}>2 mins (Recommended • TA Safe)</option>
+                          <option value={60}>1 min (60s)</option>
+                          <option value={180}>3 mins (180s)</option>
+                          <option value={300}>5 mins (300s)</option>
+                          <option value={600}>10 mins (600s)</option>
+                          <option value={30}>30 secs (Fast)</option>
+                          <option value={0}>0s (Instant Send)</option>
+                        </select>
+                      </div>
                     </div>
 
                     <button

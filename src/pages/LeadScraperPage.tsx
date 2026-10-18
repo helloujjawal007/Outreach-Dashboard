@@ -113,6 +113,9 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [targetListId, setTargetListId] = useState<string>('none');
   const [batchName, setBatchName] = useState<string>('');
   const [isImporting, setIsImporting] = useState(false);
+  const [isCreatingListInline, setIsCreatingListInline] = useState(false);
+  const [inlineNewListName, setInlineNewListName] = useState('');
+  const [isSavingInlineList, setIsSavingInlineList] = useState(false);
   const [importSuccess, setImportSuccess] = useState<{
     importedCount: number;
     duplicateCount: number;
@@ -644,6 +647,23 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       setError(err.message || 'Failed to import scraped leads');
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleCreateInlineList = async () => {
+    const trimmed = inlineNewListName.trim();
+    if (!trimmed) return;
+    try {
+      setIsSavingInlineList(true);
+      const created = await store.createList(trimmed);
+      setTargetListId(created.id);
+      setInlineNewListName('');
+      setIsCreatingListInline(false);
+    } catch (err: any) {
+      console.error('[LeadScraperPage] Create list error:', err);
+      setError(err.message || 'Failed to create list');
+    } finally {
+      setIsSavingInlineList(false);
     }
   };
 
@@ -1613,21 +1633,63 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
 
             <div className="flex items-center gap-2">
               {/* Optional Target List */}
-              <div className="flex items-center gap-1.5">
-                <Layers size={14} className="text-indigo-600" />
-                <select
-                  value={targetListId}
-                  onChange={(e) => setTargetListId(e.target.value)}
-                  className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none"
-                >
-                  <option value="none">Create New Lead Group / Batch</option>
-                  {store.lists.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      Add to List: {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {isCreatingListInline ? (
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-indigo-300 shadow-2xs">
+                  <input
+                    type="text"
+                    value={inlineNewListName}
+                    onChange={(e) => setInlineNewListName(e.target.value)}
+                    placeholder="List name (e.g. dev-ujj-test-01)"
+                    className="px-2 py-1 text-xs border-none outline-none font-medium text-slate-800 w-48"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCreateInlineList();
+                      if (e.key === 'Escape') setIsCreatingListInline(false);
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreateInlineList}
+                    disabled={isSavingInlineList || !inlineNewListName.trim()}
+                    className="flex items-center gap-1 bg-indigo-600 text-white rounded px-2.5 py-1 text-[11px] font-bold hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSavingInlineList ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    <span>Save</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingListInline(false)}
+                    className="text-slate-400 hover:text-slate-600 px-1 py-1 cursor-pointer"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <Layers size={14} className="text-indigo-600" />
+                  <select
+                    value={targetListId}
+                    onChange={(e) => setTargetListId(e.target.value)}
+                    className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none"
+                  >
+                    <option value="none">Create New Lead Group / Batch</option>
+                    {store.lists.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        Add to List: {l.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingListInline(true)}
+                    className="flex items-center gap-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 shadow-2xs transition-colors cursor-pointer"
+                    title="Create a new custom list"
+                  >
+                    <Plus size={13} />
+                    <span>New List</span>
+                  </button>
+                </div>
+              )}
 
               <button
                 onClick={handleImportLeads}

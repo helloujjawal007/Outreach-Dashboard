@@ -118,6 +118,31 @@ export function InboundRepliesModal({
     }
   };
 
+  const handleClearAllUnmatched = async () => {
+    if (!confirm(`Are you sure you want to dismiss all ${unmatchedEmails.length} unmatched notices?`)) {
+      return;
+    }
+    try {
+      await api.clearAllUnmatchedEmails();
+      setUnmatchedEmails([]);
+      setActionFeedback('All unmatched notices cleared successfully');
+      setTimeout(() => setActionFeedback(null), 3000);
+    } catch (err) {
+      console.error('Failed to clear unmatched emails:', err);
+    }
+  };
+
+  const handleDismissUnmatched = async (item: { id: string; senderEmail: string }) => {
+    try {
+      await api.dismissUnmatchedEmail(item.id);
+      setUnmatchedEmails((prev) => prev.filter((u) => u.id !== item.id));
+      setActionFeedback(`Dismissed notice from ${item.senderEmail}`);
+      setTimeout(() => setActionFeedback(null), 3000);
+    } catch (err) {
+      console.error('Failed to dismiss unmatched item:', err);
+    }
+  };
+
   // Fetch recent messages across all channels
   const fetchRecentMessages = useCallback(async () => {
     setIsLoading(true);
@@ -164,25 +189,44 @@ export function InboundRepliesModal({
     }
   }, [isOpen, fetchRecentMessages, fetchInboundHistory, fetchUnmatched]);
 
-  // Compute unread count
+  // Compute unread count (strictly genuine inbound messages, never bounces)
   const unreadCount = useMemo(() => {
     const pool = allRecentMessages.length > 0 ? allRecentMessages : replies;
-    return pool.filter((m) => m.direction === 'inbound' && !m.is_read && !m.is_replied).length;
+    return pool.filter(
+      (m) =>
+        m.direction === 'inbound' &&
+        m.status !== 'bounced' &&
+        !m.text?.startsWith('[DELIVERY FAILURE') &&
+        !m.is_read &&
+        !m.is_replied
+    ).length;
   }, [allRecentMessages, replies]);
 
   // Compute active base dataset based on viewTab
   const baseDataset = useMemo(() => {
     if (viewTab === 'unread') {
       const pool = allRecentMessages.length > 0 ? allRecentMessages : replies;
-      return pool.filter((m) => m.direction === 'inbound' && !m.is_read && !m.is_replied);
+      return pool.filter(
+        (m) =>
+          m.direction === 'inbound' &&
+          m.status !== 'bounced' &&
+          !m.text?.startsWith('[DELIVERY FAILURE') &&
+          !m.is_read &&
+          !m.is_replied
+      );
     }
     if (viewTab === 'pending') {
       // Unhandled / pending replies (Needs Attention)
-      return replies;
+      return replies.filter(
+        (m) => m.status !== 'bounced' && !m.text?.startsWith('[DELIVERY FAILURE')
+      );
     }
     if (viewTab === 'inbound') {
       // All received inbound replies
-      return allInboundHistory.length > 0 ? allInboundHistory : replies;
+      const pool = allInboundHistory.length > 0 ? allInboundHistory : replies;
+      return pool.filter(
+        (m) => m.status !== 'bounced' && !m.text?.startsWith('[DELIVERY FAILURE')
+      );
     }
     if (viewTab === 'outbound') {
       // Dispatched / outbound messages
@@ -635,68 +679,82 @@ export function InboundRepliesModal({
                 </p>
               </div>
             ) : (
-              filteredUnmatched.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl border border-rose-200 bg-gradient-to-r from-rose-50/50 via-white to-amber-50/30 p-3.5 shadow-2xs space-y-2 hover:border-rose-300 transition"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5">
-                      <div className="h-8 w-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
-                        <AlertTriangle size={16} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-bold text-rose-950 font-mono">
-                            {item.senderEmail}
-                          </span>
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-semibold">
-                            {item.isBounce ? 'Delivery Failure (Bounce)' : 'Unregistered Sender'}
-                          </span>
-                        </div>
-                        <h4 className="text-xs font-semibold text-slate-900 mt-1">
-                          {item.subject || '(No Subject)'}
-                        </h4>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-[11px] text-slate-400">
-                        {item.processedAt
-                          ? new Date(item.processedAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : ''}
-                      </span>
-                    </div>
+              <>
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3 mb-1">
+                  <div className="text-xs text-slate-600 font-medium">
+                    Showing <strong className="text-slate-900">{filteredUnmatched.length}</strong> unmatched notice(s)
                   </div>
-                  {item.snippet && (
-                    <div className="rounded-lg bg-white border border-slate-200 p-2.5 text-xs text-slate-700 font-mono line-clamp-3">
-                      {item.snippet}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-rose-100/80">
-                    <span className="text-[11px] text-slate-500">
-                      {item.isBounce ? 'Delivery failure report' : 'Unregistered sender inquiry'}
-                    </span>
+                  {unmatchedEmails.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setUnmatchedEmails((prev) => prev.filter((u) => u.id !== item.id));
-                        setActionFeedback(`Dismissed notice from ${item.senderEmail}`);
-                        setTimeout(() => setActionFeedback(null), 3000);
-                      }}
-                      className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 transition shadow-2xs"
-                      title="Dismiss delivery notification"
+                      onClick={handleClearAllUnmatched}
+                      className="btn-secondary py-1 px-3 text-xs font-bold text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                      title="Clear and dismiss all unmatched notifications permanently"
                     >
                       <Trash2 size={12} className="text-rose-600" />
-                      <span>Dismiss / Trash</span>
+                      <span>Dismiss All ({unmatchedEmails.length})</span>
                     </button>
-                  </div>
+                  )}
                 </div>
-              ))
+                {filteredUnmatched.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border border-rose-200 bg-gradient-to-r from-rose-50/50 via-white to-amber-50/30 p-3.5 shadow-2xs space-y-2 hover:border-rose-300 transition"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                          <AlertTriangle size={16} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-rose-950 font-mono">
+                              {item.senderEmail}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-semibold">
+                              {item.isBounce ? 'Delivery Failure (Bounce)' : 'Unregistered Sender'}
+                            </span>
+                          </div>
+                          <h4 className="text-xs font-semibold text-slate-900 mt-1">
+                            {item.subject || '(No Subject)'}
+                          </h4>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[11px] text-slate-400">
+                          {item.processedAt
+                            ? new Date(item.processedAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : ''}
+                        </span>
+                      </div>
+                    </div>
+                    {item.snippet && (
+                      <div className="rounded-lg bg-white border border-slate-200 p-2.5 text-xs text-slate-700 font-mono line-clamp-3">
+                        {item.snippet}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-rose-100/80">
+                      <span className="text-[11px] text-slate-500">
+                        {item.isBounce ? 'Delivery failure report' : 'Unregistered sender inquiry'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDismissUnmatched(item)}
+                        className="btn-secondary py-1 px-2.5 text-xs font-semibold flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 transition shadow-2xs cursor-pointer"
+                        title="Dismiss delivery notification"
+                      >
+                        <Trash2 size={12} className="text-rose-600" />
+                        <span>Dismiss / Trash</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )
           ) : isLoading ? (
             <div className="py-12 text-center text-slate-400">
@@ -738,6 +796,7 @@ export function InboundRepliesModal({
               const isInbound = msg.direction === 'inbound';
               const isRead = Boolean(msg.is_read);
               const channel = msg.channel || 'email';
+              const isBounce = msg.status === 'bounced' || msg.text?.startsWith('[DELIVERY FAILURE');
 
               // Clean phone number for WhatsApp deep link
               const rawPhone = (msg.whatsapp || msg.phone || '').trim();
@@ -747,7 +806,9 @@ export function InboundRepliesModal({
                 <div
                   key={msg.id}
                   className={`group relative rounded-xl border p-3.5 shadow-2xs transition-all hover:shadow-md ${
-                    isInbound && !isRead && !isReplied
+                    isBounce
+                      ? 'border-rose-200 bg-rose-50/30'
+                      : isInbound && !isRead && !isReplied
                       ? 'border-rose-300 bg-rose-50/20 ring-1 ring-rose-400/30'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
@@ -758,7 +819,9 @@ export function InboundRepliesModal({
                       {/* Channel Icon container */}
                       <div
                         className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
-                          channel === 'whatsapp'
+                          isBounce
+                            ? 'bg-rose-100 text-rose-700 border-rose-300'
+                            : channel === 'whatsapp'
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
                             : channel === 'email'
                             ? 'bg-blue-50 text-blue-600 border-blue-200'
@@ -767,10 +830,16 @@ export function InboundRepliesModal({
                             : 'bg-pink-50 text-pink-600 border-pink-200'
                         }`}
                       >
-                        {channel === 'whatsapp' && <MessageCircle size={18} />}
-                        {channel === 'email' && <Mail size={18} />}
-                        {channel === 'facebook' && <Facebook size={18} />}
-                        {channel === 'instagram' && <Instagram size={18} />}
+                        {isBounce ? (
+                          <AlertTriangle size={18} />
+                        ) : (
+                          <>
+                            {channel === 'whatsapp' && <MessageCircle size={18} />}
+                            {channel === 'email' && <Mail size={18} />}
+                            {channel === 'facebook' && <Facebook size={18} />}
+                            {channel === 'instagram' && <Instagram size={18} />}
+                          </>
+                        )}
                       </div>
 
                       <div className="flex-1 min-w-0">
@@ -800,7 +869,9 @@ export function InboundRepliesModal({
                           {/* Channel Badge */}
                           <span
                             className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                              channel === 'whatsapp'
+                              isBounce
+                                ? 'bg-rose-100 text-rose-800'
+                                : channel === 'whatsapp'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : channel === 'email'
                                 ? 'bg-blue-100 text-blue-800'
@@ -812,19 +883,26 @@ export function InboundRepliesModal({
                             {channel}
                           </span>
 
-                          {/* Direction Badge */}
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
-                              isInbound
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-slate-100 text-slate-700 border border-slate-200'
-                            }`}
-                          >
-                            {isInbound ? '📥 Inbound' : '📤 Outbound'}
-                          </span>
+                          {/* Direction Badge / Bounce Badge */}
+                          {isBounce ? (
+                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-300">
+                              <AlertTriangle size={10} />
+                              Delivery Bounced
+                            </span>
+                          ) : (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                                isInbound
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {isInbound ? '📥 Inbound' : '📤 Outbound'}
+                            </span>
+                          )}
 
                           {/* Read / Unread Status Badge for Inbound */}
-                          {isInbound && (
+                          {!isBounce && isInbound && (
                             <>
                               {!isRead && !isReplied ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-extrabold text-white shadow-2xs animate-pulse">
@@ -1052,11 +1130,34 @@ export function InboundRepliesModal({
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-slate-500 font-medium">
-                        {isInbound ? 'Client Reply' : 'Outreach Message'}
+                        {isBounce ? 'Delivery Failure (Bounce)' : isInbound ? 'Client Reply' : 'Outreach Message'}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                      {/* Delete bounce notice button */}
+                      {isBounce && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await api.deleteFailedMessages([msg.id]);
+                              setAllRecentMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                              setAllInboundHistory((prev) => prev.filter((m) => m.id !== msg.id));
+                              setActionFeedback('Bounce notice deleted');
+                              setTimeout(() => setActionFeedback(null), 3000);
+                            } catch (err) {
+                              console.error('Failed to delete bounce notice:', err);
+                            }
+                          }}
+                          className="btn-secondary py-1 px-2.5 text-xs flex items-center gap-1 text-rose-700 hover:bg-rose-100 bg-rose-50 border-rose-200 transition shadow-2xs cursor-pointer"
+                          title="Permanently remove this delivery bounce notice"
+                        >
+                          <Trash2 size={12} className="text-rose-600" />
+                          <span>Delete Notice</span>
+                        </button>
+                      )}
+
                       {/* Direct channel links */}
                       {channel === 'whatsapp' && cleanWaNumber && (
                         <a

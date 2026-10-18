@@ -522,6 +522,8 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
           OR
           (c.entity_type = 'client' AND cl.id IS NOT NULL AND cl.deleted_at IS NULL)
         )
+        AND m.status != 'bounced'
+        AND m.text NOT LIKE '[DELIVERY FAILURE%'
     `;
     const params: any[] = [];
     let paramIdx = 1;
@@ -1268,24 +1270,49 @@ conversationsRouter.get('/unmatched-inbox', async (_req: Request, res: Response)
   }
 });
 
-// DELETE /api/conversations/messages/failed - Bulk delete failed emails & messages
+// DELETE /api/conversations/unmatched-inbox/:id - Dismiss / delete a single unmatched email notification
+conversationsRouter.delete('/unmatched-inbox/:id', async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id);
+    const { emailInboundService } = await import('../services/emailInboundService');
+    const success = await emailInboundService.dismissUnmatchedEmail(id);
+    res.json({ success, message: 'Unmatched notice dismissed' });
+  } catch (error: any) {
+    console.error('[conversationsRouter.dismissUnmatched]', error);
+    res.status(500).json({ success: false, error: 'Failed to dismiss unmatched notice' });
+  }
+});
+
+// DELETE /api/conversations/unmatched-inbox - Clear all unmatched emails
+conversationsRouter.delete('/unmatched-inbox', async (_req: Request, res: Response) => {
+  try {
+    const { emailInboundService } = await import('../services/emailInboundService');
+    const deletedCount = await emailInboundService.clearAllUnmatchedEmails();
+    res.json({ success: true, count: deletedCount, message: `Cleared ${deletedCount} unmatched items` });
+  } catch (error: any) {
+    console.error('[conversationsRouter.clearAllUnmatched]', error);
+    res.status(500).json({ success: false, error: 'Failed to clear unmatched items' });
+  }
+});
+
+// DELETE /api/conversations/messages/failed - Bulk delete failed & bounced emails & messages
 conversationsRouter.delete('/messages/failed', async (req: Request, res: Response) => {
   try {
     const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
     let deletedCount = 0;
     if (ids && ids.length > 0) {
       const result = await query(
-        `DELETE FROM messages WHERE id = ANY($1) AND (status = 'failed' OR status = 'smtp_failed') RETURNING id`,
+        `DELETE FROM messages WHERE id = ANY($1) AND (status IN ('failed', 'smtp_failed', 'bounced') OR text LIKE '[DELIVERY FAILURE%') RETURNING id`,
         [ids]
       );
       deletedCount = result.rowCount || result.rows.length;
     } else {
       const result = await query(
-        `DELETE FROM messages WHERE status = 'failed' OR status = 'smtp_failed' RETURNING id`
+        `DELETE FROM messages WHERE status IN ('failed', 'smtp_failed', 'bounced') OR text LIKE '[DELIVERY FAILURE%' RETURNING id`
       );
       deletedCount = result.rowCount || result.rows.length;
     }
-    res.json({ success: true, count: deletedCount, message: `Deleted ${deletedCount} failed messages` });
+    res.json({ success: true, count: deletedCount, message: `Deleted ${deletedCount} failed/bounced messages` });
   } catch (error: any) {
     console.error('[conversationsRouter.deleteFailedMessages]', error);
     res.status(500).json({ success: false, error: 'Failed to delete failed messages' });

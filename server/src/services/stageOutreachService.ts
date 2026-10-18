@@ -1,8 +1,12 @@
+import fs from 'fs';
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanCopywriterService } from './humanCopywriterService';
 import { whatsappValidator } from './whatsappValidator';
 import { whatsappSessionService } from './whatsappSessionService';
+import { workflowRoutingService } from './workflowRoutingService';
+import { clientAuditService } from './clientAuditIntelligenceService';
+import { technicalAuditPdfService } from './technicalAuditPdfService';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -60,7 +64,17 @@ export class StageOutreachService {
       email: string;
       outreach_stage: string | null;
       consent_status: string;
-    }>(`SELECT id, business_name, category, email, outreach_stage, consent_status FROM leads WHERE id = $1`, [leadId]);
+      website?: string;
+      location?: string;
+      primary_contact_name?: string;
+      audit_key_takeaways?: string;
+      audit_pdf_name?: string;
+      audit_pdf_path?: string;
+      gmb_notes?: string;
+    }>(
+      `SELECT id, business_name, category, email, outreach_stage, consent_status, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes FROM leads WHERE id = $1`,
+      [leadId]
+    );
 
     if (leadRes.rows.length === 0) {
       throw new Error('Lead not found');
@@ -133,6 +147,13 @@ export class StageOutreachService {
         id: lead.id,
         businessName: lead.business_name,
         category: lead.category,
+        website: lead.website,
+        primaryContactName: lead.primary_contact_name,
+        city: lead.location,
+        auditKeyTakeaways: lead.audit_key_takeaways,
+        auditPdfName: lead.audit_pdf_name,
+        auditPdfPath: lead.audit_pdf_path,
+        gmbNotes: lead.gmb_notes,
       },
       resolvedStage
     );
@@ -163,10 +184,16 @@ export class StageOutreachService {
       website: string;
       notes: string;
       metadata: any;
+      status: string;
       consent_status: string;
       outreach_stage: string | null;
+      outreach_workflow: string | null;
+      audit_status: string | null;
       deleted_at: string | null;
-    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, consent_status, outreach_stage, deleted_at FROM leads WHERE id = $1`, [leadId]);
+      audit_pdf_path?: string;
+      audit_pdf_name?: string;
+      audit_key_takeaways?: string;
+    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, status, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways FROM leads WHERE id = $1`, [leadId]);
 
     if (leadRes.rows.length === 0) {
       return {
@@ -198,6 +225,64 @@ export class StageOutreachService {
         skipped: true,
         reason: 'Lead is in deletion trash',
       };
+    }
+
+    // State Locking & Auto-Resolution: Workflow A leads require a verified audit & PDF before cold email dispatch.
+    // If pending, dynamically run audit and compile PDF on-the-fly to unlock active dispatch safely.
+    if (lead.status === 'pending_audit' || lead.audit_status === 'pending_audit') {
+      if (lead.website && workflowRoutingService.hasValidWebsite(lead.website)) {
+        try {
+          console.log(`[StageOutreachService] ⚡ Auto-resolving pending audit on-the-fly for ${lead.business_name} (${lead.website})...`);
+          const auditReport = await clientAuditService.auditWebsite(lead.website);
+          const pdfResult = await technicalAuditPdfService.generateAuditPdf(auditReport, lead.business_name);
+          const takeaways = auditReport.auditKeyTakeaways || auditReport.criticalIssues.slice(0, 2).join(' and ');
+
+          await query(
+            `UPDATE leads SET
+              status = 'active',
+              audit_status = 'audit_completed',
+              audit_key_takeaways = $1,
+              audit_pdf_name = $2,
+              audit_pdf_path = $3,
+              updated_at = NOW()
+             WHERE id = $4`,
+            [takeaways, pdfResult.pdfName, pdfResult.pdfPath, leadId]
+          );
+
+          lead.status = 'active';
+          lead.audit_status = 'audit_completed';
+          lead.audit_key_takeaways = takeaways;
+          lead.audit_pdf_name = pdfResult.pdfName;
+          lead.audit_pdf_path = pdfResult.pdfPath;
+        } catch (autoErr: any) {
+          console.warn(`[StageOutreachService] Auto-audit failed for lead ${lead.id}: ${autoErr?.message}`);
+          return {
+            leadId,
+            businessName: lead.business_name,
+            email: lead.email,
+            phone: lead.phone,
+            stage: 'initial',
+            stageLabel: 'Pending Audit',
+            subject: '',
+            success: false,
+            skipped: true,
+            reason: `State Locked: Workflow A lead is in PENDING_AUDIT state. Auto-audit attempt failed: ${autoErr?.message}`,
+          };
+        }
+      } else {
+        return {
+          leadId,
+          businessName: lead.business_name,
+          email: lead.email,
+          phone: lead.phone,
+          stage: 'initial',
+          stageLabel: 'Pending Audit',
+          subject: '',
+          success: false,
+          skipped: true,
+          reason: 'State Locked: Workflow A lead is in PENDING_AUDIT state awaiting technical audit callback.',
+        };
+      }
     }
 
     if (lead.consent_status === 'opted_out' || lead.consent_status === 'unsubscribed') {
@@ -282,11 +367,41 @@ export class StageOutreachService {
     // 1. Channel: EMAIL DISPATCH
     if (hasEmail) {
       try {
+        let attachments: Array<{ filename: string; path?: string }> | undefined = undefined;
+        if (lead.audit_pdf_path) {
+          const pdfCheck = workflowRoutingService.validateAuditPdf(lead.audit_pdf_path, lead.website);
+          if (pdfCheck.isValid) {
+            attachments = [{
+              filename: lead.audit_pdf_name || pdfCheck.filename || 'Technical_Audit_Report.pdf',
+              path: lead.audit_pdf_path,
+            }];
+          } else {
+            console.warn(`[StageOutreachService] Attachment check failed for lead ${lead.id}: ${pdfCheck.reason}`);
+          }
+        }
+
+        // Auto-compile missing audit PDF on-the-fly for Workflow A leads so cold email is never sent without attachment
+        if (!attachments && lead.website && workflowRoutingService.hasValidWebsite(lead.website)) {
+          try {
+            console.log(`[StageOutreachService] Auto-compiling missing audit PDF for Workflow A lead ${lead.business_name}...`);
+            const auditReport = await clientAuditService.auditWebsite(lead.website);
+            const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, lead.business_name);
+            attachments = [{
+              filename: pdfGen.pdfName,
+              path: pdfGen.pdfPath,
+            }];
+            await query(`UPDATE leads SET audit_pdf_name = $1, audit_pdf_path = $2 WHERE id = $3`, [pdfGen.pdfName, pdfGen.pdfPath, lead.id]);
+          } catch (pdfErr: any) {
+            console.warn(`[StageOutreachService] Could not auto-compile PDF for lead ${lead.id}:`, pdfErr?.message);
+          }
+        }
+
         const sendRes = await emailAdapter.sendEmail({
           to: lead.email,
           subject: stageInfo.subject,
           body: stageInfo.body,
           leadId: lead.id,
+          attachments,
         });
 
         if (sendRes.success) {

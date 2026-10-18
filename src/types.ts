@@ -675,6 +675,7 @@ export interface EmailVerificationTestResponse {
 
 export interface ClientAuditReport {
   targetUrl: string;
+  finalDestinationUrl?: string;
   domain: string;
   hasWebsite: boolean;
   auditToolUrl: string;
@@ -682,6 +683,29 @@ export interface ClientAuditReport {
   grade: 'Good' | 'Needs Work' | 'Poor';
   responseTimeMs: number;
   mobileFriendly: boolean;
+  crawlStatus?: {
+    httpStatus: number;
+    redirectFollowed: boolean;
+    redirectChain: string[];
+    finalDestinationUrl: string;
+    indexable: boolean;
+    isParked: boolean;
+    isBotProtected: boolean;
+    isReachable: boolean;
+    isDnsFailure: boolean;
+  };
+  metrics?: {
+    lcpEstimateMs: number;
+    clsScore: number;
+    inpEstimateMs: number;
+    responseTimeMs: number;
+    imagesTotal: number;
+    imagesMissingAlt: number;
+    hasLocalBusinessSchema: boolean;
+    hasViewport: boolean;
+    hasSsl: boolean;
+    pageWeightKb: number;
+  };
   checks: Array<{
     id: string;
     label: string;
@@ -694,9 +718,18 @@ export interface ClientAuditReport {
     priority: 'high' | 'medium' | 'low';
     title: string;
     detail: string;
+    odsSolution?: string;
   }>;
+  odsSolutions?: string[];
+  auditKeyTakeaways?: string;
   summary: string;
   auditedAt: string;
+  pdfAsset?: {
+    pdfPath: string;
+    pdfName: string;
+    fileSize: number;
+    downloadUrl: string;
+  };
 }
 
 export interface AuditPitchResult {

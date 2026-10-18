@@ -137,6 +137,110 @@ export class EmailInboundService {
   }
 
   /**
+   * Identifies automated system emails, newsletters, marketing broadcasts, and bot alerts
+   */
+  private isAutomatedOrMarketingEmail(
+    parsed: any,
+    senderAddress: string,
+    lowerSubject: string,
+    lowerBody: string
+  ): { isIgnored: boolean; reason: string } {
+    const listUnsubscribe = String(parsed?.headers?.get('list-unsubscribe') || '');
+    const listId = String(parsed?.headers?.get('list-id') || '');
+    const precedence = String(parsed?.headers?.get('precedence') || '').toLowerCase();
+    const autoSubmitted = String(parsed?.headers?.get('auto-submitted') || '').toLowerCase();
+    const xAutoReply = String(parsed?.headers?.get('x-autoreply') || '').toLowerCase();
+
+    // 1. Mailing lists, bulk newsletters, auto-submitted headers
+    if (listUnsubscribe || listId) {
+      return { isIgnored: true, reason: 'Mailing list / newsletter header detected' };
+    }
+    if (precedence === 'bulk' || precedence === 'list' || precedence === 'junk') {
+      return { isIgnored: true, reason: `Precedence header: ${precedence}` };
+    }
+    if (autoSubmitted.includes('auto-replied') || autoSubmitted.includes('auto-generated') || xAutoReply === 'yes') {
+      return { isIgnored: true, reason: 'Auto-reply / auto-submitted header detected' };
+    }
+
+    // 2. Automated sender prefix patterns
+    if (
+      /(^|[-._])(no[-_]?reply|donotreply|do-not-reply|notifications?|alerts?|newsletter|newsletters|marketing|updates?|billing|support|digest|mailer-daemon|postmaster|daemon|automated|recommendations?)(@|[-._])/i.test(
+        senderAddress
+      )
+    ) {
+      return { isIgnored: true, reason: `Automated sender prefix pattern in ${senderAddress}` };
+    }
+
+    // 3. Known automated / platform / newsletter / SaaS domains
+    const automatedDomains = [
+      'engage.canva.com',
+      'canva.com',
+      'ahrefs.com',
+      'hostinger.com',
+      'hostinger.in',
+      'mail.bolt.new',
+      'bolt.new',
+      'email.openai.com',
+      'openai.com',
+      'email.claude.com',
+      'anthropic.com',
+      'google.com',
+      'googlemail.com',
+      'youtube.com',
+      'issuewire.com',
+      'inspire.pinterest.com',
+      'pinterest.com',
+      'mailchimp.com',
+      'sendgrid.net',
+      'hubspot.com',
+      'hubspotlinks.com',
+      'substack.com',
+    ];
+    const senderDomain = senderAddress.split('@')[1] || '';
+    if (automatedDomains.some((dom) => senderDomain === dom || senderDomain.endsWith('.' + dom))) {
+      return { isIgnored: true, reason: `Automated platform domain ${senderDomain}` };
+    }
+
+    // 4. Subject patterns
+    const automatedSubjectPatterns = [
+      /automatic reply|auto reply|auto-reply|autoreply/i,
+      /out of office|away from the office|vacation response/i,
+      /new crawl complete|robots\.txt rules/i,
+      /performance report|monthly build/i,
+      /terms of service|privacy policy|security alert/i,
+      /account was recovered|security warning/i,
+      /domain.*(expired|renew|canceled|last chance)/i,
+      /tokens for you|build with bolt/i,
+      /not monitored|no longer monitored|automated response/i,
+      /describe the feature|welcome to claude/i,
+      /ideas and stories for your|translate anything, your way/i,
+      /your photos, edited with|match a style from a photo/i,
+      /bring your designs to life|it's been 10 months/i,
+      /manage your unused oauth/i,
+    ];
+    for (const pat of automatedSubjectPatterns) {
+      if (pat.test(lowerSubject)) {
+        return { isIgnored: true, reason: `Automated subject match: "${lowerSubject}"` };
+      }
+    }
+
+    // 5. Body keywords indicating non-human automated response
+    if (
+      lowerBody.includes('this is an automated response') ||
+      lowerBody.includes('this is an automated message') ||
+      lowerBody.includes('please do not reply to this email') ||
+      lowerBody.includes('do not reply to this email') ||
+      lowerBody.includes('this inbox is not monitored') ||
+      lowerBody.includes('i am currently out of the office') ||
+      lowerBody.includes('i am away from the office')
+    ) {
+      return { isIgnored: true, reason: 'Automated body text pattern' };
+    }
+
+    return { isIgnored: false, reason: '' };
+  }
+
+  /**
    * Connects to Gmail IMAP and synchronizes new inbound emails
    */
   async syncInboundEmails(): Promise<InboundEmailResult> {
@@ -329,20 +433,25 @@ export class EmailInboundService {
                   } else {
                     const newConv = await query<{ id: string }>(
                       `INSERT INTO conversations (entity_type, lead_id, channel, status, subject, last_message_at)
-                       VALUES ('lead', $1, 'email', 'open', 'Delivery Status Notification (Failure)', NOW()) RETURNING id`,
+                       VALUES ('lead', $1, 'email', 'closed', 'Delivery Status Notification (Failure)', NOW()) RETURNING id`,
                       [matchedLeadId]
                     );
                     convId = newConv.rows[0].id;
                   }
 
+                  // Record delivery failure in messages table marked as read/seen/replied so it NEVER counts as an unread client reply
                   await query(
-                    `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, created_at)
-                     VALUES ($1, 'email', 'inbound', $2, 'bounced', NOW(), NOW())`,
+                    `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, created_at, is_read, is_seen, is_replied, metadata)
+                     VALUES ($1, 'email', 'inbound', $2, 'bounced', NOW(), NOW(), true, true, true, $3)`,
                     [
                       convId,
-                      `[DELIVERY FAILURE / BOUNCED] ${bounceReason}\nRecipient: ${bouncedRecipient}\nSubject: ${parsed.subject || 'Delivery Status Notification'}`
+                      `[DELIVERY FAILURE / BOUNCED] ${bounceReason}\nRecipient: ${bouncedRecipient}\nSubject: ${parsed.subject || 'Delivery Status Notification'}`,
+                      JSON.stringify({ is_bounce: true, bounced_recipient: bouncedRecipient, bounce_reason: bounceReason })
                     ]
                   );
+
+                  // Update conversation status to closed so it doesn't appear as an active open reply thread
+                  await query(`UPDATE conversations SET status = 'closed', last_message_at = NOW() WHERE id = $1`, [convId]);
 
                   console.log(
                     `[EmailInboundService] ⚠️ MOVED LEAD "${leadMatch.rows[0].business_name}" (${bouncedRecipient}) to Manual Checking. Reason: ${bounceReason}`
@@ -364,59 +473,37 @@ export class EmailInboundService {
                 }
               }
 
-              // Update processed_inbound_emails with matched lead/client
+              // Update processed_inbound_emails with matched lead/client (NEVER treat bounces as unmatched client inquiries)
               await query(
                 `INSERT INTO processed_inbound_emails (message_id, uid, sender_email, subject, matched_entity_type, matched_entity_id, is_unmatched, raw_snippet, processed_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW()) 
+                 VALUES ($1, $2, $3, $4, $5, $6, false, $7, NOW()) 
                  ON CONFLICT (message_id) 
                  DO UPDATE SET matched_entity_type = EXCLUDED.matched_entity_type, 
                                matched_entity_id = EXCLUDED.matched_entity_id, 
-                               is_unmatched = EXCLUDED.is_unmatched, 
+                               is_unmatched = false, 
                                raw_snippet = EXCLUDED.raw_snippet`,
                 [
                   messageId,
                   message.uid,
                   senderAddress,
                   parsed.subject || 'Delivery Status Notification',
-                  matchedLeadId ? 'lead' : matchedClientId ? 'client' : null,
+                  matchedLeadId ? 'lead' : matchedClientId ? 'client' : 'orphan_bounce',
                   matchedLeadId || matchedClientId || null,
-                  !matchedLeadId && !matchedClientId,
                   rawBody.slice(0, 400),
                 ]
               );
               continue;
             }
 
-            // Check for automated robot auto-responders, out-of-office, and unmonitored inboxes
-            const autoSubmittedHeader = String(parsed.headers.get('auto-submitted') || '').toLowerCase();
-            const xAutoReplyHeader = String(parsed.headers.get('x-autoreply') || '').toLowerCase();
-            const isAutoResponder =
-              autoSubmittedHeader.includes('auto-replied') ||
-              autoSubmittedHeader.includes('auto-generated') ||
-              xAutoReplyHeader === 'yes' ||
-              lowerSubject.includes('automatic reply') ||
-              lowerSubject.includes('auto reply') ||
-              lowerSubject.includes('auto-reply') ||
-              lowerSubject.includes('autoreply') ||
-              lowerSubject.includes('out of office') ||
-              lowerSubject.includes('not monitored') ||
-              lowerSubject.includes('no longer monitored') ||
-              lowerSubject.includes('vacation response') ||
-              lowerSubject.includes('automated response') ||
-              lowerBody.includes('no longer monitored') ||
-              lowerBody.includes('not monitored') ||
-              lowerBody.includes('this is an automated response') ||
-              lowerBody.includes('i am currently out of the office') ||
-              lowerBody.includes('i am away from the office') ||
-              senderAddress.startsWith('noreply') ||
-              senderAddress.startsWith('no-reply') ||
-              senderAddress.startsWith('donotreply');
-
-            if (isAutoResponder) {
-              console.log(`[EmailInboundService] Ignored automated auto-reply from ${senderAddress}: "${parsed.subject}"`);
+            // Check for automated robot auto-responders, marketing emails, newsletters, and unmonitored inboxes
+            const autoCheck = this.isAutomatedOrMarketingEmail(parsed, senderAddress, lowerSubject, lowerBody);
+            if (autoCheck.isIgnored) {
+              console.log(`[EmailInboundService] Filtered automated/marketing email from ${senderAddress}: "${parsed.subject}" (${autoCheck.reason})`);
               await query(
-                `INSERT INTO processed_inbound_emails (message_id, uid, sender_email, subject, processed_at)
-                 VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (message_id) DO NOTHING`,
+                `INSERT INTO processed_inbound_emails (message_id, uid, sender_email, subject, is_unmatched, processed_at)
+                 VALUES ($1, $2, $3, $4, false, NOW()) 
+                 ON CONFLICT (message_id) 
+                 DO UPDATE SET is_unmatched = false`,
                 [messageId, message.uid, senderAddress, parsed.subject || 'Automated Reply']
               );
               continue;
@@ -732,7 +819,7 @@ export class EmailInboundService {
     }>(`
       SELECT id, message_id, sender_email, subject, raw_snippet, processed_at
       FROM processed_inbound_emails
-      WHERE is_unmatched = true OR (matched_entity_id IS NULL AND sender_email != '')
+      WHERE is_unmatched = true
       ORDER BY processed_at DESC
       LIMIT 100
     `);
@@ -749,6 +836,22 @@ export class EmailInboundService {
         (row.subject || '').toLowerCase().includes('failure') ||
         (row.subject || '').toLowerCase().includes('delivery status notification'),
     }));
+  }
+
+  /**
+   * Dismisses / deletes a single unmatched email notification
+   */
+  async dismissUnmatchedEmail(id: string): Promise<boolean> {
+    const res = await query(`DELETE FROM processed_inbound_emails WHERE id = $1`, [id]);
+    return (res.rowCount || 0) > 0;
+  }
+
+  /**
+   * Clears all unmatched email notifications
+   */
+  async clearAllUnmatchedEmails(): Promise<number> {
+    const res = await query(`DELETE FROM processed_inbound_emails WHERE is_unmatched = true`);
+    return res.rowCount || 0;
   }
 
   /**

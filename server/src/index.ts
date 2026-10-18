@@ -130,7 +130,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 // Middleware
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Request logging in development
 if (env.NODE_ENV !== 'production') {
@@ -215,9 +216,10 @@ app.use((_req: Request, res: Response) => {
 });
 
 // Global error handling middleware
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error('[Unhandled Server Error]', err);
-  res.status(500).json({ success: false, error: 'Internal server error', details: err.message });
+  const status = typeof err.status === 'number' ? err.status : (typeof err.statusCode === 'number' ? err.statusCode : 500);
+  res.status(status).json({ success: false, error: err.message || 'Internal server error', details: err.message });
 });
 
 // Start Server & Check Infrastructure

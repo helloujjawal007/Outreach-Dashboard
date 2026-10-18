@@ -12,6 +12,9 @@ import {
   Zap,
   Sparkles,
   Sliders,
+  FileDown,
+  ShieldCheck,
+  FileText,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { api } from '@/services/api';
@@ -36,6 +39,8 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
   const [copiedField, setCopiedField] = useState<'email' | 'subject' | 'whatsapp' | null>(null);
   const [isAddingToQueue, setIsAddingToQueue] = useState(false);
   const [queueFeedback, setQueueFeedback] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [generatedPdf, setGeneratedPdf] = useState<{ pdfName: string; downloadUrl: string; fileSize: number } | null>(null);
 
   // Determine if lead has a website
   const rawLeadWeb = (lead?.website || '').trim();
@@ -111,6 +116,36 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
     }
   };
 
+  const handleGeneratePdf = async () => {
+    if (!lead || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      const target = customUrl.trim() || lead.website || undefined;
+      const res = await api.generateAuditReport({
+        url: target,
+        leadId: lead.id,
+        business_name: lead.businessName,
+        email: lead.email,
+        phone: lead.phone,
+        contact_name: lead.primaryContactName || '',
+        category: lead.category,
+        location: lead.location || lead.country || '',
+        dispatchToLod: true,
+      });
+
+      if (res.success && res.pdf) {
+        setGeneratedPdf(res.pdf);
+        if (res.report) {
+          setAuditReport(res.report);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to generate audit PDF:', err);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   const handleCopy = (text: string, field: 'email' | 'subject' | 'whatsapp') => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
@@ -161,7 +196,7 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
               )}
             </div>
             <p className="text-[11px] text-ink-500 mt-0.5">
-              Powered by <a href="https://bolt-project-access-lb76.bolt.host/" target="_blank" rel="noreferrer" className="text-indigo-600 font-semibold hover:underline inline-flex items-center gap-0.5">bolt-project-access-lb76.bolt.host <ExternalLink size={10} /></a>
+              Powered by <a href="https://technical-audit-dashboard.vercel.app/" target="_blank" rel="noreferrer" className="text-indigo-600 font-semibold hover:underline inline-flex items-center gap-0.5">technical-audit-dashboard.vercel.app <ExternalLink size={10} /></a>
             </p>
           </div>
 
@@ -196,7 +231,7 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
               {isAuditing ? (
                 <>
                   <Loader2 size={13} className="animate-spin" />
-                  <span>Auditing via bolt.host...</span>
+                  <span>Auditing...</span>
                 </>
               ) : (
                 <>
@@ -205,8 +240,44 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
                 </>
               )}
             </button>
+
+            {hasWebsite && (
+              <button
+                type="button"
+                onClick={handleGeneratePdf}
+                disabled={isGeneratingPdf || !customUrl.trim()}
+                className="btn-secondary py-2 px-3 text-xs flex items-center justify-center gap-1.5 shrink-0 bg-slate-800 text-white hover:bg-slate-900 border-slate-800 w-full sm:w-auto"
+                title="Generate lightweight ODS Technical Audit PDF (<1.5MB)"
+              >
+                {isGeneratingPdf ? (
+                  <>
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>Rendering PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileDown size={12} />
+                    <span>{generatedPdf ? 'Re-generate PDF' : 'Generate ODS PDF'}</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {generatedPdf && (
+              <a
+                href={generatedPdf.downloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-secondary py-2 px-3 text-xs flex items-center justify-center gap-1 shrink-0 bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                title="Download compiled PDF asset"
+              >
+                <FileText size={12} className="text-emerald-600" />
+                <span>PDF ({Math.round(generatedPdf.fileSize / 1024)} KB)</span>
+              </a>
+            )}
+
             <a
-              href="https://bolt-project-access-lb76.bolt.host/"
+              href="https://technical-audit-dashboard.vercel.app/"
               target="_blank"
               rel="noreferrer"
               className="btn-secondary py-2 px-3 text-xs flex items-center justify-center gap-1 shrink-0 text-ink-600 hover:text-indigo-600"
@@ -442,16 +513,66 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
           </div>
         )}
 
-        {/* TAB 2: TECHNICAL AUDIT ISSUES */}
+        {/* TAB 2: TECHNICAL AUDIT ISSUES & CORE WEB VITALS */}
         {activeTab === 'audit_details' && auditReport && (
           <div className="space-y-3">
+            {/* Core Web Vitals & Diagnostic Signals */}
+            {auditReport.metrics && (
+              <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800 flex items-center gap-1.5">
+                    <Zap size={13} className="text-amber-500" />
+                    <span>Core Web Vitals & Diagnostic Signals</span>
+                  </h4>
+                  <span className="text-[10px] text-ink-400">
+                    HTTP {auditReport.crawlStatus?.httpStatus || 200} OK
+                    {auditReport.crawlStatus?.redirectFollowed ? ' (Redirect Followed)' : ''}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-[9px] font-bold uppercase text-ink-400">LCP (Largest Paint)</span>
+                    <p className={`text-sm font-extrabold ${auditReport.metrics.lcpEstimateMs <= 2500 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {(auditReport.metrics.lcpEstimateMs / 1000).toFixed(1)}s
+                    </p>
+                    <span className="text-[9px] text-ink-400">Target: &lt;2.5s</span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-[9px] font-bold uppercase text-ink-400">CLS (Layout Shift)</span>
+                    <p className={`text-sm font-extrabold ${auditReport.metrics.clsScore <= 0.1 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {auditReport.metrics.clsScore}
+                    </p>
+                    <span className="text-[9px] text-ink-400">Target: &lt;0.10</span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-[9px] font-bold uppercase text-ink-400">Missing Alt Tags</span>
+                    <p className={`text-sm font-extrabold ${auditReport.metrics.imagesMissingAlt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                      {auditReport.metrics.imagesMissingAlt} / {auditReport.metrics.imagesTotal}
+                    </p>
+                    <span className="text-[9px] text-ink-400">Accessibility / Image SEO</span>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-[9px] font-bold uppercase text-ink-400">LocalBusiness Schema</span>
+                    <p className={`text-sm font-extrabold ${auditReport.metrics.hasLocalBusinessSchema ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {auditReport.metrics.hasLocalBusinessSchema ? '✓ Detected' : '✕ Missing'}
+                    </p>
+                    <span className="text-[9px] text-ink-400">Google Maps 3-Pack</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800">
                   Critical Issues Detected ({auditReport.criticalIssues.length})
                 </h4>
                 <a
-                  href="https://bolt-project-access-lb76.bolt.host/"
+                  href="https://technical-audit-dashboard.vercel.app/"
                   target="_blank"
                   rel="noreferrer"
                   className="text-[11px] text-indigo-600 font-semibold hover:underline flex items-center gap-1"
@@ -471,29 +592,49 @@ export function ClientAuditModal({ open, onClose, lead, store }: Props) {
               </div>
             </div>
 
-            {/* Recommendations */}
+            {/* Recommendations with ODS Agency Solution Mapping */}
             {auditReport.recommendations.length > 0 && (
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800">
-                  Actionable SEO Recommendations
+                  Actionable SEO Recommendations & ODS Solutions
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {auditReport.recommendations.map((rec, i) => (
-                    <div key={i} className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                          rec.priority === 'high' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {rec.priority}
-                        </span>
-                        <strong className="text-ink-900">{rec.title}</strong>
+                    <div key={i} className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                            rec.priority === 'high' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {rec.priority}
+                          </span>
+                          <strong className="text-ink-900">{rec.title}</strong>
+                        </div>
                       </div>
-                      <p className="text-ink-500 text-[11px] leading-relaxed">{rec.detail}</p>
+                      <p className="text-ink-600 text-[11px] leading-relaxed">{rec.detail}</p>
+                      {rec.odsSolution && (
+                        <div className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-indigo-700 bg-indigo-50/80 px-2 py-1 rounded border border-indigo-100">
+                          <ShieldCheck size={12} className="text-indigo-600 shrink-0" />
+                          <span><strong>ODS Fix:</strong> {rec.odsSolution}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {/* ODS Solutions Architecture Banner */}
+            <div className="p-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white text-xs">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 block mb-1">
+                ODS Agency Infrastructure Capabilities:
+              </span>
+              <p className="text-[11px] text-indigo-950 leading-relaxed">
+                • <strong>Next.js SSR & Static Edge:</strong> Instant sub-100ms TTFB and perfect 100 PageSpeed scores.<br />
+                • <strong>Headless Architecture:</strong> Decouple CMS backends into lightning-fast React applications.<br />
+                • <strong>LocalBusiness Schema:</strong> JSON-LD engineering for Google Maps 3-Pack authority.
+              </p>
+            </div>
           </div>
         )}
       </div>

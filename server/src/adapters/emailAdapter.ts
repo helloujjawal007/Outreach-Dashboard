@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { emailValidatorService } from '../services/emailValidatorService';
 import { inboxRotationService, type ConnectedInboxRecord, type InboxPoolSummary } from '../services/inboxRotationService';
 import { emailSentSyncService } from '../services/emailSentSyncService';
+import { workflowRoutingService } from '../services/workflowRoutingService';
 
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
@@ -26,6 +27,13 @@ export interface WarmupStatus {
   dmarc: 'valid' | 'pending' | 'failed';
   dnsRecords: DnsRecord[];
   poolSummary?: InboxPoolSummary;
+}
+
+export interface EmailAttachment {
+  filename: string;
+  path?: string;
+  content?: Buffer | string;
+  contentType?: string;
 }
 
 export class EmailAdapter {
@@ -129,6 +137,7 @@ export class EmailAdapter {
     leadId?: string;
     clientId?: string;
     inboxId?: string;
+    attachments?: EmailAttachment[];
   }): Promise<{
     success: boolean;
     throttled: boolean;
@@ -186,11 +195,68 @@ export class EmailAdapter {
     let fromAddress = '';
     let cleanReplyTo = '';
 
-    // Anti-spam deliverability: clean plain text with opt-out footer
-    const plainText = `${params.body.trim()}\n\n---\nIf you prefer not to receive further emails from us, reply with "Unsubscribe" or "Stop".`;
+    // Dynamic Token Replacement & Residual Placeholder Sweep (Checklist Item 2)
+    let sanitizedSubject = params.subject || 'Outreach Follow-up';
+    let sanitizedBody = params.body;
 
-    // Anti-spam deliverability: structured HTML alternative prevents raw-script flagging
-    const htmlParagraphs = params.body
+    if (params.leadId) {
+      try {
+        const leadRes = await query<{
+          business_name: string;
+          primary_contact_name: string;
+          website: string;
+          audit_key_takeaways: string;
+          audit_pdf_name: string;
+          category: string;
+          location: string;
+          gmb_notes: string;
+        }>(
+          `SELECT business_name, primary_contact_name, website, audit_key_takeaways, audit_pdf_name, category, location, gmb_notes 
+           FROM leads WHERE id = $1`,
+          [params.leadId]
+        );
+        if (leadRes.rows.length > 0) {
+          const l = leadRes.rows[0];
+          sanitizedSubject = workflowRoutingService.sanitizeTokens(sanitizedSubject, {
+            first_name: l.primary_contact_name,
+            company_name: l.business_name,
+            website_url: l.website,
+            audit_key_takeaways: l.audit_key_takeaways,
+            audit_pdf_name: l.audit_pdf_name,
+            category: l.category,
+            city: l.location,
+            gmb_notes: l.gmb_notes,
+          });
+          sanitizedBody = workflowRoutingService.sanitizeTokens(sanitizedBody, {
+            first_name: l.primary_contact_name,
+            company_name: l.business_name,
+            website_url: l.website,
+            audit_key_takeaways: l.audit_key_takeaways,
+            audit_pdf_name: l.audit_pdf_name,
+            category: l.category,
+            city: l.location,
+            gmb_notes: l.gmb_notes,
+          });
+        }
+      } catch (tokenErr) {
+        console.warn('[EmailAdapter] Token replacement query warning:', tokenErr);
+      }
+    }
+
+    // Fail-safe cleanup for any remaining literal {{...}} tags
+    sanitizedSubject = workflowRoutingService.sanitizeTokens(sanitizedSubject, {});
+    sanitizedBody = workflowRoutingService.sanitizeTokens(sanitizedBody, {});
+
+    // Deliverability & Compliance Checks (Checklist Item 4)
+    const compliance = workflowRoutingService.verifyCompliance(sanitizedSubject, sanitizedBody);
+    const finalSubject = compliance.sanitizedSubject;
+    const finalBodyText = compliance.sanitizedBody;
+
+    // Plain text version
+    const plainText = finalBodyText;
+
+    // Structured HTML version
+    const htmlParagraphs = finalBodyText
       .trim()
       .split(/\n\s*\n/)
       .map((p) => `<p style="margin: 0 0 16px 0; line-height: 1.6;">${p.replace(/\n/g, '<br/>')}</p>`)
@@ -199,9 +265,6 @@ export class EmailAdapter {
     const htmlBody = `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1e293b; max-width: 600px; padding: 12px 0;">
         ${htmlParagraphs}
-        <div style="margin-top: 28px; padding-top: 14px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5;">
-          <p style="margin: 0;">If you prefer not to receive future emails, simply reply with <strong>Unsubscribe</strong> or <strong>Stop</strong>.</p>
-        </div>
       </div>
     `.trim();
 
@@ -216,9 +279,10 @@ export class EmailAdapter {
           from: fromAddress,
           to: params.to,
           replyTo: cleanReplyTo,
-          subject: params.subject || `Outreach Follow-up`,
+          subject: finalSubject,
           text: plainText,
           html: htmlBody,
+          attachments: params.attachments,
           headers: {
             'List-Unsubscribe': `<mailto:${cleanReplyTo}?subject=Unsubscribe>`,
             'X-Mailer': 'Apollo-Grade Multi-Inbox Dispatcher',
@@ -233,7 +297,7 @@ export class EmailAdapter {
         emailSentSyncService.appendSentEmail({
           from: fromAddress,
           to: params.to,
-          subject: params.subject || `Outreach Follow-up`,
+          subject: finalSubject,
           text: plainText,
           html: htmlBody,
           inboxEmail: activeInbox.email,
@@ -265,9 +329,10 @@ export class EmailAdapter {
           from: fromAddress,
           to: params.to,
           replyTo: cleanReplyTo,
-          subject: params.subject || `Outreach Follow-up`,
+          subject: finalSubject,
           text: plainText,
           html: htmlBody,
+          attachments: params.attachments,
           headers: {
             'List-Unsubscribe': `<mailto:${cleanReplyTo}?subject=Unsubscribe>`,
             'X-Mailer': 'ClientConnect Outreach Engine',
@@ -279,7 +344,7 @@ export class EmailAdapter {
         emailSentSyncService.appendSentEmail({
           from: fromAddress,
           to: params.to,
-          subject: params.subject || `Outreach Follow-up`,
+          subject: finalSubject,
           text: plainText,
           html: htmlBody,
           inboxEmail: env.SMTP_USER,
@@ -349,7 +414,7 @@ export class EmailAdapter {
         `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_id, inbox_email)
          VALUES ($1, 'email', 'outbound', $2, $3, NOW(), $4, $5)
          RETURNING id`,
-        [convId, params.body, messageStatus, activeInbox?.id || null, activeInbox?.email || env.SMTP_USER || '']
+        [convId, finalBodyText, messageStatus, activeInbox?.id || null, activeInbox?.email || env.SMTP_USER || '']
       );
 
       // Mark all preceding inbound messages in this thread as replied & seen

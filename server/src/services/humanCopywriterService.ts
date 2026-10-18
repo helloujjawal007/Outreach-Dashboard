@@ -8,6 +8,11 @@ export interface LeadContext {
   website?: string | null;
   auditScore?: number;
   auditIssues?: string[];
+  auditKeyTakeaways?: string;
+  auditPdfName?: string;
+  auditPdfPath?: string;
+  gmbNotes?: string;
+  industryLocation?: string;
 }
 
 export interface HumanCopyResult {
@@ -22,7 +27,7 @@ type Stage = HumanCopyResult['stage'];
 
 export class HumanCopywriterService {
   private readonly agencyName = 'Online Digital Solution';
-  public readonly auditToolUrl = 'https://bolt-project-access-lb76.bolt.host/';
+  public readonly auditToolUrl = 'https://technical-audit-dashboard.vercel.app/';
 
   /**
    * Cleans corporate identifiers for natural conversational reading
@@ -106,34 +111,35 @@ export class HumanCopywriterService {
     const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawWeb);
     const hasWebsite = Boolean(rawWeb && !isMapsUrl && rawWeb.toLowerCase() !== 'n/a' && rawWeb.toLowerCase() !== 'none');
 
-    // CASE A: LEAD HAS NO ACTIVE WEBSITE -> PITCH WEBSITE DEVELOPMENT + SEO + MAINTENANCE
+    // CASE A: LEAD HAS NO ACTIVE WEBSITE -> PITCH WEBSITE DEVELOPMENT + GMB + MAINTENANCE
     if (!hasWebsite) {
       if (stage === 'initial') {
+        const indLoc = lead.industryLocation || (lead.category && lead.city ? `${lead.category} in ${lead.city}` : lead.category || lead.city || 'your area');
+        const gmbStatus = lead.gmbNotes || 'with strong customer feedback';
+
         return {
           subject: this.pick([
-            `Modern website & local Google growth for ${business}`,
-            `Improving ${business}'s online presence (Website & SEO)`,
-            `A question regarding ${business}'s website presence`,
+            `Capturing missing local search clients in ${indLoc} for ${business}`,
+            `${business} – Google Business visibility & customer inquiries`,
           ]),
           body: this.compose([
-            `Hello ${salutation},`,
+            `Hi ${salutation},`,
             ``,
-            `I'm reaching out from ${this.agencyName}. While reviewing local ${categoryPhrase}${cityPhrase}, I noticed that ${business} does not currently have an active mobile website linked to your Google Business Profile.`,
+            `I came across ${business} while researching top-rated service providers in ${indLoc}. You've built a strong local reputation on Google (${gmbStatus}).`,
             ``,
-            `In today's market, over 70% of local customers look for a website before calling or visiting. Without a website:`,
-            `• Potential client enquiries go directly to competitors who have modern, mobile-friendly sites.`,
-            `• Google Maps ranks businesses higher when paired with an active, structured website.`,
-            `• You miss out on automated customer booking and after-hours inquiry capture.`,
+            `However, I noticed that when prospective local customers search for your services, there is no active, dedicated mobile website linked to your listing. Over 73% of local high-intent searchers look for a fast mobile website to inspect pricing, reviews, and credentials before calling or requesting an estimate. Right now, those visitors are dropping off and booking with local competitors who have direct websites in place.`,
             ``,
-            `At ${this.agencyName}, we handle everything for you:`,
-            `1. Modern Mobile Website Development: Fast, clean, and built to convert local visitors.`,
-            `2. Google Business Profile & Local SEO: Full optimization so local searchers find you first.`,
-            `3. Monthly Care & Maintenance: Hosting, security updates, and content changes handled for you.`,
+            `At ${this.agencyName}, we help local businesses plug this leak through a two-part growth engine:`,
             ``,
-            `Would you be open to a quick 5-10 minute call or WhatsApp chat this week? I'd be happy to share 2-3 design concepts for ${business} with zero obligation.`,
+            `1. Turnkey Custom Website Build: Modern, ultra-fast architecture built on Next.js/SSR—engineered to load instantly on smartphones, rank on Google, and convert searchers into booked clients and inquiry submissions 24/7.`,
+            `2. Weekly Google Business Profile (GMB) Optimization: Ongoing map-pack optimization, weekly geo-tagged posts, and review alignment to keep you ranking in the local Top 3 "Map Pack".`,
+            ``,
+            `We recently put together a preliminary layout concept specifically for ${business} showing how this setup would look and perform.`,
+            ``,
+            `Would you be open to a complimentary 5-minute preview of the mockup and a quick look at the local competitors ranking above you in ${indLoc}?`,
           ]),
           stage: 'initial',
-          stageLabel: '1st Email (No Website Pitch)',
+          stageLabel: '1st Email (Turnkey Web & GMB Pitch)',
           delayFromStartDays: 0,
         };
       }
@@ -191,42 +197,39 @@ export class HumanCopywriterService {
 
     // CASE B: LEAD HAS A WEBSITE -> PITCH AUDIT & TECHNICAL FIXES
     if (stage === 'initial') {
-      const subject = this.pick([
-        `Improving ${business}'s visibility on Google`,
-        `Local search visibility for ${business}`,
-        `A short audit for ${business}`,
-      ]);
-
-      const bodies = [
-        this.compose([
-          `Hello ${salutation},`,
-          ``,
-          `I'm reaching out from ${this.agencyName}. We help ${categoryPhrase} attract more local customers through:`,
-          ``,
-          `• Google Business Profile optimization, to improve visibility on Google Maps`,
-          `• Website development, mobile speed, and SEO, focused on turning visitors into enquiries`,
-          `• Automated enquiry follow-up, so new leads receive an immediate response`,
-          ``,
-          `I reviewed ${business}'s online presence using our SEO & deliverability tool (${this.auditToolUrl}) and noticed a few practical opportunities to improve search positioning and speed. I'd be glad to share a short audit, free of charge and with no obligation.`,
-          ``,
-          `Would you be open to a brief 10-minute call this week, or would you prefer I send the audit by email?`,
-        ]),
-        this.compose([
-          `Hello ${salutation},`,
-          ``,
-          `I'm with ${this.agencyName}, where we work with ${categoryPhrase} on local search visibility, website performance, and enquiry handling.`,
-          ``,
-          `After auditing ${business}'s online presence on our SEO dashboard (${this.auditToolUrl}), I identified a few practical improvements that could help bring in more enquiries from Google. I've put them into a brief audit that I would be happy to share with you at no cost.`,
-          ``,
-          `Would a short call this week suit you, or shall I simply email it across?`,
-        ]),
-      ];
+      const websiteUrl = rawWeb;
+      const domain = rawWeb.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+      const pdfName = lead.auditPdfName || 'Technical_Audit_Report.pdf';
+      const keyTakeaways =
+        lead.auditKeyTakeaways ||
+        (lead.auditIssues && lead.auditIssues.length > 0
+          ? lead.auditIssues.slice(0, 2).join('; ')
+          : 'Core Web Vitals bottlenecks and missing structured schema');
 
       return {
-        subject,
-        body: this.pick(bodies),
+        subject: this.pick([
+          `Quick technical diagnostic on ${domain} (1-2 findings attached)`,
+          `${business} speed & Google ranking audit (PDF enclosed)`,
+        ]),
+        body: this.compose([
+          `Hi ${salutation},`,
+          ``,
+          `I hope your week is off to a productive start.`,
+          ``,
+          `My technical team at ${this.agencyName} recently conducted a brief performance and technical SEO diagnostic on ${websiteUrl}. Rather than sending a generic cold pitch, we compiled our key findings into a concise 1-page report, which I’ve attached for your reference (${pdfName}).`,
+          ``,
+          `Two priority takeaways stood out that may be holding back your organic search ranking and mobile conversion rate:`,
+          ``,
+          `• ${keyTakeaways}`,
+          ``,
+          `Most legacy websites hit these roadblocks due to render-blocking scripts, unoptimized asset delivery, or missing structured schema that Google's crawler expects. At ${this.agencyName}, we engineer high-performance web architecture—typically moving teams toward lightning-fast Next.js SSR and headless setups that achieve sub-second load times and near-perfect Core Web Vitals out of the box.`,
+          ``,
+          `I’d be glad to share how your team can fix these quick wins—no sales pitch, just practical engineering guidance.`,
+          ``,
+          `Are you open to a brief 10-minute walkthrough later this week?`,
+        ]),
         stage: 'initial',
-        stageLabel: '1st Email (Introduction)',
+        stageLabel: '1st Email (Technical Audit & Next.js Pitch)',
         delayFromStartDays: 0,
       };
     }

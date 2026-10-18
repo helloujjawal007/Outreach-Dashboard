@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
 import { whatsappValidator } from '../services/whatsappValidator';
@@ -5,6 +6,8 @@ import { googleEnrichmentService } from '../services/googleEnrichmentService';
 import { leadScraperService, cleanSiteUrl } from '../services/leadScraperService';
 import { autonomousLeadEnricher } from '../services/autonomousLeadEnricher';
 import { automatedIntakeEngine } from '../services/automatedIntakeEngine';
+import { humanCopywriterService } from '../services/humanCopywriterService';
+import { workflowRoutingService, type PdfValidationResult } from '../services/workflowRoutingService';
 
 export const leadsRouter = Router();
 
@@ -1152,10 +1155,21 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
       else country = 'Canada';
     }
 
+    // Branch Routing & State Locking (Checklist Item 1)
+    const routeDecision = workflowRoutingService.determineWorkflow({ website, notes: notes ? String(notes) : '' });
+    const outreachWorkflow = routeDecision.workflow;
+    const auditStatus = routeDecision.auditStatus;
+    const effectiveStatus = routeDecision.status; // 'pending_audit' for Workflow A, 'active' for Workflow B
+
     const result = await query(
-      `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, notes, consent_status, status, batch_id, whatsapp_eligible, whatsapp_decision_reason, detected_channels, metadata, website, country, location)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', $10, $11, $12, $13, $14, $15, $16, $17, $18)
-       RETURNING *`,
+      `INSERT INTO leads (
+        business_name, category, phone, email, instagram, facebook, whatsapp,
+        linkedin, notes, consent_status, status, batch_id, whatsapp_eligible,
+        whatsapp_decision_reason, detected_channels, metadata, website, country,
+        location, outreach_workflow, audit_status
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+      ) RETURNING *`,
       [
         businessName.trim(),
         finalCategory,
@@ -1166,7 +1180,7 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
         standardizedWhatsapp,
         req.body.linkedin ? req.body.linkedin.trim() : '',
         notes ? notes.trim() : '',
-        leadStatus,
+        effectiveStatus,
         batchId || null,
         waEval.isEligible,
         waEval.reason,
@@ -1175,6 +1189,8 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
         website,
         country,
         location,
+        outreachWorkflow,
+        auditStatus,
       ]
     );
 
@@ -1255,6 +1271,247 @@ leadsRouter.post('/batch-enrich-google', async (req: Request, res: Response) => 
   } catch (error: any) {
     console.error('[leadsRouter.batchEnrichGoogle]', error);
     res.status(500).json({ success: false, error: error.message || 'Failed to batch enrich leads' });
+  }
+});
+
+// POST /api/leads/import-audit - Import or update a lead from the technical SEO audit dashboard (with PDF attachment & audit highlights)
+leadsRouter.post('/import-audit', async (req: Request, res: Response) => {
+  try {
+    const businessName = (req.body.business_name || req.body.businessName || '').trim();
+    const website = (req.body.website || req.body.website_url || req.body.targetUrl || '').trim();
+    const email = (req.body.email || '').trim();
+    const phone = (req.body.phone || '').trim();
+    const contactName = (req.body.contact_name || req.body.first_name || req.body.primary_contact_name || '').trim();
+    const category = (req.body.category || req.body.industry || 'General').trim();
+    const location = (req.body.location || req.body.city || req.body.industry_location || '').trim();
+    const auditKeyTakeaways = (req.body.audit_key_takeaways || req.body.auditTakeaways || req.body.topTakeaways || '').trim();
+    const auditPdfName = (
+      req.body.audit_pdf_name ||
+      req.body.pdfName ||
+      (website ? `${cleanSiteUrl(website)}_Technical_Audit.pdf` : 'Technical_Audit_Report.pdf')
+    ).trim();
+    const auditPdfPath = (req.body.audit_pdf_path || req.body.pdfPath || '').trim();
+    const gmbNotes = (req.body.gmb_notes || req.body.gmbNotes || '').trim();
+    const notes = (req.body.notes || '').trim();
+    const enrollAutopilot = req.body.enroll_autopilot !== false; // default true
+
+    if (!businessName) {
+      return res.status(400).json({ success: false, error: 'Business name is required' });
+    }
+
+    // Check if lead already exists by email, website, or business name
+    let leadId: string | null = null;
+    let isExisting = false;
+
+    if (email) {
+      const emailMatch = await query<{ id: string }>(
+        `SELECT id FROM leads WHERE deleted_at IS NULL AND LOWER(email) = LOWER($1) LIMIT 1`,
+        [email]
+      );
+      if (emailMatch.rows.length > 0) {
+        leadId = emailMatch.rows[0].id;
+        isExisting = true;
+      }
+    }
+
+    if (!leadId && website) {
+      const cleanWeb = cleanSiteUrl(website);
+      const webMatch = await query<{ id: string }>(
+        `SELECT id FROM leads WHERE deleted_at IS NULL AND website ILIKE $1 LIMIT 1`,
+        [`%${cleanWeb}%`]
+      );
+      if (webMatch.rows.length > 0) {
+        leadId = webMatch.rows[0].id;
+        isExisting = true;
+      }
+    }
+
+    if (!leadId) {
+      const bizMatch = await query<{ id: string }>(
+        `SELECT id FROM leads WHERE deleted_at IS NULL AND LOWER(business_name) = LOWER($1) LIMIT 1`,
+        [businessName]
+      );
+      if (bizMatch.rows.length > 0) {
+        leadId = bizMatch.rows[0].id;
+        isExisting = true;
+      }
+    }
+
+    // Determine Workflow and Validate Attachment (Checklist Items 1 & 2)
+    const hasWebsite = workflowRoutingService.hasValidWebsite(website);
+    const outreachWorkflow = hasWebsite ? 'workflow_a' : 'workflow_b';
+
+    let pdfValidation: PdfValidationResult = { isValid: false, reason: 'No PDF provided', fileSize: 0, filename: '' };
+    if (auditPdfPath) {
+      pdfValidation = workflowRoutingService.validateAuditPdf(auditPdfPath, website);
+    }
+
+    // Trigger Gate & State Locking (Checklist Items 1 & 2):
+    // If Workflow A: unlock only if PDF validation passes or audit takeaways are received
+    let auditStatus = 'none';
+    let targetStatus = enrollAutopilot ? 'active' : 'inactive';
+
+    if (hasWebsite) {
+      if (auditPdfPath && !pdfValidation.isValid) {
+        // Attachment corruption or missing file -> Keep locked in pending_audit
+        auditStatus = 'audit_failed';
+        targetStatus = 'pending_audit';
+      } else if (auditKeyTakeaways || pdfValidation.isValid) {
+        auditStatus = 'audit_completed';
+        targetStatus = enrollAutopilot ? 'active' : 'inactive'; // UNLOCKED!
+      } else {
+        auditStatus = 'pending_audit';
+        targetStatus = 'pending_audit'; // State locked until TA callback completes!
+      }
+    }
+
+    let savedLead: any;
+
+    if (isExisting && leadId) {
+      const updateRes = await query(
+        `UPDATE leads SET
+          website = CASE WHEN $1 != '' THEN $1 ELSE website END,
+          email = CASE WHEN $2 != '' THEN $2 ELSE email END,
+          phone = CASE WHEN $3 != '' THEN $3 ELSE phone END,
+          primary_contact_name = CASE WHEN $4 != '' THEN $4 ELSE primary_contact_name END,
+          category = CASE WHEN $5 != '' THEN $5 ELSE category END,
+          location = CASE WHEN $6 != '' THEN $6 ELSE location END,
+          audit_key_takeaways = CASE WHEN $7 != '' THEN $7 ELSE audit_key_takeaways END,
+          audit_pdf_name = CASE WHEN $8 != '' THEN $8 ELSE audit_pdf_name END,
+          audit_pdf_path = CASE WHEN $9 != '' THEN $9 ELSE audit_pdf_path END,
+          gmb_notes = CASE WHEN $10 != '' THEN $10 ELSE gmb_notes END,
+          notes = CASE WHEN $11 != '' THEN CONCAT(notes, '\n', $11) ELSE notes END,
+          outreach_workflow = $12,
+          audit_status = $13,
+          status = $14,
+          updated_at = NOW()
+        WHERE id = $15
+        RETURNING *`,
+        [
+          website,
+          email,
+          phone,
+          contactName,
+          category,
+          location,
+          auditKeyTakeaways,
+          auditPdfName,
+          auditPdfPath,
+          gmbNotes,
+          notes,
+          outreachWorkflow,
+          auditStatus,
+          targetStatus,
+          leadId,
+        ]
+      );
+      savedLead = updateRes.rows[0];
+    } else {
+      const waEval = whatsappValidator.evaluate({ phone, whatsapp: phone });
+      const insertRes = await query(
+        `INSERT INTO leads (
+          business_name, website, email, phone, primary_contact_name,
+          category, location, audit_key_takeaways, audit_pdf_name,
+          audit_pdf_path, gmb_notes, notes, outreach_workflow, audit_status,
+          status, outreach_stage, consent_status, whatsapp_eligible, detected_channels
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'initial', 'none', $16, $17
+        ) RETURNING *`,
+        [
+          businessName,
+          website,
+          email,
+          phone,
+          contactName,
+          category,
+          location,
+          auditKeyTakeaways,
+          auditPdfName,
+          auditPdfPath,
+          gmbNotes,
+          notes,
+          outreachWorkflow,
+          auditStatus,
+          targetStatus,
+          waEval.isEligible,
+          JSON.stringify([
+            ...(email ? ['email'] : []),
+            ...(waEval.isEligible ? ['whatsapp'] : []),
+          ]),
+        ]
+      );
+      savedLead = insertRes.rows[0];
+    }
+
+    // Pre-generate tailored email copy
+    const generatedCopy = humanCopywriterService.getEmailCopy(
+      {
+        id: savedLead.id,
+        businessName: savedLead.business_name,
+        category: savedLead.category,
+        primaryContactName: savedLead.primary_contact_name,
+        city: savedLead.location,
+        website: savedLead.website,
+        auditKeyTakeaways: savedLead.audit_key_takeaways,
+        auditPdfName: savedLead.audit_pdf_name,
+        auditPdfPath: savedLead.audit_pdf_path,
+        gmbNotes: savedLead.gmb_notes,
+      },
+      'initial'
+    );
+
+    // Dynamic Token Replacement & Residual Placeholder Sweep (Checklist Item 2 & 3)
+    const sanitizedSubject = workflowRoutingService.sanitizeTokens(generatedCopy.subject, {
+      first_name: savedLead.primary_contact_name,
+      company_name: savedLead.business_name,
+      website_url: savedLead.website,
+      audit_key_takeaways: savedLead.audit_key_takeaways,
+      audit_pdf_name: savedLead.audit_pdf_name,
+      industry_location: savedLead.location,
+      gmb_notes: savedLead.gmb_notes,
+    });
+    const sanitizedBody = workflowRoutingService.sanitizeTokens(generatedCopy.body, {
+      first_name: savedLead.primary_contact_name,
+      company_name: savedLead.business_name,
+      website_url: savedLead.website,
+      audit_key_takeaways: savedLead.audit_key_takeaways,
+      audit_pdf_name: savedLead.audit_pdf_name,
+      industry_location: savedLead.location,
+      gmb_notes: savedLead.gmb_notes,
+    });
+
+    // Deliverability & Compliance Checks (Checklist Item 4)
+    const compliance = workflowRoutingService.verifyCompliance(sanitizedSubject, sanitizedBody);
+
+    return res.json({
+      success: true,
+      isExisting,
+      lead: savedLead,
+      workflow: outreachWorkflow,
+      stateLocked: targetStatus === 'pending_audit',
+      pdfValidation,
+      compliance: {
+        isCompliant: compliance.isCompliant,
+        warnings: compliance.warnings,
+      },
+      generatedPitch: {
+        subject: compliance.sanitizedSubject,
+        body: compliance.sanitizedBody,
+        stage: generatedCopy.stage,
+        hasPdfAttachment: pdfValidation.isValid,
+        pdfFilename: savedLead.audit_pdf_name,
+      },
+      message: isExisting
+        ? `Lead "${businessName}" updated with technical audit diagnostic.`
+        : `Lead "${businessName}" successfully imported and routed to ${outreachWorkflow.toUpperCase()}.`,
+    });
+  } catch (error: any) {
+    console.error('[leadsRouter.import-audit]', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to import lead from audit',
+      details: error?.message,
+    });
   }
 });
 
@@ -1446,11 +1703,22 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
         else country = 'Canada';
       }
 
-      // Insert valid new lead with batch_id, channel flags, and location
+      // Branch Routing & State Locking (Checklist Item 1)
+      const routeDecision = workflowRoutingService.determineWorkflow({ website, notes });
+      const outreachWorkflow = routeDecision.workflow;
+      const auditStatus = routeDecision.auditStatus;
+      const effectiveStatus = routeDecision.status; // 'pending_audit' for Workflow A, 'active' for Workflow B
+
+      // Insert valid new lead with batch_id, channel flags, location, and workflow routing
       const insertRes = await query(
-        `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, consent_status, batch_id, outreach_stage, whatsapp_eligible, whatsapp_decision_reason, detected_channels, notes, website, country, location)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'none', $9, 'initial', $10, $11, $12, $13, $14, $15, $16)
-         RETURNING *`,
+        `INSERT INTO leads (
+          business_name, category, phone, email, instagram, facebook, whatsapp,
+          linkedin, consent_status, batch_id, outreach_stage, whatsapp_eligible,
+          whatsapp_decision_reason, detected_channels, notes, website, country,
+          location, outreach_workflow, audit_status, status
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, 'none', $9, 'initial', $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+        ) RETURNING *`,
         [
           businessName || 'Unnamed Business',
           category,
@@ -1468,6 +1736,9 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
           website,
           country,
           location,
+          outreachWorkflow,
+          auditStatus,
+          effectiveStatus,
         ]
       );
 

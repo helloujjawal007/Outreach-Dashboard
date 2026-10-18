@@ -3,6 +3,7 @@ import { emailValidatorService } from './emailValidatorService';
 import { humanCopywriterService } from './humanCopywriterService';
 import { channelListAutoAssignmentService, type ChannelAssignmentSummary } from './channelListAutoAssignmentService';
 import { emailSchedulerService } from './emailSchedulerService';
+import { workflowRoutingService } from './workflowRoutingService';
 
 export interface AutomatedIntakeResult {
   totalImported: number;
@@ -106,12 +107,6 @@ export class AutomatedIntakeEngine {
 
       if (valResult.isValid) {
         verifiedEmailCount++;
-        verifiedLeads.push({
-          id: lead.id,
-          businessName: (lead.businessName || lead.business_name || 'Business').trim(),
-          category: (lead.category || 'General Business').trim(),
-          email: valResult.normalizedEmail,
-        });
 
         await query(
           `UPDATE leads 
@@ -121,6 +116,25 @@ export class AutomatedIntakeEngine {
            WHERE id = $1`,
           [lead.id]
         );
+
+        // State Locking & Trigger Gate (Checklist Items 1 & 2):
+        // Workflow A leads (with website) must wait for TA audit callback and PDF report before scheduling!
+        const hasWebsite = workflowRoutingService.hasValidWebsite(lead.website);
+        const isWorkflowA = lead.outreach_workflow === 'workflow_a' || lead.status === 'pending_audit' || hasWebsite;
+
+        if (isWorkflowA && lead.audit_status !== 'audit_completed') {
+          console.log(
+            `[AutomatedIntakeEngine] Lead "${lead.businessName || lead.business_name || lead.id}" routed to Workflow A (State locked: PENDING_AUDIT). Email dispatch will trigger upon TA audit callback.`
+          );
+          continue;
+        }
+
+        verifiedLeads.push({
+          id: lead.id,
+          businessName: (lead.businessName || lead.business_name || 'Business').trim(),
+          category: (lead.category || 'General Business').trim(),
+          email: valResult.normalizedEmail,
+        });
       } else {
         invalidEmailCount++;
         await emailValidatorService.flagAndMoveLeadToInvalidList(

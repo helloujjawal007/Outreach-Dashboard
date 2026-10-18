@@ -66,6 +66,20 @@ export class AutonomousInboundAgent {
       };
     }
 
+    // Guard against processing delivery bounce notifications
+    if (
+      params.replyText.startsWith('[DELIVERY FAILURE') ||
+      /delivery status notification|undeliverable|returned mail|mailer-daemon/i.test(params.subject || '') ||
+      /address could not be found|mailbox unavailable|550 5\./i.test(params.replyText)
+    ) {
+      console.log('[AutonomousInboundAgent] Skipping delivery bounce message (not a customer reply).');
+      return {
+        classification: {} as any,
+        convertedToClient: false,
+        autoReplySent: false,
+      };
+    }
+
     // 1. Fetch entity business name and contact info
     let businessName = params.senderName || 'Valued Business';
     let leadNotes = '';

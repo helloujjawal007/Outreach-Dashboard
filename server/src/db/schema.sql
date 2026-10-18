@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS leads (
     deleted_at TIMESTAMPTZ DEFAULT NULL,
     deleted_expires_at TIMESTAMPTZ DEFAULT NULL,
     notes TEXT DEFAULT '',
+    primary_contact_name VARCHAR(150) DEFAULT '',
+    audit_key_takeaways TEXT DEFAULT '',
+    audit_pdf_name VARCHAR(255) DEFAULT '',
+    audit_pdf_path TEXT DEFAULT '',
+    gmb_notes TEXT DEFAULT '',
+    outreach_workflow VARCHAR(30) DEFAULT 'workflow_b',
+    audit_status VARCHAR(30) DEFAULT 'none',
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

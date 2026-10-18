@@ -1,8 +1,12 @@
+import fs from 'fs';
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanizerService } from './humanizerService';
 import { humanCopywriterService } from './humanCopywriterService';
 import { aiResearchWriterService } from './aiResearchWriterService';
+import { workflowRoutingService } from './workflowRoutingService';
+import { clientAuditService } from './clientAuditIntelligenceService';
+import { technicalAuditPdfService } from './technicalAuditPdfService';
 
 export interface ScheduleListParams {
   listId: string;
@@ -902,13 +906,21 @@ export class EmailSchedulerService {
     }
 
     // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
+    let leadAttachments: Array<{ filename: string; path?: string }> | undefined = undefined;
     if (dispatch.lead_id) {
       const checkRes = await query<{
+        business_name: string;
         consent_status: string;
+        status: string;
+        audit_status: string;
+        website?: string;
         deleted_at: string | null;
         has_replied: boolean;
+        audit_pdf_path?: string;
+        audit_pdf_name?: string;
+        audit_key_takeaways?: string;
       }>(
-        `SELECT l.consent_status, l.deleted_at,
+        `SELECT l.business_name, l.consent_status, l.status, l.audit_status, l.website, l.deleted_at, l.audit_pdf_path, l.audit_pdf_name, l.audit_key_takeaways,
            (
              l.consent_status = 'replied' OR
              EXISTS (
@@ -927,6 +939,66 @@ export class EmailSchedulerService {
       );
       const leadRow = checkRes.rows[0];
       if (leadRow) {
+        // State Locking & Auto-Resolution: Workflow A leads require a verified audit & PDF before cold email dispatch.
+        if (leadRow.status === 'pending_audit' || leadRow.audit_status === 'pending_audit') {
+          if (leadRow.website && workflowRoutingService.hasValidWebsite(leadRow.website)) {
+            try {
+              console.log(`[Scheduler] ⚡ Auto-resolving pending audit on-the-fly for ${leadRow.business_name} (${leadRow.website})...`);
+              const auditReport = await clientAuditService.auditWebsite(leadRow.website);
+              const pdfResult = await technicalAuditPdfService.generateAuditPdf(auditReport, leadRow.business_name);
+              const takeaways = auditReport.auditKeyTakeaways || auditReport.criticalIssues.slice(0, 2).join(' and ');
+
+              await query(
+                `UPDATE leads SET
+                  status = 'active',
+                  audit_status = 'audit_completed',
+                  audit_key_takeaways = $1,
+                  audit_pdf_name = $2,
+                  audit_pdf_path = $3,
+                  updated_at = NOW()
+                 WHERE id = $4`,
+                [takeaways, pdfResult.pdfName, pdfResult.pdfPath, dispatch.lead_id]
+              );
+
+              leadRow.status = 'active';
+              leadRow.audit_status = 'audit_completed';
+              leadRow.audit_key_takeaways = takeaways;
+              leadRow.audit_pdf_name = pdfResult.pdfName;
+              leadRow.audit_pdf_path = pdfResult.pdfPath;
+            } catch (autoErr: any) {
+              console.log(`[Scheduler] State Locking: Lead ${dispatch.lead_id} is in PENDING_AUDIT state and auto-audit failed: ${autoErr?.message}`);
+              return false;
+            }
+          } else {
+            console.log(`[Scheduler] State Locking: Lead ${dispatch.lead_id} is in PENDING_AUDIT state without valid website. Suppressing dispatch.`);
+            return false;
+          }
+        }
+
+        if (leadRow.audit_pdf_path) {
+          const pdfVal = workflowRoutingService.validateAuditPdf(leadRow.audit_pdf_path, leadRow.website);
+          if (pdfVal.isValid) {
+            leadAttachments = [{
+              filename: leadRow.audit_pdf_name || pdfVal.filename || 'Technical_Audit_Report.pdf',
+              path: leadRow.audit_pdf_path,
+            }];
+          }
+        }
+
+        // Auto-compile missing audit PDF on-the-fly if needed for Workflow A leads
+        if (!leadAttachments && leadRow.website && workflowRoutingService.hasValidWebsite(leadRow.website)) {
+          try {
+            console.log(`[Scheduler] Auto-compiling missing audit PDF for lead ${leadRow.business_name}...`);
+            const auditReport = await clientAuditService.auditWebsite(leadRow.website);
+            const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, leadRow.business_name);
+            leadAttachments = [{
+              filename: pdfGen.pdfName,
+              path: pdfGen.pdfPath,
+            }];
+            await query(`UPDATE leads SET audit_pdf_name = $1, audit_pdf_path = $2 WHERE id = $3`, [pdfGen.pdfName, pdfGen.pdfPath, dispatch.lead_id]);
+          } catch (_) {}
+        }
+
         if (leadRow.has_replied || leadRow.consent_status === 'replied') {
           console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) has replied to outreach. Suppressing Shoot stage "${dispatch.stage}".`);
           await query(
@@ -973,6 +1045,7 @@ export class EmailSchedulerService {
       leadId: dispatch.lead_id || undefined,
       clientId: dispatch.client_id || undefined,
       inboxId: dispatch.inbox_id || undefined,
+      attachments: leadAttachments,
     });
 
     if (sendRes.throttled) {

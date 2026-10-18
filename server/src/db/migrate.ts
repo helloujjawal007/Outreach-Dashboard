@@ -89,7 +89,14 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS inbound_intent VARCHAR(50),
         ADD COLUMN IF NOT EXISTS inbound_intent_confidence NUMERIC(4, 2),
         ADD COLUMN IF NOT EXISTS ai_suggested_reply TEXT,
-        ADD COLUMN IF NOT EXISTS ai_reply_status VARCHAR(30) DEFAULT 'none';
+        ADD COLUMN IF NOT EXISTS ai_reply_status VARCHAR(30) DEFAULT 'none',
+        ADD COLUMN IF NOT EXISTS primary_contact_name VARCHAR(150) DEFAULT '',
+        ADD COLUMN IF NOT EXISTS audit_key_takeaways TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS audit_pdf_name VARCHAR(255) DEFAULT '',
+        ADD COLUMN IF NOT EXISTS audit_pdf_path TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS gmb_notes TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS outreach_workflow VARCHAR(30) DEFAULT 'workflow_b',
+        ADD COLUMN IF NOT EXISTS audit_status VARCHAR(30) DEFAULT 'none';
 
       -- Ensure all columns on clients table
       ALTER TABLE clients 

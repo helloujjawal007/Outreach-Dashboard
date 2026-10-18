@@ -29,5 +29,6 @@ dist-ssr
 chrome-bin/
 .cache/
 server/data/whatsapp_session/
+server/data/audits/
 .whatsapp_session/
 *.tsbuildinfo

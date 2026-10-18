@@ -550,6 +550,20 @@ export const api = {
     return data.items || [];
   },
 
+  async dismissUnmatchedEmail(id: string): Promise<boolean> {
+    const data = await request<{ success: boolean }>(`/conversations/unmatched-inbox/${id}`, {
+      method: 'DELETE',
+    });
+    return data.success;
+  },
+
+  async clearAllUnmatchedEmails(): Promise<number> {
+    const data = await request<{ success: boolean; count: number }>(`/conversations/unmatched-inbox`, {
+      method: 'DELETE',
+    });
+    return data.count || 0;
+  },
+
   async enrichLeadFromGoogle(leadId: string): Promise<Lead> {
     const data = await request<{ success: boolean; lead: BackendLead; googleProfile?: any }>(
       `/leads/${leadId}/enrich-google`,
@@ -1784,12 +1798,34 @@ export const api = {
     });
   },
 
-  // Website Audit & Client Intelligence (https://bolt-project-access-lb76.bolt.host/)
-  async runAudit(options: { url?: string; leadId?: string }): Promise<{ success: boolean; report: ClientAuditReport }> {
-    return request<{ success: boolean; report: ClientAuditReport }>('/audit/run', {
+  // Website Audit & Client Intelligence (https://technical-audit-dashboard.vercel.app/)
+  async runAudit(options: { url?: string; leadId?: string; generatePdf?: boolean }): Promise<{ success: boolean; report: ClientAuditReport; pdf?: any }> {
+    return request<{ success: boolean; report: ClientAuditReport; pdf?: any }>('/audit/run', {
       method: 'POST',
       body: JSON.stringify(options),
     });
+  },
+
+  async generateAuditReport(options: {
+    url?: string;
+    business_name?: string;
+    leadId?: string;
+    email?: string;
+    phone?: string;
+    contact_name?: string;
+    category?: string;
+    location?: string;
+    dispatchToLod?: boolean;
+    enroll_autopilot?: boolean;
+  }): Promise<{ success: boolean; report: ClientAuditReport; pdf: any; lodDispatch?: any }> {
+    return request<{ success: boolean; report: ClientAuditReport; pdf: any; lodDispatch?: any }>('/audit/generate-report', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+  },
+
+  async getAuditChecklistStatus(): Promise<{ success: boolean; checklist: any; verifiedAt: string }> {
+    return request<{ success: boolean; checklist: any; verifiedAt: string }>('/audit/checklist-status');
   },
 
   async generateAuditPitch(options: {

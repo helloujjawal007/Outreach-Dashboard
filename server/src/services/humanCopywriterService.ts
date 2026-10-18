@@ -205,18 +205,31 @@ export class HumanCopywriterService {
         (lead.auditIssues && lead.auditIssues.length > 0
           ? lead.auditIssues.slice(0, 2).join('; ')
           : 'Core Web Vitals bottlenecks and missing structured schema');
+      const scoreNote =
+        typeof lead.auditScore === 'number' && lead.auditScore > 0
+          ? ` (Site Health: ${lead.auditScore}%)`
+          : '';
+
+      const subjects =
+        typeof lead.auditScore === 'number' && lead.auditScore > 0
+          ? [
+              `Quick technical diagnostic on ${domain} (Score: ${lead.auditScore}/100, PDF attached)`,
+              `${business} speed & Google ranking audit (Health: ${lead.auditScore}%, PDF enclosed)`,
+              `Quick technical diagnostic on ${domain} (1-2 findings attached)`,
+            ]
+          : [
+              `Quick technical diagnostic on ${domain} (1-2 findings attached)`,
+              `${business} speed & Google ranking audit (PDF enclosed)`,
+            ];
 
       return {
-        subject: this.pick([
-          `Quick technical diagnostic on ${domain} (1-2 findings attached)`,
-          `${business} speed & Google ranking audit (PDF enclosed)`,
-        ]),
+        subject: this.pick(subjects),
         body: this.compose([
           `Hi ${salutation},`,
           ``,
           `I hope your week is off to a productive start.`,
           ``,
-          `My technical team at ${this.agencyName} recently conducted a brief performance and technical SEO diagnostic on ${websiteUrl}. Rather than sending a generic cold pitch, we compiled our key findings into a concise 1-page report, which I’ve attached for your reference (${pdfName}).`,
+          `My technical team at ${this.agencyName} recently conducted a brief performance and technical SEO diagnostic on ${websiteUrl}${scoreNote}. Rather than sending a generic cold pitch, we compiled our key findings into a concise 1-page report, which I’ve attached for your reference (${pdfName}).`,
           ``,
           `Two priority takeaways stood out that may be holding back your organic search ranking and mobile conversion rate:`,
           ``,

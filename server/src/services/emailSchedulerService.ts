@@ -494,7 +494,7 @@ export class EmailSchedulerService {
       channel = 'email',
       style = 'conversational',
       stage = 'auto',
-      intervalSeconds = channel === 'whatsapp' ? 45 : 25,
+      intervalSeconds = params.intervalSeconds ?? (channel === 'email' ? 120 : (channel === 'whatsapp' ? 45 : 25)),
       customInstructions,
     } = params;
 
@@ -518,9 +518,18 @@ export class EmailSchedulerService {
       facebook: string;
       instagram: string;
       linkedin?: string;
+      website?: string;
+      location?: string;
       category: string;
       notes: string;
       outreach_stage: string;
+      status: string;
+      audit_status?: string;
+      audit_score?: number;
+      audit_key_takeaways?: string;
+      audit_pdf_name?: string;
+      audit_pdf_path?: string;
+      gmb_notes?: string;
     }>(
       `SELECT l.id,
               l.business_name,
@@ -531,9 +540,18 @@ export class EmailSchedulerService {
               l.facebook,
               l.instagram,
               l.linkedin,
+              l.website,
+              l.location,
               l.category,
               l.notes,
-              l.outreach_stage
+              l.outreach_stage,
+              l.status,
+              l.audit_status,
+              l.audit_score,
+              l.audit_key_takeaways,
+              l.audit_pdf_name,
+              l.audit_pdf_path,
+              l.gmb_notes
        FROM lead_list_memberships m
        JOIN leads l ON l.id = m.lead_id
        WHERE m.list_id = $1
@@ -637,23 +655,24 @@ export class EmailSchedulerService {
         let body = '';
 
         if (channel === 'email') {
-          const generated = await humanizerService.generateEmail(
+          const copy = humanCopywriterService.getEmailCopy(
             {
               id: lead.id,
-              business_name: lead.business_name,
-              primary_contact_name: lead.primary_contact_name,
+              businessName: lead.business_name,
               category: lead.category,
-              notes: lead.notes,
-              entity_type: 'lead',
+              website: lead.website,
+              primaryContactName: lead.primary_contact_name,
+              city: lead.location,
+              auditScore: lead.audit_score ? Number(lead.audit_score) : undefined,
+              auditKeyTakeaways: lead.audit_key_takeaways,
+              auditPdfName: lead.audit_pdf_name,
+              auditPdfPath: lead.audit_pdf_path,
+              gmbNotes: lead.gmb_notes,
             },
-            {
-              stage: targetStage as any,
-              style,
-              customInstructions,
-            }
+            targetStage as any
           );
-          subject = generated.subject;
-          body = generated.body;
+          subject = copy.subject;
+          body = copy.body;
         } else {
           const aiOutreach = await aiResearchWriterService.researchAndWrite(
             {
@@ -709,9 +728,19 @@ export class EmailSchedulerService {
 
     console.log(`[Scheduler] Successfully scheduled ${insertedCount} ${channel.toUpperCase()} messages for list "${list.name}".`);
 
+    // Requirement: "if a list is selected and scheduled it show automatically run the audit for each site. Time for sending eaach email is 2 mins. in the meantime TA will do audit give you data you will append with email based on the satatus and send to propsects."
+    if (channel === 'email') {
+      this.runBackgroundAuditsForList(eligibleLeads, list.id).catch((err) =>
+        console.error('[Scheduler] runBackgroundAuditsForList error:', err)
+      );
+    }
+
     if (baseTime.getTime() <= Date.now() + 5000) {
       setTimeout(() => this.processPendingDispatches().catch(console.error), 200);
     }
+
+    const intervalMinutes = Math.round(intervalSeconds / 60);
+    const intervalDesc = intervalSeconds >= 60 ? `${intervalMinutes}-minute` : `${intervalSeconds}-second`;
 
     return {
       success: true,
@@ -719,8 +748,134 @@ export class EmailSchedulerService {
       listName: list.name,
       channel,
       scheduledFor: baseTime,
-      message: `Successfully scheduled ${insertedCount} ${channel.toUpperCase()} message(s) for list "${list.name}".`,
+      message: `Successfully scheduled ${insertedCount} ${channel.toUpperCase()} message(s) staggered across ${intervalDesc} intervals. TA audits will automatically run for each site and append to outreach.`,
     };
+  }
+
+  /**
+   * Automatically executes TA website audits for leads in a scheduled list in the background.
+   * Compiles the audit findings, generates the branded audit PDF, updates the lead record,
+   * and dynamically appends the fresh audit findings to the scheduled dispatch before its 2-minute send timer fires.
+   */
+  public async runBackgroundAuditsForList(
+    leads: Array<{
+      id: string;
+      business_name: string;
+      website?: string;
+      category?: string;
+      location?: string;
+      primary_contact_name?: string;
+      audit_status?: string;
+      audit_pdf_path?: string;
+    }>,
+    listId: string
+  ): Promise<void> {
+    const leadsNeedingAudit = leads.filter(
+      (l) =>
+        l.website &&
+        workflowRoutingService.hasValidWebsite(l.website) &&
+        (l.audit_status !== 'audit_completed' || !l.audit_pdf_path)
+    );
+
+    if (leadsNeedingAudit.length === 0) {
+      console.log(`[Scheduler TA Engine] All sites in list ${listId} already possess completed audit reports.`);
+      return;
+    }
+
+    console.log(
+      `[Scheduler TA Engine] 🚀 Automatically kicking off background audits for ${leadsNeedingAudit.length} site(s) in list "${listId}"...`
+    );
+
+    // Process with bounded concurrency pool of 2 workers
+    const concurrency = 2;
+    let cursor = 0;
+
+    const worker = async (workerId: number) => {
+      while (cursor < leadsNeedingAudit.length) {
+        const lead = leadsNeedingAudit[cursor++];
+        if (!lead || !lead.website) continue;
+
+        try {
+          console.log(
+            `[Scheduler TA Worker ${workerId}] 🔍 Auditing ${lead.business_name} (${lead.website})...`
+          );
+          const auditReport = await clientAuditService.auditWebsite(lead.website);
+          const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, lead.business_name);
+          const takeaways =
+            auditReport.auditKeyTakeaways ||
+            auditReport.criticalIssues.slice(0, 2).join(' and ') ||
+            'Core Web Vitals bottlenecks and missing structured schema';
+
+          await query(
+            `UPDATE leads
+             SET status = 'active',
+                 audit_status = 'audit_completed',
+                 audit_score = $1,
+                 audit_key_takeaways = $2,
+                 audit_pdf_name = $3,
+                 audit_pdf_path = $4,
+                 audit_payload = $5,
+                 updated_at = NOW()
+             WHERE id = $6`,
+            [
+              auditReport.overallScore,
+              takeaways,
+              pdfGen.pdfName,
+              pdfGen.pdfPath,
+              JSON.stringify(auditReport),
+              lead.id,
+            ]
+          );
+
+          // Dynamically append fresh TA audit findings & PDF name to any pending scheduled dispatches for this lead
+          const pendingDispatches = await query<{ id: string; stage: string }>(
+            `SELECT id, stage FROM scheduled_dispatches
+             WHERE lead_id = $1 AND channel = 'email' AND status = 'scheduled'`,
+            [lead.id]
+          );
+
+          for (const d of pendingDispatches.rows) {
+            const updatedCopy = humanCopywriterService.getEmailCopy(
+              {
+                id: lead.id,
+                businessName: lead.business_name,
+                category: lead.category,
+                website: lead.website,
+                primaryContactName: lead.primary_contact_name,
+                city: lead.location,
+                auditScore: auditReport.overallScore,
+                auditKeyTakeaways: takeaways,
+                auditPdfName: pdfGen.pdfName,
+                auditPdfPath: pdfGen.pdfPath,
+              },
+              d.stage as any
+            );
+
+            await query(
+              `UPDATE scheduled_dispatches
+               SET subject = $1,
+                   body = $2,
+                   updated_at = NOW()
+               WHERE id = $3`,
+              [updatedCopy.subject, updatedCopy.body, d.id]
+            );
+          }
+
+          console.log(
+            `[Scheduler TA Worker ${workerId}] ✅ TA audit completed for ${lead.business_name} (${lead.website}): Score ${auditReport.overallScore}/100, PDF: ${pdfGen.pdfName}. Appended to scheduled email!`
+          );
+        } catch (auditErr: any) {
+          console.warn(
+            `[Scheduler TA Worker ${workerId}] ⚠️ Auto-audit skipped for ${lead.business_name} (${lead.website}):`,
+            auditErr?.message
+          );
+        }
+      }
+    };
+
+    const pool = Array.from({ length: Math.min(concurrency, leadsNeedingAudit.length) }, (_, i) => worker(i + 1));
+    await Promise.all(pool);
+    console.log(`[Scheduler TA Engine] 🏁 Completed background audits for list "${listId}".`);
   }
 
   /**
@@ -1067,13 +1222,16 @@ export class EmailSchedulerService {
         status: string;
         audit_status: string;
         website?: string;
+        category?: string;
+        location?: string;
+        audit_score?: number;
         deleted_at: string | null;
         has_replied: boolean;
         audit_pdf_path?: string;
         audit_pdf_name?: string;
         audit_key_takeaways?: string;
       }>(
-        `SELECT l.business_name, l.consent_status, l.status, l.audit_status, l.website, l.deleted_at, l.audit_pdf_path, l.audit_pdf_name, l.audit_key_takeaways,
+        `SELECT l.business_name, l.consent_status, l.status, l.audit_status, l.website, l.category, l.location, l.audit_score, l.deleted_at, l.audit_pdf_path, l.audit_pdf_name, l.audit_key_takeaways,
            (
              l.consent_status = 'replied' OR
              EXISTS (
@@ -1105,16 +1263,18 @@ export class EmailSchedulerService {
                 `UPDATE leads SET
                   status = 'active',
                   audit_status = 'audit_completed',
-                  audit_key_takeaways = $1,
-                  audit_pdf_name = $2,
-                  audit_pdf_path = $3,
+                  audit_score = $1,
+                  audit_key_takeaways = $2,
+                  audit_pdf_name = $3,
+                  audit_pdf_path = $4,
                   updated_at = NOW()
-                 WHERE id = $4`,
-                [takeaways, pdfResult.pdfName, pdfResult.pdfPath, dispatch.lead_id]
+                 WHERE id = $5`,
+                [auditReport.overallScore, takeaways, pdfResult.pdfName, pdfResult.pdfPath, dispatch.lead_id]
               );
 
               leadRow.status = 'active';
               leadRow.audit_status = 'audit_completed';
+              leadRow.audit_score = auditReport.overallScore;
               leadRow.audit_key_takeaways = takeaways;
               leadRow.audit_pdf_name = pdfResult.pdfName;
               leadRow.audit_pdf_path = pdfResult.pdfPath;
@@ -1148,7 +1308,14 @@ export class EmailSchedulerService {
               filename: pdfGen.pdfName,
               path: pdfGen.pdfPath,
             }];
-            await query(`UPDATE leads SET audit_pdf_name = $1, audit_pdf_path = $2 WHERE id = $3`, [pdfGen.pdfName, pdfGen.pdfPath, dispatch.lead_id]);
+            await query(
+              `UPDATE leads SET audit_score = $1, audit_key_takeaways = $2, audit_pdf_name = $3, audit_pdf_path = $4 WHERE id = $5`,
+              [auditReport.overallScore, auditReport.auditKeyTakeaways, pdfGen.pdfName, pdfGen.pdfPath, dispatch.lead_id]
+            );
+            leadRow.audit_score = auditReport.overallScore;
+            leadRow.audit_key_takeaways = auditReport.auditKeyTakeaways;
+            leadRow.audit_pdf_name = pdfGen.pdfName;
+            leadRow.audit_pdf_path = pdfGen.pdfPath;
           } catch (_) {}
         }
 
@@ -1215,8 +1382,10 @@ export class EmailSchedulerService {
               {
                 id: dispatch.lead_id,
                 businessName: dispatch.recipient_name || leadRow.business_name || 'Business',
-                category: (leadRow as any).category,
+                category: leadRow.category,
                 website: leadRow.website,
+                city: leadRow.location,
+                auditScore: leadRow.audit_score ? Number(leadRow.audit_score) : undefined,
                 auditKeyTakeaways: leadRow.audit_key_takeaways,
                 auditPdfName: leadRow.audit_pdf_name,
                 auditPdfPath: leadRow.audit_pdf_path,
@@ -1225,6 +1394,25 @@ export class EmailSchedulerService {
             );
             dispatch.subject = followCopy.subject;
             dispatch.body = followCopy.body;
+          } else if (leadRow.website && workflowRoutingService.hasValidWebsite(leadRow.website)) {
+            // Requirement: "TA will do audit give you data you will append with email based on the status and send to prospects"
+            // Ensure email body contains the latest TA findings & audit score before sending
+            const freshCopy = humanCopywriterService.getEmailCopy(
+              {
+                id: dispatch.lead_id,
+                businessName: dispatch.recipient_name || leadRow.business_name || 'Business',
+                category: leadRow.category,
+                website: leadRow.website,
+                city: leadRow.location,
+                auditScore: leadRow.audit_score ? Number(leadRow.audit_score) : undefined,
+                auditKeyTakeaways: leadRow.audit_key_takeaways,
+                auditPdfName: leadRow.audit_pdf_name,
+                auditPdfPath: leadRow.audit_pdf_path,
+              },
+              'initial'
+            );
+            dispatch.subject = freshCopy.subject;
+            dispatch.body = freshCopy.body;
           }
         }
       }

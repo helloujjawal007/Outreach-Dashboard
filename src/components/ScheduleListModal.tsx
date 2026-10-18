@@ -368,8 +368,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
         const channelLabel =
           channel === 'email'
             ? selectedInboxIds.length > 1
-              ? `Split evenly across ${selectedInboxIds.length} inboxes`
-              : 'Email'
+              ? `Split evenly across ${selectedInboxIds.length} inboxes (2-min intervals & background TA audits)`
+              : 'Email (2-min intervals & background TA audits)'
             : channel === 'whatsapp'
             ? 'WhatsApp (45s anti-ban pacing)'
             : 'LinkedIn';
@@ -976,14 +976,14 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 <div className="text-[11px] text-emerald-900 space-y-0.5">
                   <p className="font-bold">
                     {channel === 'email'
-                      ? 'Google & Microsoft SMTP Deliverability Safe Pacing'
+                      ? 'Automated 2-Minute Email Pacing & Background TA Audits Active'
                       : channel === 'whatsapp'
                       ? 'WhatsApp Anti-Ban 45s Randomized Pacing Active'
                       : 'LinkedIn Safe Daily Limits & Anti-Detection Active'}
                   </p>
                   <p className="text-emerald-700">
                     {channel === 'email'
-                      ? '2-3s anti-burst pacing • Multi-inbox 50/50 rotation distributes volume across sender domains • Full List-Unsubscribe headers included.'
+                      ? '2-minute intervals between emails (120s pacing • TA automatically audits each website in the background, extracts health scores & critical takeaways, and attaches the PDF report before sending).'
                       : channel === 'whatsapp'
                       ? '45-second randomized intervals between mobile messages • Respects WhatsApp anti-spam policies.'
                       : 'Humanized message dispatch prevents profile restrictions • Automatically respects daily connection limits.'}

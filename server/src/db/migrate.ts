@@ -95,8 +95,9 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS audit_pdf_name VARCHAR(255) DEFAULT '',
         ADD COLUMN IF NOT EXISTS audit_pdf_path TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS gmb_notes TEXT DEFAULT '',
-        ADD COLUMN IF NOT EXISTS outreach_workflow VARCHAR(30) DEFAULT 'workflow_b',
-        ADD COLUMN IF NOT EXISTS audit_status VARCHAR(30) DEFAULT 'none';
+        ADD COLUMN IF NOT EXISTS audit_status VARCHAR(30) DEFAULT 'none',
+        ADD COLUMN IF NOT EXISTS audit_score INTEGER DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS audit_payload JSONB DEFAULT NULL;
 
       -- Ensure all columns on clients table
       ALTER TABLE clients 

@@ -153,7 +153,7 @@ export function LinkedInOutreachHub({ leads: _leads }: Props) {
 
   const openConnectModal = () => {
     setConnectName(status?.accountName || 'Anupam Kumar');
-    setConnectHeadline(status?.headline || 'SEO Specialist & Growth Partner @ Online Digital Solution');
+    setConnectHeadline(status?.headline || 'SEO Specialist & Growth Partner @ Cloud Consultancy');
     setCookieTestResult(null);
     setIsConnectModalOpen(true);
   };
@@ -1413,7 +1413,7 @@ export function LinkedInOutreachHub({ leads: _leads }: Props) {
               type="text"
               value={connectHeadline}
               onChange={(e) => setConnectHeadline(e.target.value)}
-              placeholder="e.g. SEO Specialist & Growth Partner @ Online Digital Solution"
+              placeholder="e.g. SEO Specialist & Growth Partner @ Cloud Consultancy"
               required
               className="input text-xs"
             />

@@ -95,7 +95,7 @@ export class OllamaService {
    * Deterministic template generator used when Ollama daemon is offline
    */
   private generateRuleBasedFallback(): string {
-    return `Hi there,\n\nFollowing up regarding how we help similar businesses review their local search visibility and streamline client inquiry follow-ups. Would you be open to a quick 3-minute walkthrough this week to see if this could be helpful?\n\nBest regards,\nOnline Digital Solution`;
+    return `Hi there,\n\nFollowing up regarding how we help similar businesses review their local search visibility and streamline client inquiry follow-ups. Would you be open to a quick 3-minute walkthrough this week to see if this could be helpful?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
   }
 }
 

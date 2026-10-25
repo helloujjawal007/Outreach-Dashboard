@@ -17,7 +17,7 @@ export interface GeneratedHumanEmail {
 }
 
 export class HumanizerService {
-  private readonly agencyName = 'Online Digital Solution';
+  private readonly agencyName = 'Cloud Consultancy';
 
   /**
    * Cleans corporate suffixes so the email reads naturally
@@ -65,10 +65,10 @@ export class HumanizerService {
   }
 
   /**
-   * Signature block. Always strictly "Online Digital Solution"
+   * Signature block. Always strictly "Cloud Consultancy"
    */
   private buildSignoff(): string {
-    return `Best regards,\n${this.agencyName}`;
+    return `Best regards,\n${this.agencyName}\ninfo@cloudconsultancy.in`;
   }
 
   private compose(bodyLines: string[]): string {
@@ -186,7 +186,7 @@ ${this.agencyName}
         const aiRes = await ollamaService.generateCompletion({
           prompt,
           system:
-            'You are a senior business development writer for Online Digital Solution. You write clear, courteous, professional emails with a single call to action. You never invent facts, statistics or client results.',
+            'You are a senior business development writer for Cloud Consultancy. You write clear, courteous, professional emails with a single call to action. You never invent facts, statistics or client results.',
           temperature: 0.6,
         });
 
@@ -209,8 +209,8 @@ ${this.agencyName}
           }
           // Strip any accidental unsubscribe / list disclaimers
           body = body
-            .replace(/\n*If you'd prefer not to receive further emails[^\n]*/gi, '')
-            .replace(/\n*simply reply with "?unsubscribe"?[^\n]*/gi, '')
+            .replace(/\n*If you'd? prefer not to receive further emails[^\n]*/gi, '')
+            .replace(/\n*.*(?:click (?:here )?to unsubscribe|reply with "?unsubscribe"?|simply reply "?unsubscribe"?|remove (?:me )?from (?:our|your|this) list|opt[- ]?out)[^\n]*/gi, '')
             .trim();
 
           return {

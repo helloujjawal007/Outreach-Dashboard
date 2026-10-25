@@ -4653,7 +4653,7 @@ export function CrmPage({
                                 <div className="text-[10px] text-slate-600">
                                   <span className="font-semibold text-blue-700">Email Inbox:</span>{' '}
                                   <span className="font-mono font-bold text-blue-900">
-                                    {msg.inbox_email || 'team.onlinedigitalsolution@gmail.com'}
+                                    {msg.inbox_email || 'info@cloudconsultancy.in'}
                                   </span>
                                   {selectedLead.email && (
                                     <>

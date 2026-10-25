@@ -336,8 +336,8 @@ export class EmailAdapter {
             : { host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE || env.SMTP_PORT === 465, auth: { user: env.SMTP_USER, pass: cleanPass } }
         );
 
-        const cleanFrom = (env.SMTP_FROM || env.SMTP_USER || '').trim();
-        fromAddress = cleanFrom.includes('<') ? cleanFrom : `"Outreach" <${cleanFrom}>`;
+        const cleanFrom = (env.SMTP_FROM || env.SMTP_USER || 'info@cloudconsultancy.in').trim();
+        fromAddress = cleanFrom.includes('<') ? cleanFrom : `"Cloud Consultancy" <${cleanFrom}>`;
         cleanReplyTo = cleanFrom;
 
         await transporter.sendMail({

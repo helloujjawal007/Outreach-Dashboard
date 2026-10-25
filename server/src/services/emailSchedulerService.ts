@@ -281,7 +281,7 @@ export class EmailSchedulerService {
     const {
       leadIds,
       channel,
-      intervalSeconds = channel === 'whatsapp' ? 45 : channel === 'email' ? 25 : 30,
+      intervalSeconds = channel === 'whatsapp' ? 45 : channel === 'email' ? 180 : 30,
       style = 'conversational',
       stage = 'initial',
       customInstructions,
@@ -527,7 +527,7 @@ export class EmailSchedulerService {
       channel = 'email',
       style = 'conversational',
       stage = 'auto',
-      intervalSeconds = params.intervalSeconds ?? (channel === 'email' ? 120 : (channel === 'whatsapp' ? 45 : 25)),
+      intervalSeconds = params.intervalSeconds ?? (channel === 'email' ? 180 : (channel === 'whatsapp' ? 45 : 25)),
       customInstructions,
     } = params;
 
@@ -1279,6 +1279,53 @@ export class EmailSchedulerService {
       return false;
     }
 
+    // Enforce 20 emails per hour rate limit across all scheduled campaigns
+    const hourlyCheck = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM scheduled_dispatches 
+       WHERE channel = 'email' AND status = 'sent' AND sent_at >= NOW() - INTERVAL '1 hour'`
+    );
+    const sentInLastHour = parseInt(hourlyCheck.rows[0]?.count || '0', 10);
+    if (sentInLastHour >= 20) {
+      console.log(
+        `[Scheduler] ⏳ Hourly rate cap reached (20 emails/hour max, currently ${sentInLastHour} sent in last hour). Deferring dispatch for ${toEmail}.`
+      );
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'scheduled',
+             scheduled_for = NOW() + INTERVAL '3 minutes',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [dispatch.id]
+      );
+      return true; // Stop email loop for this tick
+    }
+
+    // Enforce "one by one" sequential sending: ensure at least 170 seconds have elapsed since previous sent email
+    const lastSentRes = await query<{ sent_at: Date }>(
+      `SELECT sent_at FROM scheduled_dispatches 
+       WHERE channel = 'email' AND status = 'sent' 
+       ORDER BY sent_at DESC LIMIT 1`
+    );
+    if (lastSentRes.rows.length > 0 && lastSentRes.rows[0].sent_at) {
+      const elapsedMs = Date.now() - new Date(lastSentRes.rows[0].sent_at).getTime();
+      const minIntervalMs = 170 * 1000; // ~3 minutes (180s)
+      if (elapsedMs < minIntervalMs) {
+        const remainingSec = Math.ceil((180 * 1000 - elapsedMs) / 1000);
+        console.log(
+          `[Scheduler] ⏱️ Pacing: Previous email sent ${Math.round(elapsedMs / 1000)}s ago. Sending one by one; waiting ${remainingSec}s.`
+        );
+        await query(
+          `UPDATE scheduled_dispatches
+           SET status = 'scheduled',
+               scheduled_for = NOW() + ($1 || ' seconds')::interval,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [Math.max(10, remainingSec), dispatch.id]
+        );
+        return true; // Stop email processing for this tick; next runner loop will dispatch it
+      }
+    }
+
     // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
     let leadAttachments: Array<{ filename: string; path?: string }> | undefined = undefined;
     if (dispatch.lead_id) {
@@ -1652,8 +1699,8 @@ export class EmailSchedulerService {
         try {
           const { websiteFormService } = await import('./websiteFormService');
           await websiteFormService.submitContactForm(dispatch.lead_id, {
-            senderName: 'Online Digital Solution',
-            senderEmail: dispatch.inbox_email || 'team.onlinedigitalsolution@gmail.com',
+            senderName: 'Cloud Consultancy',
+            senderEmail: dispatch.inbox_email || 'info@cloudconsultancy.in',
             subject: dispatch.subject,
             message: dispatch.body,
           });
@@ -1663,6 +1710,7 @@ export class EmailSchedulerService {
       }
 
       console.log(`[Scheduler] Dispatched scheduled email to ${dispatch.recipient_email} (${sendRes.liveDelivery})`);
+      return true; // Enforce one-by-one sequential sending (next email waits for 180s interval)
     } else {
       await query(
         `UPDATE scheduled_dispatches

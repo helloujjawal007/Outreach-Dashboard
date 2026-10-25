@@ -175,7 +175,7 @@ function App() {
         {/* Persistent Top Navigation Bar Accessible from Anywhere */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-2xs">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-600">Online Digital Solution</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-brand-600">Cloud Consultancy</span>
             <span className="text-slate-300">/</span>
             <h2 className="text-sm font-bold text-slate-800">{pageTitleMap[page]}</h2>
           </div>

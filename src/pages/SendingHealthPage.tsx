@@ -65,7 +65,7 @@ export function SendingHealthPage({ store }: Props) {
 
   // Test Send State
   const [testSendInbox, setTestSendInbox] = useState<ConnectedInbox | null>(null);
-  const [testEmailTarget, setTestEmailTarget] = useState('team.onlinedigitalsolution@gmail.com');
+  const [testEmailTarget, setTestEmailTarget] = useState('info@cloudconsultancy.in');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [testSendFeedback, setTestSendFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -102,8 +102,8 @@ export function SendingHealthPage({ store }: Props) {
     daily_limit: number;
   }>({
     name: '',
-    sender_name: 'Online Digital Solution Team',
-    email: '',
+    sender_name: 'Cloud Consultancy',
+    email: 'info@cloudconsultancy.in',
     provider: 'google_workspace',
     smtp_host: 'smtp.gmail.com',
     smtp_port: 465,
@@ -258,8 +258,8 @@ export function SendingHealthPage({ store }: Props) {
       setInboxTestResult(null);
       setNewInboxForm({
         name: '',
-        sender_name: 'Online Digital Solution Team',
-        email: '',
+        sender_name: 'Cloud Consultancy',
+        email: 'info@cloudconsultancy.in',
         provider: 'google_workspace',
         smtp_host: 'smtp.gmail.com',
         smtp_port: 465,
@@ -1827,7 +1827,7 @@ export function SendingHealthPage({ store }: Props) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Online Digital Solution Team"
+                  placeholder="e.g. Cloud Consultancy"
                   value={newInboxForm.sender_name}
                   onChange={(e) => setNewInboxForm({ ...newInboxForm, sender_name: e.target.value })}
                   className="input py-1.5 text-xs w-full"

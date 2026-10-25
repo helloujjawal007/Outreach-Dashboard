@@ -565,11 +565,11 @@ export function Sidebar({
       <div className="border-t border-slate-200 px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 text-xs font-bold text-white shadow-xs">
-            ODS
+            CC
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-ink-700 truncate">Online Digital Solution</p>
-            <p className="text-xs text-ink-500 truncate">Enterprise Growth Platform</p>
+            <p className="text-sm font-semibold text-ink-700 truncate">Cloud Consultancy</p>
+            <p className="text-xs text-ink-500 truncate">Engineering & Outreach Systems</p>
           </div>
         </div>
       </div>

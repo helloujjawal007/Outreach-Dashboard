@@ -112,52 +112,56 @@ export class TechnicalAuditPdfService {
     const criticalItemsHtml = (report.criticalIssues || [])
       .map(
         (issue, idx) => `
-        <tr style="border-bottom: 1px solid #f1f5f9;">
-          <td style="padding: 10px 12px; font-weight: 700; color: #ef4444; width: 32px; vertical-align: top;">
-            #${idx + 1}
-          </td>
-          <td style="padding: 10px 12px; color: #1e293b; font-size: 13px; line-height: 1.5;">
-            ${issue}
-          </td>
-        </tr>`
+        <div style="padding: 10px 14px; background: #fafafa; border-left: 3px solid #dc2626; border-radius: 0 4px 4px 0; margin-bottom: 8px;">
+          <div style="font-weight: 700; font-size: 12px; color: #991b1b; margin-bottom: 2px;">Observation 0${idx + 1}</div>
+          <div style="font-size: 12px; color: #334155; line-height: 1.5;">${issue}</div>
+        </div>`
       )
       .join('');
 
     const recommendationsHtml = (report.recommendations || [])
       .map(
-        (rec) => `
-        <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; page-break-inside: avoid;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="font-weight: 700; font-size: 13px; color: #0f172a;">${rec.title}</span>
-            <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: ${
-              rec.priority === 'high' ? '#fee2e2; color: #b91c1c;' : '#fef3c7; color: #b45309;'
-            }">
+        (rec, idx) => `
+        <div style="padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 10px; background: #ffffff; page-break-inside: avoid;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+            <span style="font-weight: 700; font-size: 12px; color: #0f172a;">${idx + 1}. ${rec.title}</span>
+            <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: ${
+              rec.priority === 'high' ? '#b91c1c' : '#b45309'
+            }; background: ${
+              rec.priority === 'high' ? '#fef2f2' : '#fffbeb'
+            }; padding: 2px 6px; border-radius: 3px;">
               ${rec.priority} Priority
             </span>
           </div>
-          <p style="margin: 0 0 6px 0; font-size: 12px; color: #475569; line-height: 1.45;">
+          <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #475569; line-height: 1.5;">
             ${rec.detail}
           </p>
-          ${
-            rec.odsSolution
-              ? `<div style="font-size: 11px; background: #f8fafc; border-left: 3px solid #6366f1; padding: 6px 10px; color: #4338ca; border-radius: 0 4px 4px 0;">
-                  <strong>ODS Agency Fix:</strong> ${rec.odsSolution}
-                 </div>`
-              : ''
-          }
+          <div style="font-size: 11px; background: #f8fafc; border-left: 2px solid #0f172a; padding: 6px 10px; color: #1e293b; border-radius: 0 3px 3px 0;">
+            <strong>Implementation guidance:</strong> ${
+              rec.odsSolution
+                ? rec.odsSolution.replace(/ODS Agency Fix:?/gi, '').trim()
+                : 'Optimize server compression, asset delivery, and schema markup to meet Google standards.'
+            }
+          </div>
         </div>`
       )
       .join('');
+
+    const formattedDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Technical SEO & Performance Audit - ${report.domain}</title>
+  <title>Technical Diagnostic Memo - ${report.domain}</title>
   <style>
     @page {
       size: A4 portrait;
-      margin: 12mm 15mm;
+      margin: 14mm 16mm;
     }
     * {
       box-sizing: border-box;
@@ -165,101 +169,84 @@ export class TechnicalAuditPdfService {
       print-color-adjust: exact;
     }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       color: #0f172a;
       background: #ffffff;
       margin: 0;
       padding: 0;
-      font-size: 12px;
-      line-height: 1.5;
+      font-size: 11.5px;
+      line-height: 1.55;
     }
-    .header {
+    .memo-header {
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      padding-bottom: 14px;
-      border-bottom: 2px solid #6366f1;
-      margin-bottom: 16px;
+      align-items: flex-end;
     }
-    .brand-title {
-      font-size: 20px;
+    .brand-name {
+      font-size: 18px;
       font-weight: 800;
-      color: #1e1b4b;
-      letter-spacing: -0.5px;
+      color: #0f172a;
+      letter-spacing: -0.3px;
     }
     .brand-sub {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6366f1;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+      font-size: 10.5px;
+      color: #64748b;
+      margin-top: 2px;
     }
-    .badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-weight: 700;
-      font-size: 11px;
-    }
-    .summary-card {
-      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-      border: 1px solid #cbd5e1;
-      border-radius: 10px;
-      padding: 16px 20px;
-      margin-bottom: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .score-circle {
-      width: 76px;
-      height: 76px;
-      border-radius: 50%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      border: 4px solid ${scoreColor};
-      background: #ffffff;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-      shrink: 0;
-    }
-    .grid-4 {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 10px;
-      margin-bottom: 16px;
-    }
-    .metric-card {
-      background: #ffffff;
+    .meta-box {
+      background: #f8fafc;
       border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      padding: 10px 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      align-items: center;
     }
     .section-title {
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #334155;
+      letter-spacing: 0.6px;
+      color: #0f172a;
       margin: 16px 0 8px 0;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
     }
-    .solutions-banner {
-      background: #eef2ff;
-      border: 1px solid #c7d2fe;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-top: 14px;
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-bottom: 14px;
+    }
+    table.data-table th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 700;
+      text-align: left;
+      padding: 7px 10px;
+      border: 1px solid #e2e8f0;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    table.data-table td {
+      padding: 7px 10px;
+      border: 1px solid #e2e8f0;
+      color: #1e293b;
+    }
+    table.data-table tr:nth-child(even) td {
+      background: #fafafa;
     }
     .footer {
       margin-top: 20px;
       padding-top: 10px;
       border-top: 1px solid #e2e8f0;
-      font-size: 10px;
+      font-size: 9.5px;
       color: #64748b;
       display: flex;
       justify-content: space-between;
@@ -269,165 +256,133 @@ export class TechnicalAuditPdfService {
 </head>
 <body>
 
-  <!-- HEADER -->
-  <div class="header">
+  <!-- LETTERHEAD -->
+  <div class="memo-header">
     <div>
-      <div class="brand-title">Online Digital Solution</div>
-      <div class="brand-sub">Technical Architecture & Performance Audit</div>
+      <div class="brand-name">Cloud Consultancy</div>
+      <div class="brand-sub">Engineering & Infrastructure Advisory • info@cloudconsultancy.in</div>
     </div>
     <div style="text-align: right;">
-      <div style="font-weight: 700; color: #0f172a; font-size: 13px;">${report.domain}</div>
-      <div style="color: #64748b; font-size: 10px;">Audit Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</div>
+      <div style="font-weight: 700; font-size: 12px; color: #0f172a;">Technical Site Diagnostic Memo</div>
+      <div style="font-size: 10px; color: #64748b;">Verification: https://technical-audit-dashboard.vercel.app/</div>
+      <div style="font-size: 10px; color: #94a3b8;">Audit Date: ${formattedDate}</div>
     </div>
   </div>
 
-  <!-- OVERALL SCORE SUMMARY -->
-  <div class="summary-card">
-    <div style="flex: 1; padding-right: 20px;">
-      <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Audit Diagnostic Report for</div>
-      <div style="font-size: 17px; font-weight: 800; color: #0f172a; margin-bottom: 4px;">${cleanBiz} (${report.domain})</div>
-      <p style="margin: 0; font-size: 11px; color: #334155; line-height: 1.45;">
+  <!-- TARGET SUMMARY -->
+  <div class="meta-box">
+    <div>
+      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.4px;">Target Organization</div>
+      <div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px;">${cleanBiz}</div>
+      <div style="font-size: 11px; color: #475569; margin-top: 2px;">
+        URL: <strong>${report.targetUrl}</strong> • Crawl Status: ${report.crawlStatus?.httpStatus || 200} OK
+      </div>
+      <div style="font-size: 11px; color: #475569; margin-top: 6px; line-height: 1.45;">
         ${report.summary}
-      </p>
-      <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
-        <span class="badge" style="background: ${scoreBadgeBg}; color: ${scoreColor}; border: 1px solid ${scoreBadgeBorder};">
-          Status: ${report.grade}
-        </span>
-        <span style="font-size: 11px; color: #64748b;">
-          Crawl Status: ${report.crawlStatus?.httpStatus || 200} OK ${report.crawlStatus?.redirectFollowed ? '(Redirect Followed)' : ''}
-        </span>
       </div>
     </div>
-
-    <div class="score-circle">
-      <span style="font-size: 22px; font-weight: 900; color: ${scoreColor}; line-height: 1;">${report.overallScore}</span>
-      <span style="font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase;">/ 100</span>
-    </div>
-  </div>
-
-  <!-- SEMRUSH SITE AUDIT WHOLE-SITE METRICS -->
-  <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <span style="font-size: 11px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.5px;">
-        SEMrush Site Diagnostic • Whole Site Crawl (up to 100 pages)
-      </span>
-      <span style="font-size: 10px; font-weight: 700; color: #475569; background: #e2e8f0; padding: 2px 8px; border-radius: 4px;">
-        Pages Crawled: ${report.semrushAudit?.pagesCrawled || 100} / 100
-      </span>
-    </div>
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
-      <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 10px;">
-        <div style="font-size: 9px; font-weight: 700; color: #991b1b; text-transform: uppercase;">Critical Errors</div>
-        <div style="font-size: 17px; font-weight: 900; color: #dc2626;">${report.semrushAudit?.errorsCount ?? (report.criticalIssues?.length ?? 0)}</div>
-        <div style="font-size: 9px; color: #b91c1c;">4xx errors, SSL & title gaps</div>
+    <div style="text-align: center; border-left: 1px solid #e2e8f0; padding-left: 16px;">
+      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Health Score</div>
+      <div style="font-size: 28px; font-weight: 900; color: ${scoreColor}; line-height: 1.1; margin: 4px 0;">
+        ${report.overallScore}<span style="font-size: 12px; font-weight: 700; color: #94a3b8;">/100</span>
       </div>
-      <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 10px;">
-        <div style="font-size: 9px; font-weight: 700; color: #92400e; text-transform: uppercase;">Warnings</div>
-        <div style="font-size: 17px; font-weight: 900; color: #d97706;">${report.semrushAudit?.warningsCount ?? 4}</div>
-        <div style="font-size: 9px; color: #b45309;">Meta, ALT text & speed latency</div>
-      </div>
-      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 10px;">
-        <div style="font-size: 9px; font-weight: 700; color: #1e40af; text-transform: uppercase;">Notices</div>
-        <div style="font-size: 17px; font-weight: 900; color: #2563eb;">${report.semrushAudit?.noticesCount ?? 2}</div>
-        <div style="font-size: 9px; color: #1d4ed8;">Schema.org & sitemap optimization</div>
+      <div style="font-size: 10px; font-weight: 700; color: ${scoreColor}; text-transform: uppercase;">
+        Status: ${report.grade}
       </div>
     </div>
   </div>
 
-  <!-- CORE WEB VITALS & SPEED METRICS -->
-  <div class="section-title">Core Web Vitals & Diagnostic Signals</div>
-  <div class="grid-4">
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">LCP (Largest Paint)</div>
-      <div style="font-size: 16px; font-weight: 800; color: ${lcpColor}; margin: 2px 0;">${lcpSec}s</div>
-      <div style="font-size: 10px; color: #475569;">Target: &lt; 2.5s (${lcpStatus})</div>
-    </div>
-
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">CLS (Layout Shift)</div>
-      <div style="font-size: 16px; font-weight: 800; color: ${clsColor}; margin: 2px 0;">${metrics.clsScore}</div>
-      <div style="font-size: 10px; color: #475569;">Target: &lt; 0.10 (${clsStatus})</div>
-    </div>
-
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">TTFB Server Response</div>
-      <div style="font-size: 16px; font-weight: 800; color: ${ttfbColor}; margin: 2px 0;">${metrics.responseTimeMs}ms</div>
-      <div style="font-size: 10px; color: #475569;">Target: &lt; 300ms (${ttfbStatus})</div>
-    </div>
-
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">Images Missing Alt</div>
-      <div style="font-size: 16px; font-weight: 800; color: ${metrics.imagesMissingAlt > 0 ? '#ef4444' : '#10b981'}; margin: 2px 0;">
-        ${metrics.imagesMissingAlt} / ${metrics.imagesTotal}
-      </div>
-      <div style="font-size: 10px; color: #475569;">${altPercent}% missing alt tags</div>
-    </div>
-  </div>
-
-  <div class="grid-4" style="margin-top: -6px; margin-bottom: 16px;">
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">LocalBusiness Schema</div>
-      <div style="font-size: 13px; font-weight: 700; color: ${metrics.hasLocalBusinessSchema ? '#10b981' : '#ef4444'}; margin: 2px 0;">
-        ${metrics.hasLocalBusinessSchema ? '✓ Detected' : '✕ Missing'}
-      </div>
-      <div style="font-size: 10px; color: #475569;">Google Maps sync</div>
-    </div>
-
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">Mobile Viewport</div>
-      <div style="font-size: 13px; font-weight: 700; color: ${report.mobileFriendly ? '#10b981' : '#ef4444'}; margin: 2px 0;">
-        ${report.mobileFriendly ? '✓ Responsive' : '✕ Non-responsive'}
-      </div>
-      <div style="font-size: 10px; color: #475569;">Smartphone scaling</div>
-    </div>
-
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">SSL Security</div>
-      <div style="font-size: 13px; font-weight: 700; color: ${metrics.hasSsl ? '#10b981' : '#ef4444'}; margin: 2px 0;">
-        ${metrics.hasSsl ? '✓ HTTPS Valid' : '✕ Non-SSL'}
-      </div>
-      <div style="font-size: 10px; color: #475569;">Security encryption</div>
-    </div>
-
-    <div class="metric-card">
-      <div style="font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase;">Page Payload Weight</div>
-      <div style="font-size: 13px; font-weight: 700; color: #334155; margin: 2px 0;">
-        ~${metrics.pageWeightKb} KB
-      </div>
-      <div style="font-size: 10px; color: #475569;">Initial document footprint</div>
-    </div>
-  </div>
-
-  <!-- CRITICAL BOTTLENECKS TABLE -->
-  <div class="section-title">Critical Technical Bottlenecks Identified</div>
-  <table style="width: 100%; border-collapse: collapse; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-bottom: 16px;">
+  <!-- CORE WEB VITALS TABLE -->
+  <div class="section-title">1. Core Web Vitals & Delivery Infrastructure</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 32%;">Diagnostic Signal</th>
+        <th style="width: 18%;">Measured Value</th>
+        <th style="width: 20%;">Recommended Baseline</th>
+        <th style="width: 30%;">Assessment</th>
+      </tr>
+    </thead>
     <tbody>
-      ${criticalItemsHtml || '<tr><td style="padding: 12px; color: #10b981;">No critical bottlenecks found. Site is well-optimized.</td></tr>'}
+      <tr>
+        <td><strong>Time to First Byte (TTFB)</strong></td>
+        <td style="font-weight: 700; color: ${ttfbColor};">${metrics.responseTimeMs}ms</td>
+        <td>&lt; 300ms</td>
+        <td>${metrics.responseTimeMs <= 300 ? 'Optimal server response' : 'Slow origin server response; edge caching advised'}</td>
+      </tr>
+      <tr>
+        <td><strong>Largest Contentful Paint (LCP)</strong></td>
+        <td style="font-weight: 700; color: ${lcpColor};">${lcpSec}s</td>
+        <td>&lt; 2.50s</td>
+        <td>${metrics.lcpEstimateMs <= 2500 ? 'Meets Google CWV standards' : 'Heavy unoptimized media or render-blocking scripts'}</td>
+      </tr>
+      <tr>
+        <td><strong>Cumulative Layout Shift (CLS)</strong></td>
+        <td style="font-weight: 700; color: ${clsColor};">${metrics.clsScore}</td>
+        <td>&lt; 0.10</td>
+        <td>${metrics.clsScore <= 0.10 ? 'Visual layout is stable' : 'Dynamic elements shifting during initial render'}</td>
+      </tr>
+      <tr>
+        <td><strong>Image Optimization & Alt Data</strong></td>
+        <td style="font-weight: 700; color: ${metrics.imagesMissingAlt > 0 ? '#ef4444' : '#10b981'};">
+          ${metrics.imagesMissingAlt} / ${metrics.imagesTotal} missing
+        </td>
+        <td>0 missing alt tags</td>
+        <td>${metrics.imagesMissingAlt > 0 ? `${altPercent}% of media lacks descriptive alt metadata` : 'All images labeled correctly'}</td>
+      </tr>
+      <tr>
+        <td><strong>LocalBusiness Schema (JSON-LD)</strong></td>
+        <td style="font-weight: 700; color: ${metrics.hasLocalBusinessSchema ? '#10b981' : '#ef4444'};">
+          ${metrics.hasLocalBusinessSchema ? 'Configured' : 'Missing'}
+        </td>
+        <td>Schema.org markup</td>
+        <td>${metrics.hasLocalBusinessSchema ? 'Rich snippet sync active' : 'Critical for Google Maps and local pack visibility'}</td>
+      </tr>
+      <tr>
+        <td><strong>Mobile Viewport & Responsiveness</strong></td>
+        <td style="font-weight: 700; color: ${report.mobileFriendly ? '#10b981' : '#ef4444'};">
+          ${report.mobileFriendly ? 'Responsive' : 'Non-responsive'}
+        </td>
+        <td>Mobile viewport</td>
+        <td>${report.mobileFriendly ? 'Adapts fluidly across devices' : 'Requires viewport reconfiguration for mobile indexing'}</td>
+      </tr>
+      <tr>
+        <td><strong>SSL / TLS Encryption</strong></td>
+        <td style="font-weight: 700; color: ${metrics.hasSsl ? '#10b981' : '#ef4444'};">
+          ${metrics.hasSsl ? 'Active (HTTPS)' : 'Insecure (HTTP)'}
+        </td>
+        <td>HTTPS enabled</td>
+        <td>${metrics.hasSsl ? 'Encrypted and secure' : 'Browser security warnings displayed to visitors'}</td>
+      </tr>
     </tbody>
   </table>
 
-  <!-- ODS RECOMMENDED ACTION PLAN -->
-  <div class="section-title">ODS Tailored Remediation Roadmap</div>
+  <!-- PRIMARY BOTTLENECKS -->
+  <div class="section-title">2. Engineering Observations & Technical Roadblocks</div>
+  <div style="margin-bottom: 14px;">
+    ${criticalItemsHtml || '<div style="padding: 10px; color: #10b981;">No critical roadblocks detected. Site architecture meets performance baselines.</div>'}
+  </div>
+
+  <!-- REMEDIATION ROADMAP -->
+  <div class="section-title">3. Action Plan & Recommended Implementation</div>
   <div style="margin-bottom: 14px;">
     ${recommendationsHtml}
   </div>
 
-  <!-- ODS AGENCY CAPABILITIES MAPPING -->
-  <div class="solutions-banner">
-    <div style="font-weight: 800; font-size: 12px; color: #312e81; margin-bottom: 4px;">
-      Agency Solution Architecture by Online Digital Solution (ODS)
+  <!-- CONSULTANT NOTES & NEXT STEPS -->
+  <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 14px; margin-top: 14px;">
+    <div style="font-weight: 700; font-size: 11px; color: #0f172a; margin-bottom: 4px;">
+      Consultant Summary & Verification Notice
     </div>
-    <div style="font-size: 11px; color: #4338ca; line-height: 1.45;">
-      • <strong>Next.js SSR & Static Edge Deployment:</strong> Instant TTFB (&lt;100ms) with zero layout shifts (CLS &lt; 0.05).<br>
-      • <strong>Headless CMS & High-Speed React Framework:</strong> Modernize legacy WordPress / monolithic codebases into ultra-fast PWAs.<br>
-      • <strong>Schema.org LocalBusiness Rich Snippets:</strong> Synchronizes Google Maps 3-Pack, local opening hours, and geo-coordinates.
+    <div style="font-size: 10.5px; color: #475569; line-height: 1.5;">
+      This technical review was compiled by Cloud Consultancy for <strong>${cleanBiz}</strong> to provide direct, actionable engineering insight. The metrics referenced can be independently verified on our diagnostics platform at <strong>https://technical-audit-dashboard.vercel.app/</strong>. These issues can typically be remediated within 1–2 development cycles without needing a ground-up rebuild.
     </div>
   </div>
 
   <!-- FOOTER -->
   <div class="footer">
-    <div>Generated by <strong>Online Digital Solution (ODS)</strong> • Web & SEO Systems</div>
-    <div>Strictly Confidential • Prepared for ${cleanBiz}</div>
+    <div>Prepared by <strong>Cloud Consultancy</strong> • Systems & Architecture Advisory • <strong>info@cloudconsultancy.in</strong></div>
+    <div>Confidential • Prepared for ${cleanBiz}</div>
   </div>
 
 </body>
@@ -511,40 +466,40 @@ export class TechnicalAuditPdfService {
 
     const streamContent = [
       'BT',
-      '/F1 20 Tf',
+      '/F1 18 Tf',
       '50 780 Td',
-      '(Online Digital Solution - Technical Audit Report) Tj',
-      '/F1 12 Tf',
-      '0 -30 Td',
+      '(Cloud Consultancy - Technical Review & Audit Memo) Tj',
+      '/F1 11 Tf',
+      '0 -28 Td',
       `(${cleanBiz} - Target Domain: ${report.domain}) Tj`,
-      '0 -20 Td',
-      `(Date: ${dateStr} | Overall Health Score: ${report.overallScore}/100 [${report.grade}]) Tj`,
-      '0 -25 Td',
-      '/F1 14 Tf',
-      '(Diagnostic Core Web Vitals & Signals:) Tj',
-      '/F1 11 Tf',
-      '0 -20 Td',
-      `(- Server Response / TTFB: ${report.responseTimeMs}ms) Tj`,
       '0 -18 Td',
-      `(- Mobile Friendly: ${report.mobileFriendly ? 'Yes (Responsive Viewport)' : 'No (Needs Viewport)'}) Tj`,
-      '0 -25 Td',
-      '/F1 14 Tf',
-      '(Critical Technical Bottlenecks:) Tj',
+      `(Date: ${dateStr} | Diagnostic Health Rating: ${report.overallScore}/100 [${report.grade}]) Tj`,
+      '0 -24 Td',
+      '/F1 13 Tf',
+      '(Measured Infrastructure & Delivery Signals:) Tj',
       '/F1 10 Tf',
-      '0 -20 Td',
+      '0 -18 Td',
+      `(- Server Response / TTFB: ${report.responseTimeMs}ms) Tj`,
+      '0 -16 Td',
+      `(- Mobile Friendly: ${report.mobileFriendly ? 'Yes (Responsive Viewport)' : 'No (Requires Configuration)'}) Tj`,
+      '0 -22 Td',
+      '/F1 13 Tf',
+      '(Primary Technical Observations:) Tj',
+      '/F1 10 Tf',
+      '0 -18 Td',
       `(${issuesText.replace(/[()]/g, '')}) Tj`,
-      '0 -25 Td',
-      '/F1 14 Tf',
-      '(ODS Recommended Remediation Plan:) Tj',
+      '0 -22 Td',
+      '/F1 13 Tf',
+      '(Engineering Remediation Plan:) Tj',
       '/F1 10 Tf',
-      '0 -20 Td',
+      '0 -18 Td',
       `(${recsText.replace(/[()]/g, '')}) Tj`,
-      '0 -25 Td',
-      '/F1 11 Tf',
-      '(ODS Agency Architecture: Next.js SSR, Headless CMS, Schema.org LocalBusiness Markup) Tj',
-      '0 -35 Td',
+      '0 -26 Td',
+      '/F1 10 Tf',
+      '(Architecture: Modern edge caching, asset compression, schema.org JSON-LD integration) Tj',
+      '0 -28 Td',
       '/F1 9 Tf',
-      '(Prepared by Online Digital Solution - https://technical-audit-dashboard.vercel.app/) Tj',
+      '(Prepared by Cloud Consultancy - info@cloudconsultancy.in - https://technical-audit-dashboard.vercel.app/) Tj',
       'ET',
     ].join('\n');
 

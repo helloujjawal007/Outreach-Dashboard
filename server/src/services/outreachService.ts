@@ -364,8 +364,8 @@ export class OutreachEngineService {
     try {
       const { websiteFormService } = await import('./websiteFormService');
       await websiteFormService.submitContactForm(leadId, {
-        senderName: 'Online Digital Solution',
-        senderEmail: 'team.onlinedigitalsolution@gmail.com',
+        senderName: 'Cloud Consultancy',
+        senderEmail: 'info@cloudconsultancy.in',
         subject: `Introduction for ${lead.business_name}`,
         message: text,
       });

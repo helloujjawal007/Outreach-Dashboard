@@ -122,7 +122,7 @@ export class ClientAuditIntelligenceService {
     'https://vwcxxdqtjieotmhtifgz.supabase.co/functions/v1/seo-audit';
   private readonly SUPABASE_BEARER =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3Y3h4ZHF0amllb3RtaHRpZmd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzY0OTMsImV4cCI6MjEwNzMxMjQ5M30.akcki1QrALlbbLNF29zoTXx0P2YqEKOhy_b81HPH2ug';
-  private readonly AGENCY_SIGNATURE = 'Best regards,\nOnline Digital Solution';
+  private readonly AGENCY_SIGNATURE = 'Best regards,\nCloud Consultancy\ninfo@cloudconsultancy.in';
 
   /**
    * 1. Data Ingestion & Crawl Reliability: URL Normalization
@@ -1486,34 +1486,28 @@ export class ClientAuditIntelligenceService {
 
     // CASE 1: NO WEBSITE DETECTED -> PITCH WEBSITE DEV + SEO + MAINTENANCE
     if (!hasWebsite) {
-      const emailSubject = `Modern Website & Local Google Growth for ${cleanBiz}`;
+      const emailSubject = `Quick note regarding ${cleanBiz}`;
 
       const emailBody = [
-        `Hello ${salutation},`,
+        `Hi ${salutation},`,
         ``,
-        `I'm reaching out from Online Digital Solution. While reviewing local ${categoryPhrase}${cityPhrase}, I noticed that ${cleanBiz} does not currently have an active mobile website linked to your Google Business Profile.`,
+        `I was looking up ${categoryPhrase}${cityPhrase} on Google earlier today and noticed that ${cleanBiz} doesn't have an active website linked to your listing.`,
         ``,
-        `In today's market, over 70% of local customers search on their mobile phones and look for a website before calling or visiting. Without a modern website:`,
-        `• You are losing high-intent enquiries directly to local competitors who have fast, professional sites.`,
-        `• Google Maps ranks businesses higher when paired with an optimized, structured website.`,
-        `• You lack an automated booking / contact channel to capture new leads after hours.`,
+        `Most local customers browsing on mobile look for a website to view services or send an inquiry before calling. Without a simple mobile site, many end up contacting other local options.`,
         ``,
-        `We provide an all-in-one, done-for-you growth package:`,
-        `1. Modern Mobile Website Development: Fast, mobile-first design built to convert visitors into paying customers.`,
-        `2. Local Google SEO: Full on-page and Google Business Profile optimization so customers find you first.`,
-        `3. Monthly Web Maintenance & Care: Fast hosting, ongoing security updates, speed monitoring, and content edits included.`,
+        `We help businesses build clean, fast-loading mobile websites and manage local Google search optimization so you don't have to handle anything technical.`,
         ``,
-        `Would you be open to a quick 5-10 minute call or WhatsApp chat this week? I'd be glad to share 2-3 tailored website design concepts for ${cleanBiz} with zero obligation.`,
+        `I have a couple of layout concepts tailored for ${cleanBiz} if you'd like to take a look. Let me know if you'd like me to email them across.`,
         ``,
         this.AGENCY_SIGNATURE,
       ].join('\n');
 
       const whatsappMessage = [
-        `Hi ${salutation}, this is Online Digital Solution.`,
+        `Hi ${salutation}, this is Cloud Consultancy.`,
         ``,
         `While reviewing ${categoryPhrase}${cityPhrase}, we noticed ${cleanBiz} doesn't have an active website linked to your Google listing.`,
         ``,
-        `Local customers are searching for your services daily, but over 70% look for a website before calling. We build modern, mobile-friendly websites with local Google SEO and ongoing monthly maintenance included so you capture every inquiry.`,
+        `Most local customers search for services on mobile before calling. We build clean mobile websites with local Google SEO so you capture every inquiry.`,
         ``,
         `Would you be open to seeing 2-3 quick layout concepts tailored for ${cleanBiz}?`,
         ``,
@@ -1575,37 +1569,32 @@ export class ClientAuditIntelligenceService {
       .map((issue) => `• ${issue}`)
       .join('\n');
 
-    const emailSubject = `Website & SEO Audit for ${cleanBiz} (Score: ${auditReport.overallScore}/100)`;
+    const emailSubject = `Quick technical diagnostic on ${cleanBiz} (${auditReport.overallScore}/100)`;
 
     const emailBody = [
-      `Hello ${salutation},`,
+      `Hi ${salutation},`,
       ``,
-      `I'm reaching out from Online Digital Solution. I ran a complimentary technical SEO and website performance review on ${auditReport.domain} using our audit tool:`,
-      `${this.AUDIT_TOOL_URL}`,
+      `I was reviewing ${auditReport.domain} earlier today and noticed a couple of technical items affecting your mobile speed and Google search positioning:`,
       ``,
-      `Overall Site Health Score: ${auditReport.overallScore}/100 (${auditReport.grade})`,
-      ``,
-      `Here are a few practical issues identified that may be limiting your Google search visibility and inquiry conversions:`,
       issuesBullets,
       ``,
-      `Addressing these items typically results in faster mobile load times, higher positioning on Google search & Maps, and more qualified inbound client inquiries.`,
+      `I put together a quick technical audit summary for ${cleanBiz} (${auditReport.overallScore}/100) detailing the exact bottlenecks and fixes:`,
+      `${this.AUDIT_TOOL_URL}`,
       ``,
-      `You can inspect the audit anytime at ${this.AUDIT_TOOL_URL} or we can walk you through an exact 30-day fix roadmap.`,
-      ``,
-      `Would you have 10 minutes for a brief call later this week?`,
+      `Happy to share how to resolve these or answer any questions if you'd find it useful.`,
       ``,
       this.AGENCY_SIGNATURE,
     ].join('\n');
 
     const whatsappMessage = [
-      `Hi ${salutation}, this is Online Digital Solution.`,
+      `Hi ${salutation}, this is Cloud Consultancy.`,
       ``,
-      `We ran a quick audit on ${auditReport.domain} via our SEO tool (${this.AUDIT_TOOL_URL}) and it scored ${auditReport.overallScore}/100.`,
+      `We ran a quick review on ${auditReport.domain} via our diagnostic dashboard (${this.AUDIT_TOOL_URL}) and it scored ${auditReport.overallScore}/100.`,
       ``,
-      `We noted a couple of quick opportunities affecting your Google rankings and mobile speed:`,
+      `We noticed a couple of quick opportunities affecting your Google rankings and mobile speed:`,
       auditReport.criticalIssues.slice(0, 2).map((i) => `- ${i}`).join('\n'),
       ``,
-      `Would you like us to send the full fix breakdown or chat for 5 mins about how to resolve these?`,
+      `Would you like us to send the full fix breakdown or answer any quick questions?`,
       ``,
       this.AGENCY_SIGNATURE,
     ].join('\n');

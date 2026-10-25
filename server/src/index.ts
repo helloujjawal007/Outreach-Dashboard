@@ -148,7 +148,7 @@ if (env.NODE_ENV !== 'production') {
 // API Health / Status endpoint
 app.get('/api', (_req: Request, res: Response) => {
   res.json({
-    service: 'Online Digital Solution API',
+    service: 'Cloud Consultancy API',
     version: '2.0.0',
     status: 'operational',
     timestamp: new Date().toISOString(),
@@ -228,7 +228,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 // Start Server & Check Infrastructure
 async function startServer() {
-  console.log('--- Initializing Online Digital Solution Omni-Channel Engine ---');
+  console.log('--- Initializing Cloud Consultancy Omni-Channel Engine ---');
 
   // Test PostgreSQL Connection & Auto-Run Schema Migrations
   const dbConnected = await testConnection();

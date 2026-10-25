@@ -952,7 +952,7 @@ Here is your Executive Growth Blueprint right now:
     else {
       try {
         const prompt = `
-You are the AI Executive Copilot for Online Digital Solution, a premier digital growth agency.
+You are the AI Executive Copilot for Cloud Consultancy, a premier digital growth agency.
 The agency founder provides:
 - Google Business Profile (GMB) Optimization & Top 3 Google Maps Rankings
 - Modern Website Development & Redesigns (built on ultra-fast modern frameworks)

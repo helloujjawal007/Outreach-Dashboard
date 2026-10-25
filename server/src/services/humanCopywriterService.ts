@@ -26,7 +26,8 @@ export interface HumanCopyResult {
 type Stage = HumanCopyResult['stage'];
 
 export class HumanCopywriterService {
-  private readonly agencyName = 'Online Digital Solution';
+  public readonly agencyName = 'Cloud Consultancy';
+  public readonly senderEmail = 'info@cloudconsultancy.in';
   public readonly auditToolUrl = 'https://technical-audit-dashboard.vercel.app/';
 
   /**
@@ -44,7 +45,7 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Builds a natural salutation (never "Hello The Fitness World team")
+   * Builds a natural salutation (never robotic like "Hello The Fitness World team")
    */
   public buildSalutation(businessName: string, contactName?: string): string {
     const rawContact = (contactName || '').trim();
@@ -75,10 +76,10 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Signature block. Always strictly "Online Digital Solution"
+   * Signature block strictly using Cloud Consultancy & info@cloudconsultancy.in
    */
   private buildSignoff(): string {
-    return `Best regards,\n${this.agencyName}`;
+    return `Best regards,\n${this.agencyName}\n${this.senderEmail}`;
   }
 
   private compose(bodyLines: string[]): string {
@@ -86,7 +87,7 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Generates professional, plain-spoken copy free of hype, AI clichés, and automated disclaimers
+   * Generates genuine, human-written copy free of hype, AI clichés, and automated disclaimers
    */
   public getEmailCopy(lead: LeadContext, stage: Stage): HumanCopyResult {
     const business = this.cleanBusinessName(lead.businessName || 'your business');
@@ -98,33 +99,28 @@ export class HumanCopywriterService {
     const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawWeb);
     const hasWebsite = Boolean(rawWeb && !isMapsUrl && rawWeb.toLowerCase() !== 'n/a' && rawWeb.toLowerCase() !== 'none');
 
-    // CASE A: LEAD HAS NO ACTIVE WEBSITE -> PITCH WEBSITE DEVELOPMENT + GMB + MAINTENANCE
+    // CASE A: LEAD HAS NO ACTIVE WEBSITE -> PITCH WEBSITE DEVELOPMENT & LOCAL GOOGLE SEARCH
     if (!hasWebsite) {
       if (stage === 'initial') {
-        const indLoc = lead.industryLocation || (lead.category && lead.city ? `${lead.category} in ${lead.city}` : lead.category || lead.city || 'your area');
-        const gmbStatus = lead.gmbNotes || 'with strong customer feedback';
-
         return {
           subject: this.pick([
             `Quick note regarding ${business}`,
-            `${business} – Google Business visibility & inquiries`,
-            `Question regarding ${business}`,
+            `${business} – Google Business listing`,
+            `Question about ${business}`,
           ]),
           body: this.compose([
             `Hi ${salutation},`,
             ``,
-            `I came across ${business} while looking up top-rated service providers in ${indLoc}. You have built a strong local reputation on Google (${gmbStatus}).`,
+            `I was looking up ${categoryPhrase}${cityPhrase} on Google earlier today and noticed that ${business} doesn't have an active website linked to your listing.`,
             ``,
-            `I noticed that when potential customers search for your services on mobile, there is no direct website linked to your listing where they can view your services, credentials, or submit an inquiry. Many local customers browsing on their phones end up contacting competitors who have an active mobile site in place.`,
+            `Most people searching on their phones want to see services, reviews, or request an inquiry directly. When there's no website, many end up calling competitors who do.`,
             ``,
-            `We build clean, fast-loading mobile websites and handle ongoing Google Maps optimization so you stay in the local top results without technical headaches.`,
+            `We help businesses build clean, fast-loading mobile sites and handle Google search optimization so you don't have to deal with anything technical.`,
             ``,
-            `I put together a preliminary layout concept specifically for ${business} showing how this would look and work.`,
-            ``,
-            `Would you like me to send over a quick 2-minute preview?`,
+            `I put together a quick mockup concept for ${business} showing what this would look like. Would you like me to send it over?`,
           ]),
           stage: 'initial',
-          stageLabel: '1st Email (Turnkey Web & GMB Pitch)',
+          stageLabel: '1st Email (Website & Search Intro)',
           delayFromStartDays: 0,
         };
       }
@@ -133,13 +129,13 @@ export class HumanCopywriterService {
         return {
           subject: `Following up: ${business}`,
           body: this.compose([
-            `Hello ${salutation},`,
+            `Hi ${salutation},`,
             ``,
-            `I'm following up on my previous note in case it was missed. As mentioned, ${business} could capture more direct customer calls with an active, fast mobile website.`,
+            `Following up briefly on my earlier note regarding ${business}.`,
             ``,
-            `We take care of the entire setup including local Google SEO and maintenance so you don't have to manage anything technical.`,
+            `Did you have a chance to see my note about getting a clean, dedicated mobile website in place for your Google listing?`,
             ``,
-            `Would you like me to send over a couple of sample layout ideas to review?`,
+            `Happy to share a couple of layout ideas if you'd find that helpful.`,
           ]),
           stage: 'followup_1',
           stageLabel: '2nd Email (Day 3 Follow-up)',
@@ -149,15 +145,15 @@ export class HumanCopywriterService {
 
       if (stage === 'followup_2') {
         return {
-          subject: `Customer inquiries for ${business}`,
+          subject: `Inquiries for ${business}`,
           body: this.compose([
-            `Hello ${salutation},`,
+            `Hi ${salutation},`,
             ``,
-            `Many local ${categoryPhrase} miss out on high-intent clients simply because they don't have an easy mobile page where clients can view services and reach out after hours.`,
+            `Checking in once more regarding ${business}.`,
             ``,
-            `If modernizing ${business}'s online presence is something you're considering this quarter, I'd be glad to share a straightforward approach.`,
+            `If setting up a modern website or improving your local Google ranking is on your roadmap this quarter, I'd be glad to share a straightforward approach.`,
             ``,
-            `Would later this week suit you for a brief chat, or should I check back next month?`,
+            `Let me know if you'd like to take a look, or feel free to let me know if the timing isn't right.`,
           ]),
           stage: 'followup_2',
           stageLabel: '3rd Email (Day 6 Follow-up)',
@@ -168,11 +164,11 @@ export class HumanCopywriterService {
       return {
         subject: `Closing the loop: ${business}`,
         body: this.compose([
-          `Hello ${salutation},`,
+          `Hi ${salutation},`,
           ``,
-          `I haven't heard back, so I will pause my outreach here so as not to crowd your inbox. If you ever decide to launch a modern website, rank higher on Google Maps, or automate inquiry handling for ${business}, feel free to reach out anytime.`,
+          `I assume you're busy at the moment, so I won't follow up further. If you ever want to launch a modern site or improve your Google search presence for ${business} in the future, feel free to reach out anytime.`,
           ``,
-          `Wishing you and your team continued success.`,
+          `Wishing you and your team all the best.`,
         ]),
         stage: 'followup_3',
         stageLabel: '4th Email (Day 10 Final Note)',
@@ -180,82 +176,58 @@ export class HumanCopywriterService {
       };
     }
 
-    // CASE B: LEAD HAS A WEBSITE -> PITCH AUDIT & TECHNICAL FIXES
-    if (stage === 'initial') {
-      const websiteUrl = rawWeb;
-      const domain = rawWeb.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
-      const pdfName = lead.auditPdfName || 'Technical_Audit_Report.pdf';
-      const keyTakeaways =
-        lead.auditKeyTakeaways ||
-        (lead.auditIssues && lead.auditIssues.length > 0
-          ? lead.auditIssues.slice(0, 2).join('; ')
-          : 'Core Web Vitals bottlenecks and missing structured schema');
-      const scoreNote =
-        typeof lead.auditScore === 'number' && lead.auditScore > 0
-          ? ` (Site Health: ${lead.auditScore}%)`
-          : '';
+    // CASE B: LEAD HAS A WEBSITE -> HUMAN-WRITTEN TECHNICAL AUDIT NOTES
+    const domain = rawWeb.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+    const pdfName = lead.auditPdfName || `${domain.replace(/[^a-z0-9]/gi, '_')}_Technical_Audit.pdf`;
+    const keyTakeaways =
+      lead.auditKeyTakeaways ||
+      (lead.auditIssues && lead.auditIssues.length > 0
+        ? lead.auditIssues.slice(0, 2).join(' and ')
+        : 'mobile load performance bottlenecks and missing structured data');
 
-      const subjects =
-        typeof lead.auditScore === 'number' && lead.auditScore > 0
-          ? [
-              `Quick technical diagnostic on ${domain} (Score: ${lead.auditScore}/100, PDF attached)`,
-              `${business} speed & Google ranking audit (Health: ${lead.auditScore}%, PDF enclosed)`,
-              `Quick technical diagnostic on ${domain} (1-2 findings attached)`,
-            ]
-          : [
-              `Quick technical diagnostic on ${domain} (1-2 findings attached)`,
-              `${business} speed & Google ranking audit (PDF enclosed)`,
-            ];
+    if (stage === 'initial') {
+      const subjects = [
+        `Quick technical diagnostic on ${domain} (notes attached)`,
+        `Reviewing ${domain} – brief technical notes`,
+        `Quick observation regarding ${domain}`,
+      ];
 
       return {
         subject: this.pick(subjects),
         body: this.compose([
           `Hi ${salutation},`,
           ``,
-          `I took a quick look at ${websiteUrl} earlier today while reviewing ${categoryPhrase} in your area.`,
-          ``,
-          `A couple of technical points stood out that may be holding back your organic Google ranking and mobile page speed:`,
+          `I was reviewing ${domain} earlier today and noticed a couple of technical items affecting your mobile speed and Google search positioning:`,
           ``,
           `• ${keyTakeaways}`,
           ``,
-          `We put together a concise 1-page diagnostic summary and attached it here (${pdfName}) in case it's helpful for your team to review.`,
+          `I put together a quick 1-page notes sheet with the exact findings and attached it here (${pdfName}) in case it's helpful for your web team.`,
           ``,
-          `Would you be open to a quick 5-minute chat sometime this week? Happy to share how to resolve these without any sales pitch.`,
+          `Happy to answer any questions or share how we usually resolve these if useful.`,
         ]),
         stage: 'initial',
-        stageLabel: '1st Email (Technical Audit & Next.js Pitch)',
+        stageLabel: '1st Email (Diagnostic Notes & PDF Enclosed)',
         delayFromStartDays: 0,
       };
     }
 
     // 2. Follow-up 1 (Day 3)
     if (stage === 'followup_1') {
-      const subject = this.pick([
-        `Following up: ${business} local visibility audit`,
+      const subjects = [
+        `Following up: ${domain} technical notes`,
         `Following up regarding ${business}`,
-        `Checking in: ${business}`,
-      ]);
-
-      const bodies = [
-        this.compose([
-          `Hello ${salutation},`,
-          ``,
-          `I'm following up on my previous email in case it was missed. I have a short audit prepared for ${business} covering your Google Maps presence, website performance, and how quickly enquiries are being handled.`,
-          ``,
-          `If it would be useful, I can send it across or walk you through it in 5 minutes at a time that suits you.`,
-        ]),
-        this.compose([
-          `Hello ${salutation},`,
-          ``,
-          `I wanted to check whether you had a chance to see my earlier note about improving ${business}'s visibility on Google.`,
-          ``,
-          `The audit is ready whenever you are. Just let me know whether you'd prefer to receive it by email or discuss it briefly over a quick call.`,
-        ]),
+        `Quick check-in: ${domain}`,
       ];
 
       return {
-        subject,
-        body: this.pick(bodies),
+        subject: this.pick(subjects),
+        body: this.compose([
+          `Hi ${salutation},`,
+          ``,
+          `Following up briefly on my note regarding ${domain}.`,
+          ``,
+          `Did your team have a chance to look over the technical audit notes I attached? Happy to answer any questions if you'd like to run through them.`,
+        ]),
         stage: 'followup_1',
         stageLabel: '2nd Email (Day 3 Follow-up)',
         delayFromStartDays: 3,
@@ -264,32 +236,21 @@ export class HumanCopywriterService {
 
     // 3. Follow-up 2 (Day 6)
     if (stage === 'followup_2') {
-      const subject = this.pick([
-        `A quick observation about ${business}`,
-        `${business}: a brief note`,
-        `Customer enquiries at ${business}`,
-      ]);
-
-      const bodies = [
-        this.compose([
-          `Hello ${salutation},`,
-          ``,
-          `Many ${categoryPhrase} lose potential customers for two common reasons: their Google listing does not appear among the top local results, or website enquiries wait several hours for a reply. Both are fixable with a straightforward setup.`,
-          ``,
-          `I'd be happy to show you where ${business} currently stands on these points. Would a short call later this week work, or should I check back next month?`,
-        ]),
-        this.compose([
-          `Hello ${salutation},`,
-          ``,
-          `I'm writing once more to see whether strengthening ${business}'s local search presence and enquiry response time is something you are considering at the moment.`,
-          ``,
-          `If so, I can send over the short audit I mentioned. If the timing is not right, just let me know and I will follow up at a later date.`,
-        ]),
+      const subjects = [
+        `Observation regarding ${business}`,
+        `Quick note: ${domain}`,
+        `${business} website performance`,
       ];
 
       return {
-        subject,
-        body: this.pick(bodies),
+        subject: this.pick(subjects),
+        body: this.compose([
+          `Hi ${salutation},`,
+          ``,
+          `Checking in once more regarding ${business}'s website and Google search visibility.`,
+          ``,
+          `If resolving these technical fixes is on your radar this month, let me know and I can share a straightforward fix plan. If the timing isn't right, no worries at all.`,
+        ]),
         stage: 'followup_2',
         stageLabel: '3rd Email (Day 6 Follow-up)',
         delayFromStartDays: 6,
@@ -297,32 +258,21 @@ export class HumanCopywriterService {
     }
 
     // 4. Follow-up 3 (Day 10, final message)
-    const subject = this.pick([
+    const subjects = [
       `Closing the loop: ${business}`,
-      `Final follow-up regarding ${business}`,
-      `Last note: ${business}`,
-    ]);
-
-    const bodies = [
-      this.compose([
-        `Hello ${salutation},`,
-        ``,
-        `I haven't heard back, so I'll assume the timing isn't right and will not send further emails. If improving your local search visibility, website, or enquiry handling becomes a priority, you are welcome to reach out at any time.`,
-        ``,
-        `Wishing you and the ${business} team continued success.`,
-      ]),
-      this.compose([
-        `Hello ${salutation},`,
-        ``,
-        `As I have not received a response, I will pause my outreach here so as not to crowd your inbox. Should you wish to revisit this in the future, I'd be glad to help ${business} with Google visibility, website performance, or enquiry handling.`,
-        ``,
-        `All the best to you and your team.`,
-      ]),
+      `Last note regarding ${business}`,
+      `Final check-in: ${domain}`,
     ];
 
     return {
-      subject,
-      body: this.pick(bodies),
+      subject: this.pick(subjects),
+      body: this.compose([
+        `Hi ${salutation},`,
+        ``,
+        `I assume you're busy at the moment, so I won't follow up further. If you ever need a hand with ${business}'s web performance, Google ranking, or technical fixes down the road, feel free to reach out anytime.`,
+        ``,
+        `Wishing you and the ${business} team continued success.`,
+      ]),
       stage: 'followup_3',
       stageLabel: '4th Email (Day 10 Final Message)',
       delayFromStartDays: 10,

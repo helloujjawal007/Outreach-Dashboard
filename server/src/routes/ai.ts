@@ -61,7 +61,7 @@ CRITICAL RULES:
 
     const result = await ollamaService.generateCompletion({
       prompt,
-      system: 'You are an outreach consultant for Online Digital Solution writing 100% human, genuine, grounded messages without marketing buzzwords or automated bot disclaimers.',
+      system: 'You are an outreach consultant for Cloud Consultancy writing 100% human, genuine, grounded messages without marketing buzzwords or automated bot disclaimers.',
     });
 
     res.json({

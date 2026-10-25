@@ -296,7 +296,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-ink-900">{lead.businessName}</h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
-                Online Digital Solution
+                Cloud Consultancy
               </span>
               {lead.category && (
                 <span className="text-[10px] text-ink-500 font-medium">
@@ -448,7 +448,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
               <div>
                 <p className="font-bold">No active website linked to this Google listing.</p>
                 <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
-                  Local clients are searching daily on Google Maps. Without a website, they cannot view services, pricing, or reviews, giving nearby competitors an unfair advantage. Online Digital Solution pitches <strong>Website Development + Local SEO + Maintenance</strong> to capture these missed inquiries.
+                  Local clients are searching daily on Google Maps. Without a website, they cannot view services, pricing, or reviews, giving nearby competitors an unfair advantage. Cloud Consultancy pitches <strong>Website Development + Local SEO + Maintenance</strong> to capture these missed inquiries.
                 </p>
               </div>
             </div>

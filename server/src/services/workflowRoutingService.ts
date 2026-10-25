@@ -253,8 +253,10 @@ export class WorkflowRoutingService {
     // Strip any robotic unsubscribe / automated list disclaimers if present
     cleanBody = cleanBody
       .replace(/\n*---\s*\n*If you prefer not to receive further emails[^\n]*/gi, '')
-      .replace(/\n*If you'd prefer not to receive further emails[^\n]*/gi, '')
-      .replace(/\n*simply reply with "?unsubscribe"?[^\n]*/gi, '')
+      .replace(/\n*If you'd? prefer not to receive further emails[^\n]*/gi, '')
+      .replace(/\n*.*(?:click (?:here )?to unsubscribe|reply with "?unsubscribe"?|simply reply "?unsubscribe"?|remove (?:me )?from (?:our|your|this) list|opt[- ]?out of future emails)[^\n]*/gi, '')
+      .replace(/\n*\(?Click here to unsubscribe\)?/gi, '')
+      .replace(/\n*Click to unsubscribe[^\n]*/gi, '')
       .trim();
 
     return {

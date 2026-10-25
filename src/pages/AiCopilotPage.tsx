@@ -43,7 +43,7 @@ export function AiCopilotPage() {
     {
       id: 'welcome-msg',
       sender: 'ai',
-      text: "👋 Welcome to your Executive AI Command Center. I'm your Growth Copilot for Online Digital Solution.\n\nType any natural language command below, or click any of the quick action chips. On the right, I continuously scan your database for the highest-ROI actions to scale your pipeline.",
+      text: "👋 Welcome to your Executive AI Command Center. I'm your Growth Copilot for Cloud Consultancy.\n\nType any natural language command below, or click any of the quick action chips. On the right, I continuously scan your database for the highest-ROI actions to scale your pipeline.",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);

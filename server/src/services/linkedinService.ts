@@ -106,7 +106,7 @@ export class LinkedInService {
       return {
         id: 'default_account',
         accountName: 'Anupam Kumar',
-        headline: 'SEO Specialist & Growth Partner @ Online Digital Solution',
+        headline: 'SEO Specialist & Growth Partner @ Cloud Consultancy',
         profileUrl: 'https://www.linkedin.com/in/anupam-kumar-seo-specialist/',
         authMethod: 'cookie',
         isConnected: false,

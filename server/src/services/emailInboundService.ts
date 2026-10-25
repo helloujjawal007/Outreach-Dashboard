@@ -1,6 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { query } from '../config/db';
+import { env } from '../config/env';
 
 export interface InboundEmailResult {
   syncedCount: number;
@@ -253,10 +254,10 @@ export class EmailInboundService {
       };
     }
 
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : '';
-    const host = process.env.IMAP_HOST || 'imap.gmail.com';
-    const port = parseInt(process.env.IMAP_PORT || '993', 10);
+    const user = env.SMTP_USER || process.env.SMTP_USER;
+    const pass = (env.SMTP_PASS || process.env.SMTP_PASS ? (env.SMTP_PASS || process.env.SMTP_PASS)!.replace(/\s+/g, '') : '');
+    const host = env.IMAP_HOST || process.env.IMAP_HOST || 'imappro.zoho.in';
+    const port = env.IMAP_PORT || parseInt(process.env.IMAP_PORT || '993', 10);
 
     if (!user || !pass) {
       return {

@@ -38,6 +38,12 @@ export class EmailSentSyncService {
           if (matched.provider === 'google_workspace' || matched.smtp_host.includes('gmail')) {
             host = 'imap.gmail.com';
             port = 993;
+          } else if (matched.smtp_host.includes('zoho') || matched.email.includes('cloudconsultancy.in')) {
+            host = 'imappro.zoho.in';
+            port = 993;
+          } else if (matched.provider === 'office_365' || matched.smtp_host.includes('office365') || matched.smtp_host.includes('outlook')) {
+            host = 'outlook.office365.com';
+            port = 993;
           }
         }
       }

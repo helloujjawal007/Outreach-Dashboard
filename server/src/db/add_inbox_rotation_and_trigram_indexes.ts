@@ -105,21 +105,22 @@ export async function addInboxRotationAndTrigramIndexes() {
   `);
   console.log('✅ Added inbox tracking to scheduled_dispatches and messages');
 
-  // 6. Automatically seed existing .env SMTP credentials into connected_inboxes as primary default inbox
-  if (env.SMTP_USER && env.SMTP_PASS && env.SMTP_HOST) {
+  // 6. Automatically seed or update existing .env SMTP credentials into connected_inboxes as primary default inbox
+  if (env.SMTP_USER && env.SMTP_HOST) {
+    const cleanPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
+    const senderName = env.SMTP_FROM?.includes('<')
+      ? env.SMTP_FROM.split('<')[0].replace(/"/g, '').trim()
+      : 'Cloud Consultancy';
+
+    const provider = env.SMTP_HOST.toLowerCase().includes('gmail')
+      ? 'google_workspace'
+      : env.SMTP_HOST.toLowerCase().includes('outlook') || env.SMTP_HOST.toLowerCase().includes('office365')
+      ? 'office_365'
+      : 'smtp';
+
     const existingInbox = await query(`SELECT id FROM connected_inboxes WHERE email = $1`, [env.SMTP_USER]);
     if (existingInbox.rows.length === 0) {
-      const cleanPass = env.SMTP_PASS.replace(/\s+/g, '');
-      const senderName = env.SMTP_FROM?.includes('<')
-        ? env.SMTP_FROM.split('<')[0].replace(/"/g, '').trim()
-        : 'Outreach & Partnerships';
-
-      const provider = env.SMTP_HOST.toLowerCase().includes('gmail')
-        ? 'google_workspace'
-        : env.SMTP_HOST.toLowerCase().includes('outlook') || env.SMTP_HOST.toLowerCase().includes('office365')
-        ? 'office_365'
-        : 'smtp';
-
+      await query(`UPDATE connected_inboxes SET is_default = false`);
       await query(`
         INSERT INTO connected_inboxes (
           name, email, sender_name, provider, smtp_host, smtp_port, smtp_secure,
@@ -138,7 +139,17 @@ export async function addInboxRotationAndTrigramIndexes() {
         env.SMTP_USER,
         cleanPass,
       ]);
-      console.log(`✅ Seeded primary active inbox from .env: ${env.SMTP_USER}`);
+      console.log(`✅ Seeded primary active inbox from env: ${env.SMTP_USER}`);
+    } else {
+      // Update existing inbox with current host/port/pass from environment and make default
+      await query(`UPDATE connected_inboxes SET is_default = false WHERE email != $1`, [env.SMTP_USER]);
+      await query(`
+        UPDATE connected_inboxes 
+        SET smtp_host = $1, smtp_port = $2, smtp_secure = $3, smtp_pass = CASE WHEN $4 != '' THEN $4 ELSE smtp_pass END,
+            sender_name = $5, is_default = true, status = 'active'
+        WHERE email = $6
+      `, [env.SMTP_HOST, env.SMTP_PORT, env.SMTP_SECURE, cleanPass, senderName, env.SMTP_USER]);
+      console.log(`✅ Synchronized primary inbox in connected_inboxes: ${env.SMTP_USER}`);
     }
   }
 

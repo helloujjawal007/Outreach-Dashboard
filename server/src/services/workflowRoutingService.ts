@@ -54,7 +54,7 @@ export class WorkflowRoutingService {
    */
   public cleanWebsiteUrl(rawUrl?: string | null): string {
     if (!rawUrl) return '';
-    let u = rawUrl.trim();
+    const u = rawUrl.trim();
     if (this.hasValidWebsite(u)) {
       return u.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, '');
     }

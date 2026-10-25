@@ -54,15 +54,36 @@ export class LinkedInService {
   private readonly DAILY_SAFE_POST_LIMIT = 5;
 
   /**
+   * Resets daily comment and post usage counters when 24h quota window has passed
+   */
+  private async checkAndResetQuotas(): Promise<void> {
+    try {
+      await query(`
+        UPDATE linkedin_accounts
+        SET daily_comments_used = 0,
+            daily_posts_used = 0,
+            quota_reset_at = NOW() + INTERVAL '1 day'
+        WHERE quota_reset_at IS NULL OR quota_reset_at <= NOW();
+      `);
+    } catch (err: any) {
+      console.warn('[LinkedIn] Failed to reset daily quotas:', err?.message || err);
+    }
+  }
+
+  /**
    * Get raw credentials helper
    */
-  private async getAccountCredentials(): Promise<{ session_cookie?: string; access_token?: string } | null> {
-    const res = await query(`
+  private async getAccountCredentials(accountId = 'default_account'): Promise<{ session_cookie?: string; access_token?: string } | null> {
+    const res = await query(
+      `
       SELECT session_cookie, access_token
       FROM linkedin_accounts
-      WHERE id = 'default_account'
+      WHERE id = $1 OR is_connected = true
+      ORDER BY (id = $1) DESC, is_connected DESC
       LIMIT 1;
-    `);
+      `,
+      [accountId]
+    );
     return res.rows[0] || null;
   }
 
@@ -70,6 +91,8 @@ export class LinkedInService {
    * Get LinkedIn account connection status and safety limits
    */
   public async getAccountStatus(): Promise<LinkedInAccountStatus> {
+    await this.checkAndResetQuotas();
+
     const res = await query(`
       SELECT id, account_name, headline, profile_url, auth_method, is_connected,
              session_cookie, access_token,
@@ -149,7 +172,12 @@ export class LinkedInService {
         auth_method = EXCLUDED.auth_method,
         session_cookie = CASE WHEN EXCLUDED.session_cookie != '' THEN EXCLUDED.session_cookie ELSE linkedin_accounts.session_cookie END,
         access_token = CASE WHEN EXCLUDED.access_token != '' THEN EXCLUDED.access_token ELSE linkedin_accounts.access_token END,
-        is_connected = $7,
+        is_connected = CASE
+          WHEN EXCLUDED.session_cookie != '' OR EXCLUDED.access_token != '' THEN true
+          WHEN (linkedin_accounts.session_cookie IS NOT NULL AND linkedin_accounts.session_cookie != '')
+            OR (linkedin_accounts.access_token IS NOT NULL AND linkedin_accounts.access_token != '') THEN true
+          ELSE $7
+        END,
         updated_at = NOW();
       `,
       [accountName, headline, profileUrl, authMethod, sessionCookie, accessToken, isConnected]
@@ -173,6 +201,8 @@ export class LinkedInService {
    * Get all connected/synced LinkedIn accounts
    */
   public async getAllAccounts(): Promise<LinkedInAccountStatus[]> {
+    await this.checkAndResetQuotas();
+
     const res = await query(`
       SELECT id, account_name, headline, profile_url, auth_method, is_connected,
              session_cookie, access_token,
@@ -756,7 +786,7 @@ ${selectedCta}
         directShareUrl = pubResult.postUrl || directShareUrl;
         await query(`
           UPDATE linkedin_accounts
-          SET daily_posts_used = daily_posts_used + 1
+          SET daily_posts_used = COALESCE(daily_posts_used, 0) + 1
           WHERE id = 'default_account';
         `);
       } else {
@@ -809,7 +839,7 @@ ${selectedCta}
     if (pubResult.liveDelivery) {
       await query(`
         UPDATE linkedin_accounts
-        SET daily_posts_used = daily_posts_used + 1
+        SET daily_posts_used = COALESCE(daily_posts_used, 0) + 1
         WHERE id = 'default_account';
       `);
     }
@@ -844,7 +874,7 @@ ${selectedCta}
 
     await query(`
       UPDATE linkedin_accounts
-      SET daily_posts_used = daily_posts_used + 1
+      SET daily_posts_used = COALESCE(daily_posts_used, 0) + 1
       WHERE id = 'default_account';
     `);
 
@@ -898,6 +928,8 @@ ${selectedCta}
    */
   public async processScheduledPosts(): Promise<number> {
     try {
+      await this.checkAndResetQuotas();
+
       const res = await query(
         `SELECT id FROM linkedin_posts WHERE status = 'scheduled' AND scheduled_for <= NOW() ORDER BY scheduled_for ASC LIMIT 5;`
       );
@@ -981,7 +1013,7 @@ Drop a comment below if you want the checklist!
       return this.getPosts();
     }
 
-    return res.rows.map(this.mapPostRow);
+    return res.rows.map((row) => this.mapPostRow(row));
   }
 
   /**
@@ -1005,10 +1037,10 @@ Drop a comment below if you want the checklist!
       // Populate with realistic prospect posts from active CRM leads
       await this.seedSampleProspectPosts();
       const fresh = await query(`SELECT * FROM linkedin_prospect_comments ORDER BY created_at DESC;`);
-      return fresh.rows.map(this.mapCommentTaskRow);
+      return fresh.rows.map((row) => this.mapCommentTaskRow(row));
     }
 
-    return res.rows.map(this.mapCommentTaskRow);
+    return res.rows.map((row) => this.mapCommentTaskRow(row));
   }
 
   /**
@@ -1074,7 +1106,7 @@ Post content:
     // Increment daily usage
     await query(`
       UPDATE linkedin_accounts
-      SET daily_comments_used = daily_comments_used + 1
+      SET daily_comments_used = COALESCE(daily_comments_used, 0) + 1
       WHERE id = 'default_account';
     `);
 

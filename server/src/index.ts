@@ -44,17 +44,21 @@ process.on('uncaughtException', (err) => {
   console.error('[Server UncaughtException Handled]', err?.message || err);
 });
 
-// Inside startServer() in server/src/index.ts:
+// 12-Minute Render Keep-Alive Heartbeat (prevents Render 15-minute inactivity spin-down)
+const keepAliveUrl = process.env.RENDER_EXTERNAL_URL 
+  ? `${process.env.RENDER_EXTERNAL_URL}/api`
+  : (process.env.KEEP_ALIVE_URL || 'https://outreach-dashboard-22t5.onrender.com/api');
 
-// Example A: Simple Interval (e.g., Every 10 minutes)
-setInterval(async () => {
-  try {
-    console.log('[Custom Cron] Running 10-minute task...');
-    // Add your code or database queries here
-  } catch (err) {
-    console.error('[Custom Cron Error]', err);
-  }
-}, 13 * 60 * 1000);
+if (process.env.NODE_ENV === 'production' || process.env.KEEP_ALIVE_URL) {
+  setInterval(async () => {
+    try {
+      const res = await fetch(keepAliveUrl);
+      console.log(`[Keep-Alive Heartbeat] 12-min ping to ${keepAliveUrl} -> HTTP ${res.status}`);
+    } catch (err: any) {
+      console.warn('[Keep-Alive Heartbeat Warning]', err?.message || err);
+    }
+  }, 12 * 60 * 1000);
+}
 
 
 process.on('unhandledRejection', (reason) => {

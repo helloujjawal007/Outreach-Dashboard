@@ -12,7 +12,7 @@
  * Agency Signature: Online Digital Solution
  */
 
-import { technicalAuditPdfService, GeneratedPdfResult } from './technicalAuditPdfService';
+import { type GeneratedPdfResult } from './technicalAuditPdfService';
 
 export interface AuditCheckItem {
   id: string;
@@ -162,11 +162,7 @@ export class ClientAuditIntelligenceService {
     }
 
     // Naked domains or protocol check: if neither http:// nor https://, default to https://
-    let protocol = 'https:';
-    if (/^https?:\/\//i.test(u)) {
-      const match = u.match(/^(https?):\/\//i);
-      if (match) protocol = match[1].toLowerCase() + ':';
-    } else {
+    if (!/^https?:\/\//i.test(u)) {
       u = `https://${u}`;
     }
 
@@ -957,7 +953,7 @@ export class ClientAuditIntelligenceService {
 
     // G. Structured Data (Schema.org JSON-LD / Microdata)
     const jsonLdBlocks = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
-    let hasAnySchema = jsonLdBlocks.length > 0;
+    const hasAnySchema = jsonLdBlocks.length > 0;
     for (const block of jsonLdBlocks) {
       if (
         /LocalBusiness|Organization|ProfessionalService|Plumber|HVACBusiness|HomeAndConstructionBusiness|Store|LegalService|MedicalBusiness/i.test(

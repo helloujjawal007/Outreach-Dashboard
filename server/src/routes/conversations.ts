@@ -767,7 +767,6 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
     const { facebookAdapter } = await import('../adapters/facebookAdapter');
     const { instagramAdapter } = await import('../adapters/instagramAdapter');
     const { emailAdapter } = await import('../adapters/emailAdapter');
-    const { aiResearchWriterService } = await import('../services/aiResearchWriterService');
 
     let sentCount = 0;
     let skippedCount = 0;
@@ -832,7 +831,7 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
         continue;
       }
 
-      let msgObj = messages[lead.id];
+      const msgObj = messages[lead.id];
       let bodyText = '';
       let subjectText = '';
 

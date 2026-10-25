@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import http from 'http';
+import fs from 'fs';
 import { gmbScraperService } from './gmbScraperService';
 
 export interface LinkedInPublishResult {
@@ -146,7 +147,17 @@ export class LinkedInPublisherService {
     let chromeProc: ChildProcess | null = null;
     let ws: WebSocket | null = null;
 
-    const executable = gmbScraperService.getChromeExecutable() || this.chromePath;
+    const executable = gmbScraperService.getChromeExecutable() || (process.platform === 'darwin' && fs.existsSync(this.chromePath) ? this.chromePath : null);
+    if (!executable || !fs.existsSync(executable)) {
+      return {
+        success: false,
+        liveDelivery: false,
+        requiresManualShare: true,
+        directShareUrl: `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(content)}`,
+        errorMessage: 'Chrome executable not detected on server.',
+        message: 'Headless browser not detected. Click "Share to LinkedIn" to post immediately in your active browser.',
+      };
+    }
     const isHeadlessShell = executable.includes('chrome-headless-shell');
 
     try {
@@ -351,7 +362,10 @@ export class LinkedInPublisherService {
     let chromeProc: ChildProcess | null = null;
     let ws: WebSocket | null = null;
 
-    const executable = gmbScraperService.getChromeExecutable() || this.chromePath;
+    const executable = gmbScraperService.getChromeExecutable() || (process.platform === 'darwin' && fs.existsSync(this.chromePath) ? this.chromePath : null);
+    if (!executable || !fs.existsSync(executable)) {
+      return { valid: false, error: 'Chrome executable not detected on server.' };
+    }
     const isHeadlessShell = executable.includes('chrome-headless-shell');
 
     try {

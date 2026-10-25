@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "db:migrate": "tsx server/src/db/migrate.ts",
     "db:seed": "tsx server/src/db/seed.ts",
+    "keep-alive": "node scripts/keep-alive.js",
     "postinstall": "node -e \"const fs=require('fs');const p='node_modules/whatsapp-rust-bridge/package.json';if(fs.existsSync(p)){const j=JSON.parse(fs.readFileSync(p));j.main='./dist/index.js';if(j.exports&&j.exports['.']){j.exports['.'].require='./dist/index.js';j.exports['.'].default='./dist/index.js';}fs.writeFileSync(p,JSON.stringify(j,null,2));}\""
   },
   "dependencies": {

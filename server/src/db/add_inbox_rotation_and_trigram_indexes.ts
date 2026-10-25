@@ -111,6 +111,12 @@ export async function addInboxRotationAndTrigramIndexes() {
       DELETE FROM connected_inboxes 
       WHERE email ILIKE '%onlinedigitalsolution%' OR email ILIKE '%growthflow%'
     `);
+    // Heal any inboxes where port '465' was mistakenly entered as the smtp_host
+    await query(`
+      UPDATE connected_inboxes 
+      SET smtp_host = 'smtppro.zoho.in', smtp_port = 465, smtp_secure = true
+      WHERE smtp_host ~ '^\\d+$' OR smtp_host = '465' OR smtp_host = '' OR smtp_host = 'smtp.cloudconsultancy.in'
+    `);
   } catch (purgeErr) {
     console.warn('[Migration Warning] Legacy inbox cleanup notice:', purgeErr);
   }

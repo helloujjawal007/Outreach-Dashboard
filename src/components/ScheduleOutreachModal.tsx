@@ -1057,12 +1057,22 @@ export function ScheduleOutreachModal({
                               </span>
                             )}
                             {item.status === 'failed' && (
-                              <span
-                                className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold flex items-center gap-1 w-fit cursor-help"
-                                title={item.error_message || 'Dispatch failed'}
-                              >
-                                <XCircle size={11} /> Failed
-                              </span>
+                              <div className="space-y-0.5">
+                                <span
+                                  className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold flex items-center gap-1 w-fit cursor-help"
+                                  title={item.error_message || 'Dispatch failed'}
+                                >
+                                  <XCircle size={11} /> Failed
+                                </span>
+                                {item.error_message && (
+                                  <p
+                                    className="text-[10px] text-rose-600 max-w-[160px] truncate leading-tight font-medium"
+                                    title={item.error_message}
+                                  >
+                                    {item.error_message.replace(/^SMTP delivery failed:\s*/i, '')}
+                                  </p>
+                                )}
+                              </div>
                             )}
                             {item.status === 'cancelled' && (
                               <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-semibold flex items-center gap-1 w-fit">

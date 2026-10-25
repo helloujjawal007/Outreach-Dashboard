@@ -202,18 +202,26 @@ export class InboxRotationService {
             maxConnections: 5,
             maxMessages: 100,
           }
-        : {
-            host: inbox.smtp_host,
-            port: inbox.smtp_port,
-            secure: inbox.smtp_secure || inbox.smtp_port === 465,
-            auth: {
-              user: inbox.smtp_user,
-              pass: cleanPass,
-            },
-            pool: true,
-            maxConnections: 5,
-            maxMessages: 100,
-          }
+        : (() => {
+            let host = (inbox.smtp_host || '').trim();
+            const port = inbox.smtp_port || 465;
+            if (!host || /^\d+$/.test(host) || host.length < 4 || host.includes('cloudconsultancy.in')) {
+              host = 'smtppro.zoho.in';
+            }
+            return {
+              host,
+              port,
+              secure: inbox.smtp_secure || port === 465,
+              auth: {
+                user: inbox.smtp_user,
+                pass: cleanPass,
+              },
+              connectionTimeout: 10000,
+              pool: true,
+              maxConnections: 5,
+              maxMessages: 100,
+            };
+          })()
     );
 
     this.transporterCache.set(inbox.id, transporter);
@@ -276,15 +284,23 @@ export class InboxRotationService {
               pass: cleanPass,
             },
           }
-        : {
-            host: config.smtp_host,
-            port: config.smtp_port,
-            secure: config.smtp_secure || config.smtp_port === 465,
-            auth: {
-              user: config.smtp_user,
-              pass: cleanPass,
-            },
-          }
+        : (() => {
+            let host = (config.smtp_host || '').trim();
+            const port = config.smtp_port || 465;
+            if (!host || /^\d+$/.test(host) || host.length < 4 || host.includes('cloudconsultancy.in')) {
+              host = 'smtppro.zoho.in';
+            }
+            return {
+              host,
+              port,
+              secure: config.smtp_secure || port === 465,
+              auth: {
+                user: config.smtp_user,
+                pass: cleanPass,
+              },
+              connectionTimeout: 10000,
+            };
+          })()
     );
 
     try {

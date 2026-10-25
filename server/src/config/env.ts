@@ -27,8 +27,14 @@ function getEnvVar(...keys: string[]): string {
 // Extract clean host, stripping explanatory parentheticals like " (or Google Workspace...)"
 function cleanHostValue(rawHost: string, user: string): string {
   let cleaned = rawHost.split('(')[0].trim().replace(/['"]/g, '');
-  // If host was set to generic domain or placeholder for cloudconsultancy.in, resolve to Zoho India
-  if (!cleaned || cleaned === 'smtp.cloudconsultancy.in' || (user.includes('cloudconsultancy.in') && cleaned.includes('cloudconsultancy.in'))) {
+  // If host is numeric (e.g. port 465 was entered as host), empty, or placeholder for cloudconsultancy.in, resolve to Zoho India
+  if (
+    !cleaned ||
+    /^\d+$/.test(cleaned) ||
+    cleaned.length < 4 ||
+    cleaned === 'smtp.cloudconsultancy.in' ||
+    (user.includes('cloudconsultancy.in') && cleaned.includes('cloudconsultancy.in'))
+  ) {
     return 'smtppro.zoho.in';
   }
   return cleaned;
@@ -37,7 +43,13 @@ function cleanHostValue(rawHost: string, user: string): string {
 // Extract clean IMAP host
 function cleanImapHostValue(rawHost: string, user: string): string {
   let cleaned = rawHost.split('(')[0].trim().replace(/['"]/g, '');
-  if (!cleaned || cleaned === 'imap.cloudconsultancy.in' || (user.includes('cloudconsultancy.in') && (cleaned.includes('cloudconsultancy.in') || cleaned.includes('gmail')))) {
+  if (
+    !cleaned ||
+    /^\d+$/.test(cleaned) ||
+    cleaned.length < 4 ||
+    cleaned === 'imap.cloudconsultancy.in' ||
+    (user.includes('cloudconsultancy.in') && (cleaned.includes('cloudconsultancy.in') || cleaned.includes('gmail')))
+  ) {
     return 'imappro.zoho.in';
   }
   return cleaned;

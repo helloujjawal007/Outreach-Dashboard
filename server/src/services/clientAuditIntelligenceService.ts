@@ -6,10 +6,10 @@
  * - Redirect Handling: Follows 301/302 redirects to final destination URL.
  * - Edge Cases: Flags unreachable, DNS failures, parked domains, Cloudflare/Bot-blockers without freezing pipeline.
  * - Metric Validity: LCP, CLS, INP, missing alt tags, schema gaps, crawl status.
- * - ODS Solution Mapping: Next.js SSR, headless setups, schema markup, image optimization.
+ * - Cloud Consultancy Solution Mapping: Next.js SSR, headless setups, schema markup, image optimization.
  * - Webhook Dispatcher: Automated retries and timeout handling for LOD endpoint handshake.
  * 
- * Agency Signature: Online Digital Solution
+ * Agency Signature: Cloud Consultancy
  */
 
 import { type GeneratedPdfResult } from './technicalAuditPdfService';
@@ -209,7 +209,7 @@ export class ClientAuditIntelligenceService {
    * Runs an audit against a target URL:
    * 1. Normalizes URL & checks validity.
    * 2. Attempts remote audit engine (bolt.host endpoint).
-   * 3. Resiliently falls back to diagnostic local engine (with redirect handling, edge case flags, CWV signals, ODS mapping).
+   * 3. Resiliently falls back to diagnostic local engine (with redirect handling, edge case flags, CWV signals, Cloud Consultancy mapping).
    */
   public async auditWebsite(rawUrl: string): Promise<ClientAuditReport> {
     const { normalizedUrl, domain, isValid } = this.normalizeAuditUrl(rawUrl);
@@ -486,7 +486,7 @@ export class ClientAuditIntelligenceService {
    * 2. Edge Cases: Gracefully flags unreachable, DNS failures, parked domains, or Cloudflare/Bot-blockers without freezing.
    * 3. Score Consistency: Transparent deduction weights aligning with issue volume & severity.
    * 4. Metric Validity: Diagnostic Core Web Vitals (LCP, CLS, INP, TTFB), missing alt tags, schema gaps, crawl status.
-   * 5. ODS Solution Mapping: Direct alignment with actual agency capabilities (Next.js SSR, headless setups, schema markup).
+   * 5. Cloud Consultancy Solution Mapping: Direct alignment with actual agency capabilities (Next.js SSR, headless setups, schema markup).
    */
   public async runLocalAudit(url: string, initialDomain: string): Promise<ClientAuditReport> {
     const checks: AuditCheckItem[] = [];
@@ -621,7 +621,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Re-establish Hosting & DNS Routing',
         detail: 'Deploy website on reliable modern infrastructure with automated SSL and edge routing.',
-        odsSolution: 'ODS Turn-key Next.js SSR Deployment on Vercel/Cloudflare Edge with automated DNS failover.',
+        odsSolution: 'Cloud Consultancy Turn-key Next.js SSR Deployment on Vercel/Cloudflare Edge with automated DNS failover.',
       });
 
       const grade = 'Poor';
@@ -691,7 +691,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Deploy Production Business Website',
         detail: 'Replace registrar parking page with high-converting responsive business website.',
-        odsSolution: 'ODS Custom Next.js 14 Web Development + Local SEO Growth Package.',
+        odsSolution: 'Cloud Consultancy Custom Next.js 14 Web Development + Local SEO Growth Package.',
       });
 
       return {
@@ -756,7 +756,7 @@ export class ClientAuditIntelligenceService {
         priority: 'medium',
         title: 'Optimize WAF Crawl Rules',
         detail: 'Configure Cloudflare/WAF to allow verified Googlebot and Bingbot crawlers while maintaining protection.',
-        odsSolution: 'ODS Cloudflare Edge Configuration & Headless SSR Crawl Optimization.',
+        odsSolution: 'Cloud Consultancy Cloudflare Edge Configuration & Headless SSR Crawl Optimization.',
       });
     }
 
@@ -784,7 +784,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Install SSL Certificate & Force HTTPS',
         detail: 'Configure automated TLS certificate and 301 redirect all HTTP traffic to HTTPS.',
-        odsSolution: 'ODS Automated Edge SSL & HSTS Security Header Provisioning.',
+        odsSolution: 'Cloud Consultancy Automated Edge SSL & HSTS Security Header Provisioning.',
       });
       score -= 15;
     }
@@ -805,7 +805,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Remove "noindex" Meta Tag',
         detail: 'Ensure production site is indexable by removing disallow directives in meta tags.',
-        odsSolution: 'ODS Technical Indexation Audit & Search Console Verification.',
+        odsSolution: 'Cloud Consultancy Technical Indexation Audit & Search Console Verification.',
       });
       score -= 20;
     } else {
@@ -835,7 +835,7 @@ export class ClientAuditIntelligenceService {
           priority: 'medium',
           title: 'Optimize Meta Title with Local Keywords',
           detail: 'Rewrite title tag to include primary service, target city, and company brand.',
-          odsSolution: 'ODS Programmatic Local Keyword Architecture & Title Optimization.',
+          odsSolution: 'Cloud Consultancy Programmatic Local Keyword Architecture & Title Optimization.',
         });
         score -= 6;
       } else {
@@ -860,7 +860,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Add Optimized Meta Title',
         detail: 'Add descriptive title tag featuring high-intent service keywords and target geography.',
-        odsSolution: 'ODS High-Intent Local SEO Architecture & Conversion Tagging.',
+        odsSolution: 'Cloud Consultancy High-Intent Local SEO Architecture & Conversion Tagging.',
       });
       score -= 12;
     }
@@ -890,7 +890,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Craft Compelling Meta Description',
         detail: 'Add 150–160 character description emphasizing unique value and a direct call to action.',
-        odsSolution: 'ODS High-Converting Snippet Copywriting & CTR Optimization.',
+        odsSolution: 'Cloud Consultancy High-Converting Snippet Copywriting & CTR Optimization.',
       });
       score -= 10;
     }
@@ -918,7 +918,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Implement Semantic H1 Heading',
         detail: 'Add a clear H1 headline defining your primary service offering and location.',
-        odsSolution: 'ODS Semantic HTML5 Heading Hierarchy & On-Page Keyword Alignment.',
+        odsSolution: 'Cloud Consultancy Semantic HTML5 Heading Hierarchy & On-Page Keyword Alignment.',
       });
       score -= 10;
     }
@@ -946,7 +946,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Implement Mobile-Responsive Viewport',
         detail: 'Add standard responsive viewport meta tag and fluid grid layouts.',
-        odsSolution: 'ODS Mobile-First Next.js Responsive UI/UX Redesign.',
+        odsSolution: 'Cloud Consultancy Mobile-First Next.js Responsive UI/UX Redesign.',
       });
       score -= 15;
     }
@@ -986,7 +986,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Inject Schema.org LocalBusiness Rich Snippets',
         detail: 'Deploy structured data specifying NAP (Name, Address, Phone), opening hours, and service areas.',
-        odsSolution: 'ODS Custom Schema.org LocalBusiness JSON-LD Rich Snippet Engineering.',
+        odsSolution: 'Cloud Consultancy Custom Schema.org LocalBusiness JSON-LD Rich Snippet Engineering.',
       });
       score -= 6;
     } else {
@@ -1002,7 +1002,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Implement LocalBusiness Schema Markup',
         detail: 'Add rich JSON-LD structured data to establish business entity authority on Google.',
-        odsSolution: 'ODS Custom Schema.org LocalBusiness JSON-LD Rich Snippet Engineering.',
+        odsSolution: 'Cloud Consultancy Custom Schema.org LocalBusiness JSON-LD Rich Snippet Engineering.',
       });
       score -= 8;
     }
@@ -1033,7 +1033,7 @@ export class ClientAuditIntelligenceService {
           priority: 'medium',
           title: 'Add Descriptive Alt Tags to Images',
           detail: 'Include descriptive, keyword-rich alt tags on all content images for accessibility and image search.',
-          odsSolution: 'ODS Automated WCAG Image Accessibility & SEO Optimization.',
+          odsSolution: 'Cloud Consultancy Automated WCAG Image Accessibility & SEO Optimization.',
         });
         score -= 6;
       } else {
@@ -1076,7 +1076,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Fix Image Dimensions & Prevent Layout Shifts',
         detail: 'Define aspect-ratio and explicit dimensions on images to eliminate content reflows.',
-        odsSolution: 'ODS Next.js Image Component Pipeline (next/image) with automated zero-CLS sizing.',
+        odsSolution: 'Cloud Consultancy Next.js Image Component Pipeline (next/image) with automated zero-CLS sizing.',
       });
       score -= 6;
     }
@@ -1096,7 +1096,7 @@ export class ClientAuditIntelligenceService {
         priority: 'high',
         title: 'Accelerate Server Response & LCP',
         detail: 'Migrate hosting to modern edge caching and compress hero assets to achieve sub-second TTFB.',
-        odsSolution: 'ODS Next.js SSR & Static Edge Deployment on Global CDN (<100ms TTFB).',
+        odsSolution: 'Cloud Consultancy Next.js SSR & Static Edge Deployment on Global CDN (<100ms TTFB).',
       });
       score -= 8;
     } else {
@@ -1369,7 +1369,7 @@ export class ClientAuditIntelligenceService {
     if (combined.includes('script') || combined.includes('javascript') || combined.includes('inp')) {
       return 'Headless CMS & Decoupled Architecture eliminating monolithic script overhead';
     }
-    return 'ODS High-Intent Local SEO Architecture & Conversion Tagging';
+    return 'Cloud Consultancy High-Intent Local SEO Architecture & Conversion Tagging';
   }
 
   /**

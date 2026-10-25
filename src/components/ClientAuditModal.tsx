@@ -356,7 +356,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
                 onClick={handleGeneratePdf}
                 disabled={isGeneratingPdf || !customUrl.trim()}
                 className="btn-secondary py-2 px-3 text-xs flex items-center justify-center gap-1.5 shrink-0 bg-slate-800 text-white hover:bg-slate-900 border-slate-800 w-full sm:w-auto"
-                title="Generate lightweight ODS Technical Audit PDF (<1.5MB)"
+                title="Generate lightweight Cloud Consultancy Technical Audit PDF (<1.5MB)"
               >
                 {isGeneratingPdf ? (
                   <>
@@ -366,7 +366,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
                 ) : (
                   <>
                     <FileDown size={12} />
-                    <span>{generatedPdf ? 'Re-generate PDF' : 'Generate ODS PDF'}</span>
+                    <span>{generatedPdf ? 'Re-generate PDF' : 'Generate Audit PDF'}</span>
                   </>
                 )}
               </button>
@@ -900,11 +900,11 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
               </div>
             </div>
 
-            {/* Recommendations with ODS Agency Solution Mapping */}
+            {/* Recommendations with Cloud Consultancy Solution Mapping */}
             {auditReport.recommendations.length > 0 && (
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800">
-                  Actionable SEO Recommendations & ODS Solutions
+                  Actionable SEO Recommendations & Cloud Consultancy Solutions
                 </h4>
                 <div className="space-y-2.5">
                   {auditReport.recommendations.map((rec, i) => (
@@ -923,7 +923,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
                       {rec.odsSolution && (
                         <div className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-indigo-700 bg-indigo-50/80 px-2 py-1 rounded border border-indigo-100">
                           <ShieldCheck size={12} className="text-indigo-600 shrink-0" />
-                          <span><strong>ODS Fix:</strong> {rec.odsSolution}</span>
+                          <span><strong>Cloud Consultancy Fix:</strong> {rec.odsSolution.replace(/^(ODS|Cloud Consultancy)\s*(Fix:)?\s*/i, '')}</span>
                         </div>
                       )}
                     </div>
@@ -932,10 +932,10 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
               </div>
             )}
 
-            {/* ODS Solutions Architecture Banner */}
+            {/* Cloud Consultancy Solutions Architecture Banner */}
             <div className="p-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-white text-xs">
               <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 block mb-1">
-                ODS Agency Infrastructure Capabilities:
+                Cloud Consultancy Infrastructure Capabilities:
               </span>
               <p className="text-[11px] text-indigo-950 leading-relaxed">
                 • <strong>Next.js SSR & Static Edge:</strong> Instant sub-100ms TTFB and perfect 100 PageSpeed scores.<br />

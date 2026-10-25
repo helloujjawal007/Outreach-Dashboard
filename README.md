@@ -547,7 +547,7 @@ Outreach-Dashboard/
   - Cascading deletion: deleting any lead or client immediately purges all associated messages, conversations, send queue drafts, and memberships, leaving zero orphan messages in inbox or dashboard.
 - [x] **Phase 12: Human-in-the-Loop AI Improvisation Engine & Multi-Channel Anti-Hype Copy**
   - "Your words → Improvise with AI" feature (`POST /api/ai/improvise`): transforms rough bullet points into polished, realistic pitches.
-  - Elimination of unrealistic hype: grounds all copy in consultative digital solutions for Online Digital Solution.
+  - Elimination of unrealistic hype: grounds all copy in consultative digital solutions for Cloud Consultancy.
   - 5-Channel support: Email, WhatsApp, LinkedIn, Facebook, and Instagram with channel-appropriate word count limits.
 
 

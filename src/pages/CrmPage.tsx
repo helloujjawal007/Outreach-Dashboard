@@ -3637,7 +3637,7 @@ export function CrmPage({
                           <button
                             onClick={() => setAuditModalLead(lead)}
                             className="p-1.5 rounded-lg transition text-xs font-semibold flex items-center gap-1 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-2xs"
-                            title={lead.website ? "Audit Website & Pitch via bolt.host (Online Digital Solution)" : "Pitch Website Development & SEO (Online Digital Solution)"}
+                            title={lead.website ? "Audit Website & Pitch via bolt.host (Cloud Consultancy)" : "Pitch Website Development & SEO (Cloud Consultancy)"}
                           >
                             <Sparkles size={12} className="text-indigo-600" />
                             <span className="text-[10px]">{lead.website ? 'Audit & Pitch' : 'Web Pitch'}</span>
@@ -3771,7 +3771,7 @@ export function CrmPage({
                     <button
                       onClick={() => setAuditModalLead(selectedLead)}
                       className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 shadow-2xs transition"
-                      title="Run SEO Audit & Generate Pitch (Online Digital Solution)"
+                      title="Run SEO Audit & Generate Pitch (Cloud Consultancy)"
                     >
                       <Sparkles size={14} className="text-indigo-600" />
                       <span>{selectedLead.website ? 'Audit & Pitch' : 'Web Dev Pitch'}</span>

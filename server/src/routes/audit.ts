@@ -60,7 +60,7 @@ auditRouter.post('/run', async (req: Request, res: Response) => {
  * Full Technical Audit Pipeline:
  * 1. URL Normalization & Redirect Handling
  * 2. Diagnostic Content & Metric Validity
- * 3. Lightweight ODS PDF Generation (<3-5MB, dynamic naming)
+ * 3. Lightweight Cloud Consultancy PDF Generation (<3-5MB, dynamic naming)
  * 4. Automatic Webhook Handshake Dispatch to LOD with retries
  */
 auditRouter.post('/generate-report', async (req: Request, res: Response) => {

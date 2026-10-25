@@ -139,7 +139,7 @@ export class TechnicalAuditPdfService {
           <div style="font-size: 11px; background: #f8fafc; border-left: 2px solid #0f172a; padding: 6px 10px; color: #1e293b; border-radius: 0 3px 3px 0;">
             <strong>Implementation guidance:</strong> ${
               rec.odsSolution
-                ? rec.odsSolution.replace(/ODS Agency Fix:?/gi, '').trim()
+                ? rec.odsSolution.replace(/(Cloud Consultancy|ODS Agency)\s*(Fix:?)?\s*/gi, '').trim()
                 : 'Optimize server compression, asset delivery, and schema markup to meet Google standards.'
             }
           </div>

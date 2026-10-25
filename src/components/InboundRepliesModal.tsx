@@ -905,15 +905,15 @@ export function InboundRepliesModal({
               </span>
             )}
 
-            {/* Sync Gmail button */}
+            {/* Sync Inboxes button */}
             <button
               onClick={handleSyncClick}
               disabled={isSyncing}
               className="flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-200 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-60 shadow-2xs cursor-pointer"
-              title="Check Gmail inbox for new client replies"
+              title="Check connected inboxes for new client replies"
             >
               <RefreshCw size={12} className={isSyncing ? 'animate-spin text-blue-600' : ''} />
-              <span>{isSyncing ? 'Syncing...' : 'Sync Gmail'}</span>
+              <span>{isSyncing ? 'Syncing...' : 'Sync Inboxes'}</span>
             </button>
           </div>
         </div>

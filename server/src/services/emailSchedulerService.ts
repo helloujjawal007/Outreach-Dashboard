@@ -1956,14 +1956,23 @@ export class EmailSchedulerService {
    * Retries a failed or cancelled dispatch
    */
   async retryDispatch(id: string): Promise<boolean> {
-    const res = await query(
+    const res = await query<{ id: string; lead_id?: string }>(
       `UPDATE scheduled_dispatches
        SET status = 'scheduled', scheduled_for = NOW(), error_message = NULL, updated_at = NOW()
        WHERE id = $1 AND status IN ('failed', 'cancelled')
-       RETURNING id`,
+       RETURNING id, lead_id`,
       [id]
     );
     if (res.rows.length > 0) {
+      const leadId = res.rows[0].lead_id;
+      if (leadId) {
+        await query(
+          `UPDATE leads 
+           SET status = 'active', manual_review_reason = NULL, updated_at = NOW()
+           WHERE id = $1 AND status = 'manual_review'`,
+          [leadId]
+        );
+      }
       setTimeout(() => this.processPendingDispatches().catch(console.error), 200);
       return true;
     }

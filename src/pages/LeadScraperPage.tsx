@@ -1507,7 +1507,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-emerald-950">
-                    Successfully Imported {importSuccess.importedCount} Leads into Outreach Dashboard!
+                    Successfully Imported {importSuccess.importedCount} Leads into Cloud Consultancy CRM!
                   </h4>
                   <p className="text-xs text-emerald-800 mt-0.5">
                     {importSuccess.duplicateCount > 0

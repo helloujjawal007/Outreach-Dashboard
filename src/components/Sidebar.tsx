@@ -81,12 +81,16 @@ export function Sidebar({
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
       {/* Brand Header */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-200">
+      <div
+        onClick={() => onNavigate('copilot')}
+        className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-200 cursor-pointer hover:bg-slate-50/70 transition-colors"
+        title="Return to AI Executive Copilot"
+      >
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm">
           <Zap size={20} strokeWidth={2.5} />
         </div>
         <div>
-          <h1 className="text-sm font-bold text-ink-900 leading-tight">Outreach Dashboard</h1>
+          <h1 className="text-sm font-bold text-ink-900 leading-tight">Cloud Consultancy</h1>
           <p className="text-xs text-brand-600 font-semibold leading-tight">Omni-Channel Engine</p>
         </div>
       </div>

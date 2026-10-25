@@ -1023,7 +1023,7 @@ export function SendingHealthPage({ store }: Props) {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-ink-900">Email Adapter & Warm-Up Tracker</h3>
-                <p className="text-xs text-ink-500 font-mono">{warmupStatus?.subdomain || 'outreach.clientconnect.io'}</p>
+                <p className="text-xs text-ink-500 font-mono">{warmupStatus?.subdomain || 'mail.cloudconsultancy.in'}</p>
               </div>
             </div>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">

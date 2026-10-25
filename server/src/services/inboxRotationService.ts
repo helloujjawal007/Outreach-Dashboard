@@ -1,5 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import { query } from '../config/db';
+import { env } from '../config/env';
 
 export interface ConnectedInboxRecord {
   id: string;
@@ -57,7 +58,7 @@ export class InboxRotationService {
   }
 
   /**
-   * Retrieves all connected inboxes with real-time stats
+   * Retrieves all connected inboxes with real-time stats (excluding legacy addresses)
    */
   async getAllInboxes(): Promise<ConnectedInboxRecord[]> {
     await this.checkDailyReset();
@@ -66,8 +67,36 @@ export class InboxRotationService {
              smtp_user, smtp_pass, daily_limit, sent_today, last_reset_date, health_score,
              status, is_default, last_error, last_sent_at, created_at, updated_at
       FROM connected_inboxes
+      WHERE email NOT ILIKE '%onlinedigitalsolution%' AND email NOT ILIKE '%growthflow%'
       ORDER BY is_default DESC, created_at ASC;
     `);
+
+    // If no valid inboxes are connected, auto-provision sales@cloudconsultancy.in
+    if (res.rows.length === 0) {
+      const defaultEmail = (env.SMTP_USER && !env.SMTP_USER.includes('onlinedigitalsolution'))
+        ? env.SMTP_USER
+        : 'sales@cloudconsultancy.in';
+      const cleanPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
+      const inserted = await query<ConnectedInboxRecord>(`
+        INSERT INTO connected_inboxes (
+          name, email, sender_name, provider, smtp_host, smtp_port, smtp_secure,
+          smtp_user, smtp_pass, daily_limit, sent_today, health_score, status, is_default
+        ) VALUES (
+          $1, $2, 'Cloud Consultancy', 'smtp', $3, $4, $5, $2, $6, 50, 0, 100, 'active', true
+        )
+        ON CONFLICT (email) DO UPDATE SET is_default = true, status = 'active', sender_name = 'Cloud Consultancy'
+        RETURNING *;
+      `, [
+        `Primary (${defaultEmail})`,
+        defaultEmail,
+        env.SMTP_HOST || 'smtppro.zoho.in',
+        env.SMTP_PORT || 465,
+        env.SMTP_SECURE || true,
+        cleanPass,
+      ]);
+      return inserted.rows;
+    }
+
     return res.rows;
   }
 
@@ -93,7 +122,8 @@ export class InboxRotationService {
         COALESCE(SUM(daily_limit), 0)::text AS total_daily_capacity,
         COALESCE(SUM(sent_today), 0)::text AS total_sent_today,
         COALESCE(AVG(health_score), 100)::text AS avg_health_score
-      FROM connected_inboxes;
+      FROM connected_inboxes
+      WHERE email NOT ILIKE '%onlinedigitalsolution%' AND email NOT ILIKE '%growthflow%';
     `);
 
     const row = res.rows[0];
@@ -122,6 +152,8 @@ export class InboxRotationService {
       SELECT *
       FROM connected_inboxes
       WHERE status = 'active'
+        AND email NOT ILIKE '%onlinedigitalsolution%'
+        AND email NOT ILIKE '%growthflow%'
         AND sent_today < daily_limit
       ORDER BY 
         (sent_today::float / NULLIF(daily_limit, 0)) ASC,
@@ -130,7 +162,8 @@ export class InboxRotationService {
     `);
 
     if (res.rows.length === 0) {
-      return null;
+      const all = await this.getAllInboxes();
+      return all.find((i) => i.status === 'active') || all[0] || null;
     }
 
     return res.rows[0];

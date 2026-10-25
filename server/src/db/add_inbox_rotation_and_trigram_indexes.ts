@@ -105,52 +105,64 @@ export async function addInboxRotationAndTrigramIndexes() {
   `);
   console.log('✅ Added inbox tracking to scheduled_dispatches and messages');
 
-  // 6. Automatically seed or update existing .env SMTP credentials into connected_inboxes as primary default inbox
-  if (env.SMTP_USER && env.SMTP_HOST) {
-    const cleanPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
-    const senderName = env.SMTP_FROM?.includes('<')
-      ? env.SMTP_FROM.split('<')[0].replace(/"/g, '').trim()
-      : 'Cloud Consultancy';
+  // 6. Purge legacy obsolete inboxes (onlinedigitalsolution, growthflow) and guarantee sales@cloudconsultancy.in is primary default
+  try {
+    await query(`
+      DELETE FROM connected_inboxes 
+      WHERE email ILIKE '%onlinedigitalsolution%' OR email ILIKE '%growthflow%'
+    `);
+  } catch (purgeErr) {
+    console.warn('[Migration Warning] Legacy inbox cleanup notice:', purgeErr);
+  }
 
-    const provider = env.SMTP_HOST.toLowerCase().includes('gmail')
-      ? 'google_workspace'
-      : env.SMTP_HOST.toLowerCase().includes('outlook') || env.SMTP_HOST.toLowerCase().includes('office365')
-      ? 'office_365'
-      : 'smtp';
+  const primaryEmail = (env.SMTP_USER && !env.SMTP_USER.includes('onlinedigitalsolution'))
+    ? env.SMTP_USER
+    : 'sales@cloudconsultancy.in';
 
-    const existingInbox = await query(`SELECT id FROM connected_inboxes WHERE email = $1`, [env.SMTP_USER]);
-    if (existingInbox.rows.length === 0) {
-      await query(`UPDATE connected_inboxes SET is_default = false`);
-      await query(`
-        INSERT INTO connected_inboxes (
-          name, email, sender_name, provider, smtp_host, smtp_port, smtp_secure,
-          smtp_user, smtp_pass, daily_limit, sent_today, health_score, status, is_default
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, 50, 0, 100, 'active', true
-        )
-      `, [
-        `Primary (${env.SMTP_USER})`,
-        env.SMTP_USER,
-        senderName,
-        provider,
-        env.SMTP_HOST,
-        env.SMTP_PORT,
-        env.SMTP_SECURE,
-        env.SMTP_USER,
-        cleanPass,
-      ]);
-      console.log(`✅ Seeded primary active inbox from env: ${env.SMTP_USER}`);
-    } else {
-      // Update existing inbox with current host/port/pass from environment and make default
-      await query(`UPDATE connected_inboxes SET is_default = false WHERE email != $1`, [env.SMTP_USER]);
-      await query(`
-        UPDATE connected_inboxes 
-        SET smtp_host = $1, smtp_port = $2, smtp_secure = $3, smtp_pass = CASE WHEN $4 != '' THEN $4 ELSE smtp_pass END,
-            sender_name = $5, is_default = true, status = 'active'
-        WHERE email = $6
-      `, [env.SMTP_HOST, env.SMTP_PORT, env.SMTP_SECURE, cleanPass, senderName, env.SMTP_USER]);
-      console.log(`✅ Synchronized primary inbox in connected_inboxes: ${env.SMTP_USER}`);
-    }
+  const cleanPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
+  const senderName = 'Cloud Consultancy';
+  const provider = (env.SMTP_HOST || '').toLowerCase().includes('gmail')
+    ? 'google_workspace'
+    : (env.SMTP_HOST || '').toLowerCase().includes('outlook') || (env.SMTP_HOST || '').toLowerCase().includes('office365')
+    ? 'office_365'
+    : 'smtp';
+  const smtpHost = env.SMTP_HOST || 'smtppro.zoho.in';
+  const smtpPort = env.SMTP_PORT || 465;
+  const smtpSecure = env.SMTP_SECURE || smtpPort === 465;
+
+  const existingPrimary = await query(`SELECT id FROM connected_inboxes WHERE email = $1`, [primaryEmail]);
+  if (existingPrimary.rows.length === 0) {
+    await query(`UPDATE connected_inboxes SET is_default = false`);
+    await query(`
+      INSERT INTO connected_inboxes (
+        name, email, sender_name, provider, smtp_host, smtp_port, smtp_secure,
+        smtp_user, smtp_pass, daily_limit, sent_today, health_score, status, is_default
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, 50, 0, 100, 'active', true
+      )
+    `, [
+      `Primary (${primaryEmail})`,
+      primaryEmail,
+      senderName,
+      provider,
+      smtpHost,
+      smtpPort,
+      smtpSecure,
+      primaryEmail,
+      cleanPass,
+    ]);
+    console.log(`✅ Seeded primary active Cloud Consultancy inbox: ${primaryEmail}`);
+  } else {
+    await query(`UPDATE connected_inboxes SET is_default = false WHERE email != $1`, [primaryEmail]);
+    await query(`
+      UPDATE connected_inboxes 
+      SET name = $1, smtp_host = $2, smtp_port = $3, smtp_secure = $4,
+          smtp_pass = CASE WHEN $5 != '' THEN $5 ELSE smtp_pass END,
+          sender_name = $6, health_score = 100, status = 'active', is_default = true,
+          updated_at = NOW()
+      WHERE email = $7
+    `, [`Primary (${primaryEmail})`, smtpHost, smtpPort, smtpSecure, cleanPass, senderName, primaryEmail]);
+    console.log(`✅ Synchronized primary inbox in connected_inboxes: ${primaryEmail}`);
   }
 
   console.log('[Migration] Multi-Inbox Rotation & Trigram Indexes verified successfully.');

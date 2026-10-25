@@ -38,7 +38,7 @@ export interface EmailAttachment {
 }
 
 export class EmailAdapter {
-  private subdomain: string = 'outreach.clientconnect.io';
+  private subdomain: string = 'mail.cloudconsultancy.in';
   
   // Warm-up ramp tiers: [stage, maxPerDay, label]
   private readonly WARMUP_STAGES = [
@@ -91,7 +91,7 @@ export class EmailAdapter {
         {
           type: 'TXT',
           name: this.subdomain,
-          value: 'v=spf1 include:_spf.clientconnect.io ~all',
+          value: 'v=spf1 include:zoho.in ~all',
           status: 'valid',
           description: 'Sender Policy Framework (SPF) Authorization',
         },
@@ -105,7 +105,7 @@ export class EmailAdapter {
         {
           type: 'TXT',
           name: `_dmarc.${this.subdomain}`,
-          value: 'v=DMARC1; p=quarantine; pct=100; rua=mailto:dmarc-reports@clientconnect.io',
+          value: 'v=DMARC1; p=none; rua=mailto:sales@cloudconsultancy.in',
           status: 'valid',
           description: 'Domain-based Message Authentication, Reporting & Conformance (DMARC)',
         },

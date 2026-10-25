@@ -122,7 +122,7 @@ export class ClientAuditIntelligenceService {
     'https://vwcxxdqtjieotmhtifgz.supabase.co/functions/v1/seo-audit';
   private readonly SUPABASE_BEARER =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ3Y3h4ZHF0amllb3RtaHRpZmd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzY0OTMsImV4cCI6MjEwNzMxMjQ5M30.akcki1QrALlbbLNF29zoTXx0P2YqEKOhy_b81HPH2ug';
-  private readonly AGENCY_SIGNATURE = 'Best regards,\nCloud Consultancy\ninfo@cloudconsultancy.in';
+  private readonly AGENCY_SIGNATURE = 'Best regards,\nCloud Consultancy\nsales@cloudconsultancy.in';
 
   /**
    * 1. Data Ingestion & Crawl Reliability: URL Normalization

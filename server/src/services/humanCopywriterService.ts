@@ -27,7 +27,7 @@ type Stage = HumanCopyResult['stage'];
 
 export class HumanCopywriterService {
   public readonly agencyName = 'Cloud Consultancy';
-  public readonly senderEmail = 'info@cloudconsultancy.in';
+  public readonly senderEmail = 'sales@cloudconsultancy.in';
   public readonly auditToolUrl = 'https://technical-audit-dashboard.vercel.app/';
 
   /**
@@ -76,7 +76,7 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Signature block strictly using Cloud Consultancy & info@cloudconsultancy.in
+   * Signature block strictly using Cloud Consultancy & sales@cloudconsultancy.in
    */
   private buildSignoff(): string {
     return `Best regards,\n${this.agencyName}\n${this.senderEmail}`;

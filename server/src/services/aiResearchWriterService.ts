@@ -270,7 +270,7 @@ Return only the final message text.`;
 
     if (channel === 'email') {
       subject = `Quick question regarding ${cleanBusinessName}`;
-      body = `Hi ${salutation},\n\n${personalizedHook} We work with teams across ${industry} to address ${detectedPainPoints[0].toLowerCase()}.\n\nSpecifically, ${recommendedValueProp.toLowerCase()}\n\nWould you be open to a quick 3-minute walkthrough this Thursday to see if this could be relevant for ${cleanBusinessName}?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+      body = `Hi ${salutation},\n\n${personalizedHook} We work with teams across ${industry} to address ${detectedPainPoints[0].toLowerCase()}.\n\nSpecifically, ${recommendedValueProp.toLowerCase()}\n\nWould you be open to a quick 3-minute walkthrough this Thursday to see if this could be relevant for ${cleanBusinessName}?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
     } else if (channel === 'whatsapp') {
       body = `Hi ${salutation}! ${personalizedHook} We've been helping similar ${industry.toLowerCase()} teams solve ${detectedPainPoints[0].toLowerCase()} by ${recommendedValueProp.toLowerCase()} Open to a quick 60-second summary on how it works for ${cleanBusinessName}?`;
     } else if (channel === 'facebook') {
@@ -399,9 +399,9 @@ Return ONLY the message text.`;
       subject = `Quick idea for ${cleanBusinessName}`;
       if (bulletItems.length >= 2) {
         const pointsList = bulletItems.map((item) => `• ${item}`).join('\n');
-        improvedText = `Hi ${salutation},\n\nI was looking into ${cleanBusinessName}’s online presence and wanted to reach out regarding a few practical observations:\n\n${pointsList}\n\nWe put together a complimentary review to check these areas with zero obligations. Would you be open to a brief 3-minute chat or walkthrough later this week?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+        improvedText = `Hi ${salutation},\n\nI was looking into ${cleanBusinessName}’s online presence and wanted to reach out regarding a few practical observations:\n\n${pointsList}\n\nWe put together a complimentary review to check these areas with zero obligations. Would you be open to a brief 3-minute chat or walkthrough later this week?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
       } else {
-        improvedText = `Hi ${salutation},\n\nI was reviewing local presence for ${cleanBusinessName} in ${category}. Regarding ${cleanSnippet}, I wanted to see if sharing a quick complimentary review would be helpful for your team.\n\nWould you be open to a brief 3-minute chat this Thursday to see what we found?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+        improvedText = `Hi ${salutation},\n\nI was reviewing local presence for ${cleanBusinessName} in ${category}. Regarding ${cleanSnippet}, I wanted to see if sharing a quick complimentary review would be helpful for your team.\n\nWould you be open to a brief 3-minute chat this Thursday to see what we found?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
       }
     } else if (channel === 'whatsapp') {
       improvedText = `Hi ${salutation}! Saw ${cleanBusinessName} and had a quick thought regarding ${cleanSnippet}. We put together a complimentary 2-minute overview with no strings attached. Open to taking a quick look?`;

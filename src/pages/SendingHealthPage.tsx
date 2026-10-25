@@ -65,7 +65,7 @@ export function SendingHealthPage({ store }: Props) {
 
   // Test Send State
   const [testSendInbox, setTestSendInbox] = useState<ConnectedInbox | null>(null);
-  const [testEmailTarget, setTestEmailTarget] = useState('info@cloudconsultancy.in');
+  const [testEmailTarget, setTestEmailTarget] = useState('sales@cloudconsultancy.in');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [testSendFeedback, setTestSendFeedback] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -103,7 +103,7 @@ export function SendingHealthPage({ store }: Props) {
   }>({
     name: '',
     sender_name: 'Cloud Consultancy',
-    email: 'info@cloudconsultancy.in',
+    email: 'sales@cloudconsultancy.in',
     provider: 'google_workspace',
     smtp_host: 'smtp.gmail.com',
     smtp_port: 465,
@@ -259,7 +259,7 @@ export function SendingHealthPage({ store }: Props) {
       setNewInboxForm({
         name: '',
         sender_name: 'Cloud Consultancy',
-        email: 'info@cloudconsultancy.in',
+        email: 'sales@cloudconsultancy.in',
         provider: 'google_workspace',
         smtp_host: 'smtp.gmail.com',
         smtp_port: 465,

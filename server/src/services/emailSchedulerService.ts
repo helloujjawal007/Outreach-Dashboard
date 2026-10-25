@@ -1700,7 +1700,7 @@ export class EmailSchedulerService {
           const { websiteFormService } = await import('./websiteFormService');
           await websiteFormService.submitContactForm(dispatch.lead_id, {
             senderName: 'Cloud Consultancy',
-            senderEmail: dispatch.inbox_email || 'info@cloudconsultancy.in',
+            senderEmail: dispatch.inbox_email || 'sales@cloudconsultancy.in',
             subject: dispatch.subject,
             message: dispatch.body,
           });

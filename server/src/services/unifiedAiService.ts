@@ -104,7 +104,7 @@ export class UnifiedAiService {
         summary: 'Lead requested a phone call or meeting to discuss options.',
         recommendedAction: 'convert_to_client',
         suggestedReplySubject: `Re: ${params.subject || `Call scheduling regarding ${cleanBiz}`}`,
-        suggestedReplyBody: `Hi ${salutation},\n\nFantastic, thank you for getting back to me! I'd love to jump on a quick 10-minute walkthrough to show you the local search review and inquiry workflow we prepared for ${cleanBiz}.\n\nDoes tomorrow afternoon or Thursday morning work best on your end? Alternatively, feel free to reply with a direct number or your preferred time and I will confirm right away.\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`,
+        suggestedReplyBody: `Hi ${salutation},\n\nFantastic, thank you for getting back to me! I'd love to jump on a quick 10-minute walkthrough to show you the local search review and inquiry workflow we prepared for ${cleanBiz}.\n\nDoes tomorrow afternoon or Thursday morning work best on your end? Alternatively, feel free to reply with a direct number or your preferred time and I will confirm right away.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
       };
     }
 
@@ -122,7 +122,7 @@ export class UnifiedAiService {
         summary: 'Lead is interested and inquired about pricing, details, or examples.',
         recommendedAction: 'convert_to_client',
         suggestedReplySubject: `Re: ${params.subject || `Overview & details for ${cleanBiz}`}`,
-        suggestedReplyBody: `Hi ${salutation},\n\nGlad to connect! For businesses like ${cleanBiz}, our core focus is delivering measurable results—whether that's locking in top-3 Google Maps visibility, modernizing your web presence for lightning-fast mobile loading, or automating client inquiry follow-ups so zero leads slip away.\n\nOur solutions are customized based on current visibility gaps, typically starting with a complimentary digital audit and clear month-over-month growth steps.\n\nWould you be open to a 5-minute screen share or quick phone chat later this week so I can share what we found?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`,
+        suggestedReplyBody: `Hi ${salutation},\n\nGlad to connect! For businesses like ${cleanBiz}, our core focus is delivering measurable results—whether that's locking in top-3 Google Maps visibility, modernizing your web presence for lightning-fast mobile loading, or automating client inquiry follow-ups so zero leads slip away.\n\nOur solutions are customized based on current visibility gaps, typically starting with a complimentary digital audit and clear month-over-month growth steps.\n\nWould you be open to a 5-minute screen share or quick phone chat later this week so I can share what we found?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
       };
     }
 
@@ -135,7 +135,7 @@ export class UnifiedAiService {
         summary: 'Lead asked a question regarding the outreach.',
         recommendedAction: 'answer_question',
         suggestedReplySubject: `Re: ${params.subject || `Quick question regarding ${cleanBiz}`}`,
-        suggestedReplyBody: `Hi ${salutation},\n\nThanks for reaching out! In short, Cloud Consultancy is a specialized web and digital growth advisory practice. We help established local businesses and brands optimize their Google My Business ranking, modernize their web platforms, and set up automated customer outreach systems.\n\nI'd be glad to address any specific questions you have or send over a quick 2-minute video breakdown tailored specifically for ${cleanBiz}.\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`,
+        suggestedReplyBody: `Hi ${salutation},\n\nThanks for reaching out! In short, Cloud Consultancy is a specialized web and digital growth advisory practice. We help established local businesses and brands optimize their Google My Business ranking, modernize their web platforms, and set up automated customer outreach systems.\n\nI'd be glad to address any specific questions you have or send over a quick 2-minute video breakdown tailored specifically for ${cleanBiz}.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
       };
     }
 
@@ -149,7 +149,7 @@ export class UnifiedAiService {
         summary: 'Lead requested a future follow-up when their schedule clears.',
         recommendedAction: 'followup_later',
         suggestedReplySubject: `Re: ${params.subject || `Touching base later for ${cleanBiz}`}`,
-        suggestedReplyBody: `Hi ${salutation},\n\nCompletely understand! Timing is everything. I will make a note on our side to circle back in a few weeks when things have settled down for ${cleanBiz}.\n\nWishing you a productive week ahead.\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`,
+        suggestedReplyBody: `Hi ${salutation},\n\nCompletely understand! Timing is everything. I will make a note on our side to circle back in a few weeks when things have settled down for ${cleanBiz}.\n\nWishing you a productive week ahead.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
       };
     }
 
@@ -163,7 +163,7 @@ export class UnifiedAiService {
         summary: 'Lead politely declined outreach services.',
         recommendedAction: 'suppress',
         suggestedReplySubject: `Re: ${params.subject || `Thank you from Cloud Consultancy`}`,
-        suggestedReplyBody: `Hi ${salutation},\n\nThanks for the quick reply and letting me know! If anything changes down the road or you ever need a second pair of eyes on your search presence or automations, please feel free to reach out anytime.\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`,
+        suggestedReplyBody: `Hi ${salutation},\n\nThanks for the quick reply and letting me know! If anything changes down the road or you ever need a second pair of eyes on your search presence or automations, please feel free to reach out anytime.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
       };
     }
 
@@ -175,7 +175,7 @@ export class UnifiedAiService {
       summary: 'Inbound response received from lead.',
       recommendedAction: 'answer_question',
       suggestedReplySubject: `Re: ${params.subject || `Following up with ${cleanBiz}`}`,
-      suggestedReplyBody: `Hi ${salutation},\n\nThank you for getting back to me! What would be the most convenient way for us to connect briefly—a quick phone call, or would you prefer I email over a couple of specific recommendations for ${cleanBiz}?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`,
+      suggestedReplyBody: `Hi ${salutation},\n\nThank you for getting back to me! What would be the most convenient way for us to connect briefly—a quick phone call, or would you prefer I email over a couple of specific recommendations for ${cleanBiz}?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
     };
   }
 
@@ -239,7 +239,7 @@ Write a short, highly persuasive ${req.channel.toUpperCase()} message for:
   3. Sign-off must be:
      Best regards,
      Cloud Consultancy
-     info@cloudconsultancy.in
+     sales@cloudconsultancy.in
   4. Provide "Subject: ..." on line 1 if email, followed by the body.
     `.trim();
 
@@ -265,7 +265,7 @@ Write a short, highly persuasive ${req.channel.toUpperCase()} message for:
    * Calls local Ollama model
    */
   private async callOllama(req: CopyGenerationRequest, cleanBiz: string, salutation: string) {
-    const prompt = `Write a short, high-converting ${req.channel} outreach message for ${salutation} at ${cleanBiz} (${req.category || 'business'}). Stage: ${req.stage}. Agency: Cloud Consultancy. Sign off with: Best regards,\nCloud Consultancy\ninfo@cloudconsultancy.in. Output format: Subject: ... then body.`;
+    const prompt = `Write a short, high-converting ${req.channel} outreach message for ${salutation} at ${cleanBiz} (${req.category || 'business'}). Stage: ${req.stage}. Agency: Cloud Consultancy. Sign off with: Best regards,\nCloud Consultancy\nsales@cloudconsultancy.in. Output format: Subject: ... then body.`;
     const res = await ollamaService.generateCompletion({ prompt });
     if (!res.fallback && res.response) {
       return this.parseSubjectAndBody(res.response, cleanBiz, res.modelUsed);
@@ -285,7 +285,7 @@ Write a short, highly persuasive ${req.channel.toUpperCase()} message for:
     }
 
     if (!body.includes('Cloud Consultancy')) {
-      body += '\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in';
+      body += '\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in';
     }
 
     return { subject, body, modelUsed };
@@ -325,16 +325,16 @@ Write a short, highly persuasive ${req.channel.toUpperCase()} message for:
 
     if (stage === 'initial') {
       subject = `Quick question regarding ${cleanBiz}`;
-      body = `Hi ${salutation},\n\nI was recently ${nicheHook}.\n\nAt Cloud Consultancy, we specialize in ${valuePitch}.\n\nWould you be open to a quick 3-minute walkthrough this week to see a couple of specific opportunities we uncovered for ${cleanBiz}?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+      body = `Hi ${salutation},\n\nI was recently ${nicheHook}.\n\nAt Cloud Consultancy, we specialize in ${valuePitch}.\n\nWould you be open to a quick 3-minute walkthrough this week to see a couple of specific opportunities we uncovered for ${cleanBiz}?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
     } else if (stage === 'followup_1') {
       subject = `Following up regarding ${cleanBiz}`;
-      body = `Hi ${salutation},\n\nCircling back briefly on my earlier note regarding ${nicheHook}.\n\nWe put together a short checklist of quick wins that could help ${cleanBiz} capture additional high-intent local inquiries without altering your current team operations.\n\nDo you have 5 minutes this Thursday or Friday for a brief call?\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+      body = `Hi ${salutation},\n\nCircling back briefly on my earlier note regarding ${nicheHook}.\n\nWe put together a short checklist of quick wins that could help ${cleanBiz} capture additional high-intent local inquiries without altering your current team operations.\n\nDo you have 5 minutes this Thursday or Friday for a brief call?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
     } else if (stage === 'followup_2') {
       subject = `Final check-in for ${cleanBiz}`;
-      body = `Hi ${salutation},\n\nI know schedules get hectic, so I promise not to clutter your inbox further.\n\nIf improving your Google search visibility or streamlining customer inquiry responses becomes a priority for ${cleanBiz} down the line, we're always here to assist.\n\nWishing you continued success!\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+      body = `Hi ${salutation},\n\nI know schedules get hectic, so I promise not to clutter your inbox further.\n\nIf improving your Google search visibility or streamlining customer inquiry responses becomes a priority for ${cleanBiz} down the line, we're always here to assist.\n\nWishing you continued success!\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
     } else {
       subject = `Account check-in regarding ${cleanBiz}`;
-      body = `Hi ${salutation},\n\nChecking in to see how your campaigns and client inquiries are performing this week. Let us know if you need any adjustments or new growth points implemented.\n\nBest regards,\nCloud Consultancy\ninfo@cloudconsultancy.in`;
+      body = `Hi ${salutation},\n\nChecking in to see how your campaigns and client inquiries are performing this week. Let us know if you need any adjustments or new growth points implemented.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`;
     }
 
     // Adapt for WhatsApp / Short channels

@@ -466,7 +466,7 @@ export class WebsiteFormService {
 
     // Prepare submission parameters
     const senderName = payload.senderName || 'Cloud Consultancy';
-    const senderEmail = payload.senderEmail || 'info@cloudconsultancy.in';
+    const senderEmail = payload.senderEmail || 'sales@cloudconsultancy.in';
     const senderPhone = payload.senderPhone || '+1 306-205-1817';
     const subject = payload.subject || `Inquiry regarding ${businessName}`;
     const message = payload.message || '';

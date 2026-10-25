@@ -455,7 +455,7 @@ export class StageOutreachService {
         const { websiteFormService } = await import('./websiteFormService');
         const formSubmission = await websiteFormService.submitContactForm(leadId, {
           senderName: 'Cloud Consultancy',
-          senderEmail: 'info@cloudconsultancy.in',
+          senderEmail: 'sales@cloudconsultancy.in',
           senderPhone: '+1 306-205-1817',
           subject: stageInfo.subject,
           message: stageInfo.body,

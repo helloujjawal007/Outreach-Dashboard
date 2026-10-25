@@ -260,7 +260,7 @@ export class TechnicalAuditPdfService {
   <div class="memo-header">
     <div>
       <div class="brand-name">Cloud Consultancy</div>
-      <div class="brand-sub">Engineering & Infrastructure Advisory • info@cloudconsultancy.in</div>
+      <div class="brand-sub">Engineering & Infrastructure Advisory • sales@cloudconsultancy.in</div>
     </div>
     <div style="text-align: right;">
       <div style="font-weight: 700; font-size: 12px; color: #0f172a;">Technical Site Diagnostic Memo</div>
@@ -381,7 +381,7 @@ export class TechnicalAuditPdfService {
 
   <!-- FOOTER -->
   <div class="footer">
-    <div>Prepared by <strong>Cloud Consultancy</strong> • Systems & Architecture Advisory • <strong>info@cloudconsultancy.in</strong></div>
+    <div>Prepared by <strong>Cloud Consultancy</strong> • Systems & Architecture Advisory • <strong>sales@cloudconsultancy.in</strong></div>
     <div>Confidential • Prepared for ${cleanBiz}</div>
   </div>
 
@@ -499,7 +499,7 @@ export class TechnicalAuditPdfService {
       '(Architecture: Modern edge caching, asset compression, schema.org JSON-LD integration) Tj',
       '0 -28 Td',
       '/F1 9 Tf',
-      '(Prepared by Cloud Consultancy - info@cloudconsultancy.in - https://technical-audit-dashboard.vercel.app/) Tj',
+      '(Prepared by Cloud Consultancy - sales@cloudconsultancy.in - https://technical-audit-dashboard.vercel.app/) Tj',
       'ET',
     ].join('\n');
 

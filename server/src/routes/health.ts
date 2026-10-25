@@ -31,6 +31,7 @@ healthRouter.get('/', async (_req: Request, res: Response) => {
          COALESCE(SUM(drafted_count), 0)::text as total_drafted
        FROM daily_send_metrics
        WHERE metric_date >= CURRENT_DATE - INTERVAL '13 days'
+         AND (channel IS NULL OR channel != 'total')
        GROUP BY metric_date, TO_CHAR(metric_date, 'Mon DD'), TO_CHAR(metric_date, 'YYYY-MM-DD')
        ORDER BY metric_date ASC`
     );

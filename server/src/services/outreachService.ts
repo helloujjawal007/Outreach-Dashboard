@@ -117,7 +117,8 @@ export class OutreachEngineService {
          COALESCE(SUM(bounced_count), 0) as total_bounced,
          COALESCE(SUM(complaints_count), 0) as total_complaints
        FROM daily_send_metrics
-       WHERE metric_date >= CURRENT_DATE - INTERVAL '6 days'`
+       WHERE metric_date >= CURRENT_DATE - INTERVAL '6 days'
+         AND (channel IS NULL OR channel != 'total')`
     );
 
     const sent = parseInt(res.rows[0]?.total_sent || '0', 10);

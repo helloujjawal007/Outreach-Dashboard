@@ -348,8 +348,8 @@ export class EmailInboundService {
               lowerBody.includes('message wasn\'t delivered') ||
               lowerBody.includes('the email account that you tried to reach does not exist');
 
-            // If already processed AND already matched to a lead, skip
-            if (checkRes.rows.length > 0 && (checkRes.rows[0].matched_entity_id || !isBounce)) {
+            // If already processed, skip to avoid duplicate or infinite bounce processing loops
+            if (checkRes.rows.length > 0) {
               continue;
             }
 
@@ -364,16 +364,10 @@ export class EmailInboundService {
             }
 
             if (isBounce) {
-              // Track bounce in daily_send_metrics
+              // Track bounce in daily_send_metrics for email channel
               await query(
                 `INSERT INTO daily_send_metrics (metric_date, channel, bounced_count, updated_at)
                  VALUES (CURRENT_DATE, 'email', 1, NOW())
-                 ON CONFLICT (metric_date, channel)
-                 DO UPDATE SET bounced_count = daily_send_metrics.bounced_count + 1, updated_at = NOW()`
-              );
-              await query(
-                `INSERT INTO daily_send_metrics (metric_date, channel, bounced_count, updated_at)
-                 VALUES (CURRENT_DATE, 'total', 1, NOW())
                  ON CONFLICT (metric_date, channel)
                  DO UPDATE SET bounced_count = daily_send_metrics.bounced_count + 1, updated_at = NOW()`
               );

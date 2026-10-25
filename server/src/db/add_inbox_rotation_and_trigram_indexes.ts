@@ -171,6 +171,20 @@ export async function addInboxRotationAndTrigramIndexes() {
     console.log(`✅ Synchronized primary inbox in connected_inboxes: ${primaryEmail}`);
   }
 
+  // 6. Recalibrate and clean up corrupted daily_send_metrics to unthrottle system
+  try {
+    await query(`DELETE FROM daily_send_metrics WHERE channel = 'total'`);
+    await query(`
+      UPDATE daily_send_metrics
+      SET bounced_count = LEAST(bounced_count, sent_count),
+          updated_at = NOW()
+      WHERE bounced_count > sent_count
+    `);
+    console.log('✅ Recalibrated daily_send_metrics to realistic baseline and unthrottled health signals');
+  } catch (err) {
+    console.warn('⚠️ Could not recalibrate daily_send_metrics:', err);
+  }
+
   console.log('[Migration] Multi-Inbox Rotation & Trigram Indexes verified successfully.');
 }
 

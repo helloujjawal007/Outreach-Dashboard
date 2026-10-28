@@ -181,45 +181,62 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     }
   }, [open, defaultListId, store.lists]);
 
-  // Count eligible leads matching the chosen channel
-  const eligibleLeadsCount = useMemo(() => {
-    if (!selectedListId) return 0;
-    
-    const isEligible = (l: any) => {
-      if (l.consentStatus === 'opted_out') return false;
-      if (channel === 'email') {
-        return (l.email && l.email.trim() !== '') || Boolean(l.metadata?.website_form?.hasForm);
-      }
-      if (channel === 'whatsapp') {
-        return Boolean(l.phone && l.phone.trim() !== '');
-      }
-      if (channel === 'linkedin') {
-        return Boolean(l.linkedin || l.business_name || l.primary_contact_name);
-      }
-      return true;
-    };
+  // Selected target list entity
+  const targetList = useMemo(() => {
+    if (!selectedListId || selectedListId === 'all') return null;
+    return store.lists.find((l) => l.id === selectedListId) || null;
+  }, [selectedListId, store.lists]);
 
-    if (selectedListId === 'all') {
-      return store.leads.filter(isEligible).length;
-    }
-    const targetList = store.lists.find((l) => l.id === selectedListId);
-    if (!targetList) return 0;
-
-    const countInStore = store.leads.filter(
-      (l) => isEligible(l) && l.lists?.some((membership) => membership.id === selectedListId)
-    ).length;
-    return countInStore > 0 ? countInStore : targetList.lead_count;
-  }, [selectedListId, store.lists, store.leads, channel]);
-
-  // Total leads with valid phone in target list
-  const leadsWithPhoneCount = useMemo(() => {
-    if (selectedListId === 'all') {
-      return store.leads.filter((l) => Boolean(l.phone && l.phone.trim() !== '')).length;
-    }
-    return store.leads.filter(
-      (l) => Boolean(l.phone && l.phone.trim() !== '') && l.lists?.some((m) => m.id === selectedListId)
-    ).length;
+  // Target list members from local store
+  const listMembers = useMemo(() => {
+    if (!selectedListId) return [];
+    if (selectedListId === 'all') return store.leads;
+    return store.leads.filter((l) => l.lists?.some((m) => m.id === selectedListId));
   }, [selectedListId, store.leads]);
+
+  // Total members count in the selected list
+  const totalListMembersCount = useMemo(() => {
+    if (selectedListId === 'all') return store.leads.length;
+    if (listMembers.length > 0) return listMembers.length;
+    return targetList?.lead_count || 0;
+  }, [selectedListId, store.leads.length, listMembers.length, targetList]);
+
+  // Leads with valid direct or enriched email
+  const leadsWithEmailCount = useMemo(() => {
+    return listMembers.filter((l) => {
+      if (l.consentStatus === 'opted_out') return false;
+      const directEmail = Boolean(l.email && l.email.trim() !== '');
+      const metaEmail = Boolean(l.metadata?.email && String(l.metadata.email).trim() !== '');
+      const discEmail = Array.isArray(l.metadata?.discovered_emails) && l.metadata.discovered_emails.length > 0;
+      return directEmail || metaEmail || discEmail;
+    }).length;
+  }, [listMembers]);
+
+  // Total leads with valid phone / WhatsApp in target list
+  const leadsWithPhoneCount = useMemo(() => {
+    return listMembers.filter((l) => {
+      if (l.consentStatus === 'opted_out') return false;
+      const directPhone = Boolean((l.phone && l.phone.trim() !== '') || (l.whatsapp && l.whatsapp.trim() !== ''));
+      const metaPhone = Boolean(l.metadata?.phone && String(l.metadata.phone).trim() !== '');
+      return directPhone || metaPhone;
+    }).length;
+  }, [listMembers]);
+
+  // Total leads with LinkedIn capability in target list
+  const leadsWithLinkedInCount = useMemo(() => {
+    return listMembers.filter((l) => {
+      if (l.consentStatus === 'opted_out') return false;
+      return Boolean(l.linkedin || l.businessName || l.primaryContactName);
+    }).length;
+  }, [listMembers]);
+
+  // Count eligible leads matching the chosen channel strictly
+  const eligibleLeadsCount = useMemo(() => {
+    if (channel === 'email') return leadsWithEmailCount;
+    if (channel === 'whatsapp') return leadsWithPhoneCount;
+    if (channel === 'linkedin') return leadsWithLinkedInCount;
+    return 0;
+  }, [channel, leadsWithEmailCount, leadsWithPhoneCount, leadsWithLinkedInCount]);
 
   // Selected inboxes calculation
   const selectedInboxes = useMemo(() => {
@@ -360,7 +377,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
         sendMode === 'now' ? 'now' : new Date(scheduledDateTime).toISOString();
 
       const result = await store.scheduleListDispatch({
-        listId: selectedListId === 'all' && store.lists.length > 0 ? store.lists[0].id : selectedListId,
+        listId: selectedListId,
         channel,
         inboxIds: channel === 'email' ? selectedInboxIds : undefined,
         linkedinAccountId: channel === 'linkedin' ? (selectedLinkedInAccountId || linkedInAccounts[0]?.id) : undefined,
@@ -558,12 +575,65 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                   </select>
                   <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
                     <span className="flex items-center gap-1.5">
-                      <Users size={12} className="text-brand-600" />
+                      <Users size={12} className={eligibleLeadsCount > 0 ? 'text-brand-600' : 'text-slate-400'} />
                       <span>Eligible for {channel.toUpperCase()}:</span>
-                      <strong className="text-slate-800">{eligibleLeadsCount} leads</strong>
+                      <strong className={eligibleLeadsCount > 0 ? 'text-slate-800' : 'text-amber-700'}>
+                        {eligibleLeadsCount} of {totalListMembersCount} leads
+                      </strong>
                     </span>
                     <span>{selectedListId === 'all' ? 'Entire Database' : `List: ${selectedListId.slice(0, 8)}...`}</span>
                   </div>
+
+                  {/* Channel Switcher Card when 0 leads match current channel */}
+                  {eligibleLeadsCount === 0 && (
+                    <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start justify-between gap-3 animate-in fade-in">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle size={15} className="text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">
+                            No contacts with {channel.toUpperCase()} in {targetList?.name ? `"${targetList.name}"` : 'selected list'}
+                          </p>
+                          <p className="text-[11px] text-amber-700 mt-0.5">
+                            {channel === 'email' && leadsWithPhoneCount > 0 ? (
+                              <span>
+                                {leadsWithPhoneCount === 1 ? 'The 1 contact in this list has' : `${leadsWithPhoneCount} contacts in this list have`} a verified phone/WhatsApp number ready.
+                              </span>
+                            ) : channel === 'whatsapp' && leadsWithEmailCount > 0 ? (
+                              <span>
+                                {leadsWithEmailCount === 1 ? 'The 1 contact in this list has' : `${leadsWithEmailCount} contacts in this list have`} a valid email address ready.
+                              </span>
+                            ) : channel === 'linkedin' && leadsWithPhoneCount > 0 ? (
+                              <span>Phone and WhatsApp contacts are available for direct messaging.</span>
+                            ) : (
+                              <span>Please enrich or add contact details before scheduling outreach.</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {channel === 'email' && leadsWithPhoneCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectChannel('whatsapp')}
+                          className="shrink-0 px-2.5 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-all"
+                        >
+                          <MessageSquare size={12} />
+                          <span>Switch to WhatsApp ({leadsWithPhoneCount}) ↗</span>
+                        </button>
+                      )}
+
+                      {channel === 'whatsapp' && leadsWithEmailCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectChannel('email')}
+                          className="shrink-0 px-2.5 py-1.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs transition-all"
+                        >
+                          <Mail size={12} />
+                          <span>Switch to Email ({leadsWithEmailCount}) ↗</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1138,13 +1208,17 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                     (channel === 'email' && selectedInboxIds.length === 0) ||
                     (channel === 'linkedin' && linkedInAccounts.length === 0)
                   }
-                  className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
+                  className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isSubmitting ? (
                     <>
                       <RefreshCw size={14} className="animate-spin" />
                       <span>Processing & Enqueuing Dispatches...</span>
                     </>
+                  ) : eligibleLeadsCount === 0 ? (
+                    <span>
+                      No Contacts Eligible for {channel.toUpperCase()} in {targetList?.name ? `"${targetList.name}"` : 'Selected List'}
+                    </span>
                   ) : sendMode === 'now' ? (
                     <>
                       <Zap size={14} />
@@ -1208,6 +1282,18 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                         <p className="text-slate-500 text-[11px]">
                           Industry: <span className="font-medium text-slate-700">{previewData.sampleContact.category}</span>
                         </p>
+                      )}
+                      {channel === 'email' && (
+                        previewData.sampleContact.email ? (
+                          <p className="text-slate-500 text-[11px]">
+                            Target Email: <span className="font-medium text-slate-700">{previewData.sampleContact.email}</span>
+                          </p>
+                        ) : (
+                          <p className="text-amber-600 text-[11px] font-semibold flex items-center gap-1 mt-0.5">
+                            <AlertCircle size={11} className="shrink-0" />
+                            <span>No email address on file — (Verified Phone/WhatsApp available)</span>
+                          </p>
+                        )
                       )}
                     </div>
 

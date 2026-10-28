@@ -532,68 +532,147 @@ export class EmailSchedulerService {
     } = params;
 
     // 1. Fetch list metadata
-    const listRes = await query<{ id: string; name: string }>(`SELECT id, name FROM lists WHERE id = $1`, [listId]);
+    let list: { id: string; name: string };
+    let leadsRes: {
+      rows: Array<{
+        id: string;
+        business_name: string;
+        primary_contact_name: string;
+        email: string;
+        phone: string;
+        whatsapp: string;
+        facebook: string;
+        instagram: string;
+        linkedin?: string;
+        website?: string;
+        location?: string;
+        category: string;
+        notes: string;
+        outreach_stage: string;
+        status: string;
+        audit_status?: string;
+        audit_score?: number;
+        audit_key_takeaways?: string;
+        audit_pdf_name?: string;
+        audit_pdf_path?: string;
+        gmb_notes?: string;
+      }>;
+    };
 
-    if (listRes.rows.length === 0) {
-      throw new Error(`List with ID "${listId}" not found`);
+    if (listId === 'all' || listId === 'all-leads') {
+      list = { id: 'all', name: 'All Leads' };
+      leadsRes = await query<{
+        id: string;
+        business_name: string;
+        primary_contact_name: string;
+        email: string;
+        phone: string;
+        whatsapp: string;
+        facebook: string;
+        instagram: string;
+        linkedin?: string;
+        website?: string;
+        location?: string;
+        category: string;
+        notes: string;
+        outreach_stage: string;
+        status: string;
+        audit_status?: string;
+        audit_score?: number;
+        audit_key_takeaways?: string;
+        audit_pdf_name?: string;
+        audit_pdf_path?: string;
+        gmb_notes?: string;
+      }>(
+        `SELECT l.id,
+                l.business_name,
+                COALESCE(NULLIF(TRIM(l.metadata->>'primary_contact_name'), ''), NULLIF(TRIM(l.metadata->>'contact_name'), ''), '') AS primary_contact_name,
+                COALESCE(NULLIF(TRIM(l.email), ''), l.metadata->>'email', l.metadata->'discovered_emails'->>0, '') AS email,
+                COALESCE(NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS phone,
+                COALESCE(NULLIF(TRIM(l.whatsapp), ''), l.metadata->>'whatsapp', NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS whatsapp,
+                COALESCE(NULLIF(TRIM(l.facebook), ''), l.metadata->>'facebook', '') AS facebook,
+                COALESCE(NULLIF(TRIM(l.instagram), ''), l.metadata->>'instagram', '') AS instagram,
+                COALESCE(NULLIF(TRIM(l.linkedin), ''), l.metadata->>'linkedin', '') AS linkedin,
+                l.website,
+                l.location,
+                l.category,
+                l.notes,
+                l.outreach_stage,
+                l.status,
+                l.audit_status,
+                l.audit_score,
+                l.audit_key_takeaways,
+                l.audit_pdf_name,
+                l.audit_pdf_path,
+                l.gmb_notes
+         FROM leads l
+         WHERE l.deleted_at IS NULL
+           AND (l.consent_status IS NULL OR l.consent_status NOT IN ('opted_out', 'unsubscribed'))
+         ORDER BY l.created_at ASC`
+      );
+    } else {
+      const listRes = await query<{ id: string; name: string }>(`SELECT id, name FROM lists WHERE id = $1`, [listId]);
+
+      if (listRes.rows.length === 0) {
+        throw new Error(`List with ID "${listId}" not found`);
+      }
+
+      list = listRes.rows[0];
+
+      // 2. Fetch all leads associated with this list with metadata fallbacks
+      leadsRes = await query<{
+        id: string;
+        business_name: string;
+        primary_contact_name: string;
+        email: string;
+        phone: string;
+        whatsapp: string;
+        facebook: string;
+        instagram: string;
+        linkedin?: string;
+        website?: string;
+        location?: string;
+        category: string;
+        notes: string;
+        outreach_stage: string;
+        status: string;
+        audit_status?: string;
+        audit_score?: number;
+        audit_key_takeaways?: string;
+        audit_pdf_name?: string;
+        audit_pdf_path?: string;
+        gmb_notes?: string;
+      }>(
+        `SELECT l.id,
+                l.business_name,
+                COALESCE(NULLIF(TRIM(l.metadata->>'primary_contact_name'), ''), NULLIF(TRIM(l.metadata->>'contact_name'), ''), '') AS primary_contact_name,
+                COALESCE(NULLIF(TRIM(l.email), ''), l.metadata->>'email', l.metadata->'discovered_emails'->>0, '') AS email,
+                COALESCE(NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS phone,
+                COALESCE(NULLIF(TRIM(l.whatsapp), ''), l.metadata->>'whatsapp', NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS whatsapp,
+                COALESCE(NULLIF(TRIM(l.facebook), ''), l.metadata->>'facebook', '') AS facebook,
+                COALESCE(NULLIF(TRIM(l.instagram), ''), l.metadata->>'instagram', '') AS instagram,
+                COALESCE(NULLIF(TRIM(l.linkedin), ''), l.metadata->>'linkedin', '') AS linkedin,
+                l.website,
+                l.location,
+                l.category,
+                l.notes,
+                l.outreach_stage,
+                l.status,
+                l.audit_status,
+                l.audit_score,
+                l.audit_key_takeaways,
+                l.audit_pdf_name,
+                l.audit_pdf_path,
+                l.gmb_notes
+         FROM lead_list_memberships m
+         JOIN leads l ON l.id = m.lead_id
+         WHERE m.list_id = $1
+           AND l.deleted_at IS NULL
+           AND (l.consent_status IS NULL OR l.consent_status NOT IN ('opted_out', 'unsubscribed'))
+         ORDER BY l.created_at ASC`,
+        [listId]
+      );
     }
-
-    const list = listRes.rows[0];
-
-    // 2. Fetch all leads associated with this list
-    const leadsRes = await query<{
-      id: string;
-      business_name: string;
-      primary_contact_name: string;
-      email: string;
-      phone: string;
-      whatsapp: string;
-      facebook: string;
-      instagram: string;
-      linkedin?: string;
-      website?: string;
-      location?: string;
-      category: string;
-      notes: string;
-      outreach_stage: string;
-      status: string;
-      audit_status?: string;
-      audit_score?: number;
-      audit_key_takeaways?: string;
-      audit_pdf_name?: string;
-      audit_pdf_path?: string;
-      gmb_notes?: string;
-    }>(
-      `SELECT l.id,
-              l.business_name,
-              COALESCE(l.metadata->>'primary_contact_name', l.metadata->>'contact_name', '') AS primary_contact_name,
-              l.email,
-              l.phone,
-              l.whatsapp,
-              l.facebook,
-              l.instagram,
-              l.linkedin,
-              l.website,
-              l.location,
-              l.category,
-              l.notes,
-              l.outreach_stage,
-              l.status,
-              l.audit_status,
-              l.audit_score,
-              l.audit_key_takeaways,
-              l.audit_pdf_name,
-              l.audit_pdf_path,
-              l.gmb_notes
-       FROM lead_list_memberships m
-       JOIN leads l ON l.id = m.lead_id
-       WHERE m.list_id = $1
-         AND l.deleted_at IS NULL
-         AND l.status != 'manual_review'
-         AND (l.consent_status IS NULL OR l.consent_status NOT IN ('opted_out', 'unsubscribed'))
-       ORDER BY l.created_at ASC`,
-      [listId]
-    );
 
     // Filter by channel validity
     const eligibleLeads = leadsRes.rows.filter((lead) => {
@@ -606,13 +685,31 @@ export class EmailSchedulerService {
     });
 
     if (eligibleLeads.length === 0) {
+      const totalMembers = leadsRes.rows.length;
+      let suggestion = '';
+      if (totalMembers > 0) {
+        const hasPhone = leadsRes.rows.some((l) => (l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
+        const hasLinkedIn = leadsRes.rows.some((l) => (l.linkedin && l.linkedin.trim()) || l.business_name);
+        const hasEmail = leadsRes.rows.some((l) => l.email && l.email.trim());
+
+        if (channel === 'email' && hasPhone) {
+          suggestion = ' Verified phone/WhatsApp numbers are available in this list — switch to the WhatsApp tab to dispatch.';
+        } else if (channel === 'email' && hasLinkedIn) {
+          suggestion = ' LinkedIn profiles are available for this list — switch to the LinkedIn tab to dispatch.';
+        } else if (channel === 'whatsapp' && hasEmail) {
+          suggestion = ' Valid email addresses are available in this list — switch to the Email tab to dispatch.';
+        }
+      }
+
       return {
         success: false,
         scheduledCount: 0,
         listName: list.name,
         channel,
         scheduledFor: new Date(),
-        message: `No active leads with valid contact information for ${channel.toUpperCase()} were found in "${list.name}".`,
+        message: totalMembers === 0
+          ? `List "${list.name}" currently has 0 members. Please add leads before scheduling.`
+          : `No active leads with valid contact information for ${channel.toUpperCase()} were found in "${list.name}" (${totalMembers} total ${totalMembers === 1 ? 'member' : 'members'}).${suggestion}`,
       };
     }
 
@@ -979,7 +1076,7 @@ export class EmailSchedulerService {
       if (res.rows.length > 0) {
         sampleContact = { ...res.rows[0], entity_type: 'lead' };
       }
-    } else if (params.listId) {
+    } else if (params.listId && params.listId !== 'all' && params.listId !== 'all-leads') {
       const res = await query<{
         id: string;
         business_name: string;
@@ -988,19 +1085,49 @@ export class EmailSchedulerService {
         category?: string;
         notes?: string;
       }>(
-        `SELECT l.id, l.business_name, COALESCE(l.metadata->>'primary_contact_name', l.metadata->>'contact_name', '') AS primary_contact_name, l.email, l.category, l.notes
+        `SELECT l.id,
+                l.business_name,
+                COALESCE(NULLIF(TRIM(l.metadata->>'primary_contact_name'), ''), NULLIF(TRIM(l.metadata->>'contact_name'), ''), '') AS primary_contact_name,
+                COALESCE(NULLIF(TRIM(l.email), ''), l.metadata->>'email', l.metadata->'discovered_emails'->>0, '') AS email,
+                l.category,
+                l.notes
          FROM lead_list_memberships m
          JOIN leads l ON l.id = m.lead_id
-         WHERE m.list_id = $1 AND l.deleted_at IS NULL AND l.email IS NOT NULL AND TRIM(l.email) != ''
+         WHERE m.list_id = $1 AND l.deleted_at IS NULL
+         ORDER BY (CASE WHEN (l.email IS NOT NULL AND TRIM(l.email) != '') OR (l.metadata->>'email' IS NOT NULL) THEN 0 ELSE 1 END), l.created_at ASC
          LIMIT 1`,
         [params.listId]
       );
       if (res.rows.length > 0) {
         sampleContact = { ...res.rows[0], entity_type: 'lead' };
       }
+    } else {
+      // Pick a representative lead from the entire database
+      const res = await query<{
+        id: string;
+        business_name: string;
+        primary_contact_name?: string;
+        email?: string;
+        category?: string;
+        notes?: string;
+      }>(
+        `SELECT l.id,
+                l.business_name,
+                COALESCE(NULLIF(TRIM(l.metadata->>'primary_contact_name'), ''), NULLIF(TRIM(l.metadata->>'contact_name'), ''), '') AS primary_contact_name,
+                COALESCE(NULLIF(TRIM(l.email), ''), l.metadata->>'email', l.metadata->'discovered_emails'->>0, '') AS email,
+                l.category,
+                l.notes
+         FROM leads l
+         WHERE l.deleted_at IS NULL
+         ORDER BY (CASE WHEN (l.email IS NOT NULL AND TRIM(l.email) != '') OR (l.metadata->>'email' IS NOT NULL) THEN 0 ELSE 1 END), l.created_at DESC
+         LIMIT 1`
+      );
+      if (res.rows.length > 0) {
+        sampleContact = { ...res.rows[0], entity_type: 'lead' };
+      }
     }
 
-    // Default fallback sample if no lead exists
+    // Default fallback sample if database has zero leads
     if (!sampleContact) {
       sampleContact = {
         id: 'sample-001',

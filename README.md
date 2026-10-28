@@ -1,282 +1,200 @@
-# AI Client Follow-Up & Lead Outreach System
+# Cloud Consultancy — Omni-Channel Outreach Engine & Enterprise B2B CRM
 
 [![React 18](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-purple.svg)](https://vitejs.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue.svg)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/TailwindCSS-3.4-teal.svg)](https://tailwindcss.com/)
-[![Express](https://img.shields.io/badge/Express-4.21-lightgrey.svg)](https://expressjs.com/)
+[![Express](https://img.shields.io/badge/Express-5.2-lightgrey.svg)](https://expressjs.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
+[![Nodemailer](https://img.shields.io/badge/Zoho_Mail-SMTP_%26_IMAP-green.svg)](https://www.zoho.com/mail/)
+[![Baileys WhatsApp](https://img.shields.io/badge/WhatsApp-Baileys_Web_v7-25D366.svg)](https://github.com/WhiskeySockets/Baileys)
 [![Ollama](https://img.shields.io/badge/Ollama-Local_LLM-orange.svg)](https://ollama.com/)
+[![Render](https://img.shields.io/badge/Render-Ready_Deploy-46E3B7.svg)](https://render.com/)
 
-An omni-channel cold outreach and lead relationship management (CRM) platform designed for agency owners, growth teams, and sales professionals. It connects bulk lead ingestion, multi-touch drip sequencing, omni-channel engagement (Email, WhatsApp, Instagram/Facebook), and pipeline conversion tracking into a unified, responsive dashboard.
+A modern, production-grade **B2B Omni-Channel Cold Outreach Platform and Enterprise Sales CRM** designed for digital agencies, consultants, and growth teams. It brings together high-volume lead ingestion, Google Business Profile scraping, AI-powered message generation, automated multi-touch drip sequencing across **Email, WhatsApp, Website Forms, and LinkedIn**, with a full **Attio/HubSpot-caliber CRM pipeline**.
 
 ---
 
-## 1. Core Architectural Mandate
+## 1. System Architecture
 
-> [!IMPORTANT]
-> **Separation of Services Rule**:
-> The **Outreach Engine** and the **Conversation Orchestrator** operate as completely decoupled services. 
-> A cold **lead** is NEVER messaged by the same automatic, unlimited-reply logic used for paying **clients**.
+```mermaid
+flowchart TD
+    subgraph Client ["Frontend Client (React 18 + Vite + Tailwind CSS)"]
+        UI["Modern Web Interface"]
+        CMD["Command Palette (Cmd+K)"]
+        CRM["3-Way CRM Hub\n(Contacts Table • Deals Kanban • Dispatch Hub)"]
+        Drawer["HubSpot-Style 360° Lead Drawer\n(Timeline • Deals • Tasks • Cadence)"]
+        Health["Deliverability Center & Auto-Throttling"]
+        Inbox["Multi-Channel Inbox & Messenger"]
+    end
 
+    subgraph API ["Backend API (Node.js + Express 5 TypeScript)"]
+        AuthMiddleware["Security & Auth Barrier\n(Session Tokens • Path Traversal Guards)"]
+        Router["Channel-Aware Send Router"]
+        DripEngine["Autonomous Drip & Cadence Engine"]
+        InboundAgent["Autonomous Inbound AI Agent\n(Sentiment & Intent Classification)"]
+        IMAPSync["Zoho IMAP 30s Inbound Poller"]
+        KeepAlive["12-Min Render Sleep-Prevention Heartbeat"]
+    end
+
+    subgraph External ["External Delivery & AI Providers"]
+        ZohoSMTP["Zoho Mail SMTP\n(smtppro.zoho.in:465)"]
+        ZohoIMAP["Zoho Mail IMAP\n(imappro.zoho.in:993)"]
+        WhatsAppBridge["Baileys WhatsApp Web\n(QR Pairing + Anti-Disconnect)"]
+        PuppeteerChrome["Headless Chrome / Chromium\n(Google Maps & Website Form Submitter)"]
+        OllamaLLM["Local Ollama LLM\n(Llama 3.1 8B / Mistral 7B)"]
+    end
+
+    subgraph Storage ["PostgreSQL 16 Relational Database"]
+        DB_Leads["leads (24 attributes, stages, verification)"]
+        DB_Deals["deals (7 stages, values, probabilities)"]
+        DB_Tasks["tasks (due dates, priorities, checkmarks)"]
+        DB_Activities["activity_logs (chronological audit history)"]
+        DB_Sessions["whatsapp_session_keys (survives container restarts)"]
+        DB_Suppression["global_suppression_list (opt-outs & hard bounces)"]
+        DB_Dispatches["scheduled_dispatches & daily_send_metrics"]
+    end
+
+    UI --> API
+    API --> DB_Leads
+    API --> DB_Deals
+    API --> DB_Tasks
+    API --> DB_Activities
+    API --> DB_Sessions
+    API --> DB_Suppression
+    API --> DB_Dispatches
+
+    Router --> ZohoSMTP
+    IMAPSync --> ZohoIMAP
+    Router --> WhatsAppBridge
+    Router --> PuppeteerChrome
+    DripEngine --> OllamaLLM
+    InboundAgent --> OllamaLLM
 ```
-┌────────────────────────────────────────────────────────┐
-│                   Bolt.new Frontend                    │
-│   (Import Leads, Campaigns, CRM / Inbox, Health)       │
-└──────────────────────────┬─────────────────────────────┘
-                           │ HTTP / REST (/api via Vite proxy)
-┌──────────────────────────▼─────────────────────────────┐
-│             Node.js / Express TypeScript API           │
-│                                                        │
-│  ┌─────────────────────────┐ ┌──────────────────────┐  │
-│  │     Outreach Engine     │ │     Conversation     │  │
-│  │ (Cold sequence drip,    │ │     Orchestrator     │  │
-│  │  consent gate, hard     │ │ (Client onboarding,  │  │
-│  │  suppression, limits)   │ │  retention, check-in)│  │
-│  └───────────┬─────────────┘ └──────────┬───────────┘  │
-│              │                          │              │
-│  ┌───────────┴──────────────────────────┴───────────┐  │
-│  │              Channel-Aware Send Router           │  │
-│  │   • Email: Direct Send (Warm-up throttled)       │  │
-│  │   • WhatsApp: Inbound only (Cold send disabled)  │  │
-│  │   • Instagram/FB: Draft queue (Human approved)   │  │
-│  └───────────────────────┬──────────────────────────┘  │
-│                          │                             │
-│  ┌───────────────────────▼──────────────────────────┐  │
-│  │           Local Ollama LLM Inference             │  │
-│  │     (Llama 3.1 8B / Mistral 7B via localhost)    │  │
-│  └──────────────────────────────────────────────────┘  │
-└──────────────────────────┬─────────────────────────────┘
-                           │
-┌──────────────────────────▼─────────────────────────────┐
-│                 PostgreSQL Relational DB               │
-│                                                        │
-│  • leads (consent_status: none, replied, opted_out)    │
-│  • clients (separate table: active paying accounts)    │
-│  • conversations (thread tracking per entity)          │
-│  • messages (omni-channel transcripts & status)        │
-│  • follow_up_rules (scheduler & frequency policies)    │
-│  • follow_up_logs (audit trail of automated triggers)  │
-│  • send_queue (approval queue for human dispatch)      │
-│  • daily_send_metrics (deliverability & health)        │
-└────────────────────────────────────────────────────────┘
-```
 
 ---
 
-## 2. Core Features
+## 2. Key Modules & Features
 
-### 2.1 Lead Ingestion & Data Cleansing Engine
-* **Dual Ingestion Modes (Single Form & Bulk Import)**: The Lead Ingestion interface provides a clean, tabbed layout enabling both manual single lead creation and mass CSV/spreadsheet parsing.
-* **Single Lead Registration Form**:
-  * **Company Profile**: Business Name (required) and Industry/Category with smart datalist suggestions.
-  * **Omni-Channel Contact Details**: Dedicated fields for Email Address, Phone Number, WhatsApp Number, Instagram Handle (auto-formats `@handle`), and Facebook Profile/Page URL.
-  * **Real-Time Duplicate Warning**: Inline amber warning instantly flags if the typed email already belongs to an active lead or client in PostgreSQL.
-  * **Pipeline Status & List Assignment**: Configure initial status as `Active` (ready for outreach) or `Inactive` (parked), assign directly to a Custom List, and set a custom Source/Batch Tag.
-  * **Contextual Outreach Notes**: Multi-line textarea for meeting summaries, account research, or specific outreach triggers.
-  * **One-Click Sample Data & Reset**: Rapidly populate realistic test data or clear fields with a single click.
-  * **Direct CRM Navigation**: Instant feedback card with a direct "View in CRM" button upon saving.
-* **Bulk CSV & Raw Text Ingestion**:
-  * **Pasted Text & CSV Parsing**: Robust parsing with automatic header detection (`business_name`, `category`, `phone`, `email`, `instagram`, `facebook`, `whatsapp`), quote escaping, and whitespace trimming.
-  * **Dual-Table Deduplication**: Deduplicates records against **both** the `leads` table and the `clients` table (by normalized email and normalized phone digits).
-  * **Intra-Batch Deduplication**: Prevents duplicate records within the same uploaded file or pasted text.
-  * **Incomplete Row Flagging**: Automatically flags rows missing all contact channels (`email`, `phone`, `instagram`, `facebook`, `whatsapp`) and excludes them from import.
-  * **Atomic PostgreSQL Insertion**: Bulk commits valid records via `POST /api/leads/import` with 28-day batch expiration tracking.
+### 2.1 Enterprise B2B CRM & Deals Pipeline
+* **Executive Top-Line KPI Bar**: Live metrics at the top of the CRM: Total Pipeline Value, Active Prospects, Hot Prospects, Inbound Threads, and Won Retainers.
+* **3-Way View Switcher**:
+  1. `[📋 Leads & Contacts Table]`: High-density accounts table with company avatar initials, executive contact persons, verified channel badges, estimated deal values, and interactive pipeline stage dropdowns with 1-click database updates.
+  2. `[📊 Deals Pipeline (Kanban)]`: 7-stage visual Kanban board (`Interested` → `Audit Sent` → `Meeting Booked` → `Proposal Sent` → `Negotiation` → `Won` → `Lost`) with stage totals, search, and a `+ New Deal` opportunity creator.
+  3. `[⚡ Multi-Channel Dispatch Hub]`: Cadence dispatching and multi-channel campaign automation.
+* **HubSpot-Grade 360° Lead Activity Drawer**:
+  * **Profile Overview**: Company initials avatar with vibrant gradient, verified primary contact with executive title, deal value tag, lead intent score (`🔥 94 Hot`), and location with country flag.
+  * **Quick Action Dock**: Direct 1-click buttons to send an **Email**, launch **WhatsApp**, make a **Phone Call**, view **LinkedIn**, or open the **Website**.
+  * **Interactive Stage Selector**: Change lead stage (e.g. from *Contacted* to *Meeting Scheduled* or *Won*) with immediate database persistence.
+  * **Timeline & Activity Logger**: Interactive quick logger for **Sales Notes**, **Phone Calls**, and **Strategy Meetings**, plus a chronological audit feed showing message history and stage changes.
+  * **Deals & Revenue Tab**: View all active and closed opportunities for this company, or log a new contract directly from the drawer.
+  * **Tasks & Reminders Tab**: Interactive checklist to toggle completed follow-ups or assign new tasks with due dates.
+  * **Automated Cadence Tab**: Multi-touch sequence status.
 
-### 2.2 Multi-Channel Campaign & Sequence Builder
-* **Multi-Touch Drip Sequences**: Configure multi-step outreach with step names, channel selectors, and customizable delay days.
-* **Audience Segmentation**: Filter and preview target audiences dynamically by category and channel capabilities.
-* **Local AI Assistant**: Generate persuasive cold outreach copy using local Ollama LLMs (`Llama 3.1 8B` or `Mistral 7B`) directly inside each sequence step.
-* **PostgreSQL Persistence**: Saves campaigns and sequence steps directly to the database via `POST /api/campaigns`.
+### 2.2 Omni-Channel Outreach Engine
+* **Live Outbound Email via Zoho Mail**:
+  * Authenticated SSL delivery via `smtppro.zoho.in:465`.
+  * Multi-inbox rotation with configurable daily limits and deliverability health monitoring.
+  * Dynamic template generation with consultative hooks, personalization, and anti-hype copy.
+* **Inbound Reply Synchronization (IMAP)**:
+  * Connects to `imappro.zoho.in:993` via `imapflow` and `mailparser`.
+  * Background worker runs every 30 seconds to fetch incoming client emails.
+  * Strips email quote trees and matches sender email to leads in PostgreSQL.
+  * Real-time floating alert cards notify the user of new incoming replies instantly.
+* **WhatsApp Web Integration (Baileys v7)**:
+  * QR Code pairing for live WhatsApp communication.
+  * **PostgreSQL Session Persistence**: Session keys are stored directly in PostgreSQL (`whatsapp_session_keys` table), ensuring sessions survive Render container redeploys and ephemeral disk resets.
+  * International country code standardization (+91, +1, +44, +61) to prevent failed dispatches.
+* **Website Contact Form Submitter**:
+  * Headless Chrome detection of contact form endpoints (`/contact`, `/reach-us`, WordPress, Webflow, Squarespace).
+  * Automated personalized inquiry dispatch.
+* **LinkedIn Outreach Hub**:
+  * Unicode post beautifier (bold/italic formatting for mobile & desktop feeds).
+  * Direct profile deep-links and comment queue workflow.
 
-### 2.3 Unified Leads & Clients CRM (Phase 5)
-* **Single-Entity Invariant**: A contact strictly exists in `leads` OR `clients`, never both simultaneously. Once a lead replies positively or is converted to a client, the record is removed from `leads` and all message history is preserved under `clients`.
-* **Lead Selection & Bulk Actions**: Select individual leads with row checkboxes, multiple leads, or click the header checkbox for "Select All". A floating bulk action bar allows 1-click "Delete Selected" or "Save to List / Save for Later".
-* **Custom Lists Management**: Create, view, and delete organized outreach lists (e.g. *"High Priority Hot Leads"*, *"Follow-up in October"*). Filter CRM leads by list dynamically with automatic count badges.
-* **Real Conversation Timeline**: Dynamic multi-channel transcripts loaded from `/api/conversations/by-lead/:id` or `/api/conversations/by-client/:id`.
-* **Automated Lead $\rightarrow$ Client Conversion**: On inbound reply, the contact is converted to `'active'` client status, existing conversations are transferred to `client_id`, and the contact is purged from `leads`.
-* **Orchestrator Follow-Up Scheduler**: Converted clients are automatically enrolled in active retention rules (e.g. *"Bi-Weekly Health Check-in"*), generating scheduled tasks in `follow_up_logs`.
-* **Cold Queue Purge**: Converting a lead immediately discards any pending cold outreach drafts in `send_queue`.
-* **Interactive Inbound Simulator**: Built-in simulator to test inbound replies (positive reply conversion vs. opt-out suppression) directly in the UI.
+### 2.3 Lead Scraper & Data Ingestion
+* **Google Business Profile Scraper (GMB 100)**: Scrapes up to 100 local businesses per query with star rating, review volume, address, website, and phone numbers using headless Chrome.
+* **Dual Ingestion Modes**: Single lead manual entry or bulk CSV/paste import with dual-table deduplication against active leads and paying clients.
+* **Automated Channel List Assignment**: PostgreSQL database triggers automatically sort leads into dedicated channel lists (`Email Leads`, `WhatsApp Leads`, `LinkedIn Leads`, `Website Leads`) based on verified contact channels.
 
-### 2.4 Channel-Aware Send Router & Inbound Email Sync (Phase 3, Phase 4 & Phase 10)
-* **Outbound Email Delivery via Gmail SMTP**: Direct Gmail integration (`smtp.gmail.com:465`) with 16-character Google App Passwords allowing live external email delivery without requiring a custom domain or web hosting.
-* **Automated Inbound Reply Reflection (Gmail IMAP Listener)**:
-  * **Real-Time Inbox Ingestion**: Connects to `imap.gmail.com:993` (SSL) via `imapflow` and `mailparser` to automatically fetch external email replies received in the Gmail inbox.
-  * **Clean Message Extraction**: Automatically isolates the recipient's new reply text from email quote trees and historical forward headers (`On ... wrote:`, `From: ...`, `>`).
-  * **Lead & Client Matching**: Matches the reply's sender address to active contacts in PostgreSQL, updates lead `consent_status` to `'replied'`, updates `last_contacted_at`, and attaches the inbound message to the conversation timeline.
-  * **Automated Background Polling & Manual Sync**: Periodically polls Gmail every 30 seconds in the background and provides an explicit **"Sync Email Replies"** button in the CRM header and **"Check Gmail Replies"** in the contact conversation modal for on-demand synchronization.
-  * **Automatic Bounce Detection**: Analyzes delivery status failure notifications from `mailer-daemon@googlemail.com` and records bounces into `daily_send_metrics` for real deliverability tracking.
-* **WhatsApp Adapter**: Outbound cold sending is strictly disabled (`COLD_OUTBOUND_DISALLOWED`). Outbound messages are permitted **only within an active 24-hour customer service window** initiated by an inbound message.
-* **Instagram / Facebook Adapter**: "Draft, needs human send" queue workflow creating pending drafts in `send_queue` with direct profile deep-links to prevent Meta platform automation shadowbans.
-* **Unified Send Router**: Pre-flight dispatch routing enforces consent checks, warm-up velocity, and channel policies before any message is transmitted.
+### 2.4 Autonomous Drip & Cadence Engine
+* **Condition-Based Sequencing**:
+  * Stage 0: `initial` (First message / tailored intro pitch)
+  * Stage 1: `followup_1` (Value proposition / quick review findings)
+  * Stage 2: `followup_2` (Soft nudge / audit offer)
+  * Stage 3: `followup_3` (Final break-up / parting value note)
+  * Stage 4: `completed` (Sequence finished)
+* **Automated Agency Audit PDF Generator**: Builds high-converting, professional technical performance audits in PDF format for prospective clients.
 
-### 2.5 Hard Suppression & Consent Gate (Phase 6)
-* **Pre-Send Hard Gate**: Blocks any outbound dispatch to contacts with `consent_status = 'opted_out'`.
-* **Global Suppression Register**: Cross-references recipient normalized email and phone digits against all suppressed records in the database, preventing re-messaging across different imports or campaigns.
-* **Keyword Listener**: Inbound messages containing keywords (`stop`, `unsubscribe`, `remove`, `cancel`, `quit`, `opt out`, `dont message`, `do not contact`) immediately update `consent_status` to `'opted_out'`, discard pending drafts, and halt any conversion to Client.
-
-### 2.6 Sending Health & Deliverability Center (Phase 7)
-* **7-Day Activity Chart**: Tracks daily sent volume vs. bounces vs. spam complaints in PostgreSQL.
-* **Spam Complaint Signal Monitoring**: Continuously tracks spam complaint rates aligned with Google & Yahoo 2024 sender requirements ($< 0.1\%$ Safe, $> 0.3\%$ Critical).
-* **Deliverability Auto-Throttling Engine**: Automatically halts automated cold sends (`isAutoThrottled: true`) if the bounce rate $> 5.0\%$, the spam complaint rate $> 0.30\%$, or the daily warm-up limit is reached.
-* **Deliverability Signal Simulator**: Interactive simulator allowing teams to inject test bounces, spam complaints, or volume sends to observe live auto-throttling and test baseline recovery.
-* **Manual Send Approval Queue**: 1-click "Mark as Sent" and "Discard" actions with live queue clearance for Instagram/Facebook drafts.
-* **System Infrastructure Status**: Real-time status indicators for PostgreSQL connection and local Ollama daemon.
-
-### 2.7 28-Day Deletion Retention & Trash Restoration (Phase 8)
-* **Soft-Deletion with Expiration**: Deleted leads are preserved for a rolling 28-day restoration window (`deleted_at = NOW(), deleted_expires_at = NOW() + INTERVAL '28 days'`), completely hidden from the active CRM table but never prematurely lost.
-* **Audit Trail & Deletion History**: All deletion operations log full snapshot records to `deletion_history` with entity ID, contact data, deletion timestamp, and expiration.
-* **Interactive 28-Day Trash Modal**: Dedicated trash browser in the CRM showing each soft-deleted contact, days remaining before purge, single-click "Restore", bulk restoration, and permanent purge.
-* **Full History Preservation**: Restoring a lead immediately returns it to the active pipeline with all previous conversations, channel transcripts, and touches 100% intact.
-
-### 2.8 Upload Batches & 1-Click Batch Email Shooting (Phase 8)
-* **28-Day Upload Batch Tracking**: Each lead import (CSV or paste) creates an immutable `upload_batches` record with custom batch name, source, total row counts, imported count, duplicate count, incomplete count, and `expires_at = NOW() + INTERVAL '28 days'`.
-* **CRM Batch Filtering**: Filter the CRM table by specific upload batch to instantly view and manage contacts from that particular campaign or list ingestion.
-* **1-Click "Shoot Emails to this Batch"**: Click the batch action button in the CRM banner to automatically shoot personalized, stage-appropriate cold emails to every eligible contact in that batch in one click.
-
-### 2.9 Condition-Based Automated Sequence Dispatch (Phase 8)
-* **Automatic Stage Detection**: The system dynamically inspects each contact's interaction history to determine their exact sequence condition:
-  * **0 outbound emails sent** $\rightarrow$ `initial` (**First Message Needed** / Intro copy)
-  * **1 outbound email sent** $\rightarrow$ `followup_1` (**Follow-up 1 Due** / Check-in copy)
-  * **2 outbound emails sent** $\rightarrow$ `followup_2` (**Follow-up 2 Due** / Final nudge copy)
-  * **$\ge 3$ outbound emails sent** $\rightarrow$ `completed` (**Sequence Completed** / Automated skip)
-* **Smart Safety Exclusions**: Contacts with `consent_status = 'opted_out'` or `'replied'`, or those missing a valid email address are automatically skipped with detailed explanations.
-* **Bulk & Single Auto-Send**:
-  * **Bulk Selection**: Select any combination of leads (or "Select All") and click **"⚡ Auto-Send Next Step"** in the floating action bar to dispatch appropriate copy to each lead simultaneously.
-  * **Single Lead Preview**: Open any lead modal and click **"⚡ Shoot Next Step Automatically"** to preview the exact stage, personalized subject line, and body before sending.
-
-### 2.10 Comprehensive Client Info Editing (Admin CRM)
-* **Full In-Place Client Updates**: Admins can open any converted client modal and click **"✏️ Edit Info"** to update business name, primary contact name, category, phone, email, Instagram, Facebook, WhatsApp, status (`active`, `paused`, `churned`), contract value, and internal notes.
-* **PostgreSQL Persistence**: Updates are committed via `PUT /api/clients/:id` with real-time UI synchronization across the CRM.
-
-### 2.11 Lead & Active Client Deletion Synchronization & Trash Management (Phase 9)
-* **Cross-Entity Soft-Deletion**: Deleting a lead (single, row action, or bulk) automatically soft-deletes the lead and any matching record in `clients` (by `original_lead_id` or matching email), moving both to Trash with a rolling 28-day retention window.
-* **Bidirectional Client Soft-Deletion**: Deleting a client (`DELETE /api/clients/:id`) soft-deletes the client and any corresponding lead record, preserving both in Trash for 28 days with zero history loss.
-* **Unified Active Exclusion**: Active lists (`GET /api/leads` and `GET /api/clients`) enforce `WHERE deleted_at IS NULL`, guaranteeing that soft-deleted contacts never appear in active CRM views.
-* **Interactive Trash with Empty Trash & Multi-Purge**:
-  * **Clear Trash at Once**: Click **"Clear Trash ({count})"** (`POST /api/leads/trash/clear`) to permanently empty all soft-deleted records and foreign keys at once.
-  * **Multi-Select & Bulk Permanent Delete**: Select multiple records in Trash view and click **"Permanently Delete ({count})"** (`POST /api/leads/trash/bulk-permanent-delete`).
-  * **Single Purge**: Purge records one-by-one (`DELETE /api/leads/:id/permanent`).
-  * **Restoration**: Restoring any contact restores both lead and client records back to active CRM (`POST /api/leads/:id/restore` and `POST /api/leads/bulk-restore`).
-
-### 2.12 Mark as Inactive Option & Status Filtering (Phase 9)
-* **Status Column & Interactive Toggle**: Every lead and client displays an interactive status pill (`Active` / `Inactive`) that can be clicked directly to toggle status.
-* **Row-Level Action Buttons**: Each CRM row provides dedicated **"Activate" / "Inactive"** toggle buttons alongside the Delete button.
-* **Bulk Status Update**: Select 1, multiple, or all leads and click **"Mark Inactive"** or **"Mark Active"** in the floating bulk action bar (`POST /api/leads/bulk-status`).
-* **Detail Modal Status Management**: The lead and client detail modal displays the current status and features a toggle button to switch between Active and Inactive.
-* **CRM Status Filtering**: Filter CRM records by status (`All Status`, `Active Only`, `Inactive Only`) in the filter strip.
-
-### 2.13 Google Business Profile & Local Reputation Intelligence (Phase 11)
-* **Automatic Google Enrichment**: When registering a single lead or importing lists, contacts can be automatically enriched with live Google Business Profile metadata, including star rating (e.g. `4.8★`), total review count, verified address, operational status, and a direct Google Maps search link.
-* **Persistent PostgreSQL Storage**: Google data is stored in `leads.metadata.google_profile` and loaded seamlessly with all CRM queries.
-* **On-Demand Google Sync**: Dedicated **"🔄 Update Info from Google"** action available both in the CRM Contact Details Modal and via `POST /api/leads/:id/enrich-google` and `POST /api/leads/batch-enrich-google`.
-* **Reputation Overview Card**: Displays star rating, review volume, operational badge, address, and an external Google Maps link directly inside the contact modal.
-
-### 2.14 Live Google Profile Context While Emailing & Pitching (Phase 11)
-* **Live In-Context Info Bar**: Positioned directly above the reply textarea and channel selector in the CRM modal, senders see:
-  * ⭐ Google Rating & Total Reviews
-  * 📍 Verified Physical Address
-  * 🟢 Operational Status (`OPERATIONAL` / `VERIFIED`)
-  * 🔗 Direct **"Google Maps ↗"** quick-link
-  * 🔄 **"Update Info from Google"** refresh trigger
-* **Informed Pitching**: Enables the sender to tailor local SEO, Google Maps audit points, or review acceleration hooks with zero tab-switching while drafting or improvising emails.
-
-### 2.15 1-Click Profile Navigation from Multi-Channel Messages & Inbox (Phase 11)
-* **Clickable Business Names**: Clicking any contact name within message cards in `InboundRepliesModal.tsx` immediately opens their full profile details modal.
-* **Dedicated "👤 View Profile" Button**: An explicit action button next to "Open Thread & Reply" lets users jump straight to the contact's complete profile with all history and Google details.
-
-### 2.16 Complete Cascading Lead Deletion (Zero Orphan Messages Invariant) (Phase 11)
-* **Full Database & UI Cleanup**: When a lead or client is deleted (`DELETE /api/leads/:id` or `POST /api/leads/bulk-delete`), the backend automatically cascades and purges:
-  * All associated `messages` across all channels
-  * All associated `conversations`
-  * All pending drafts in `send_queue`
-  * All memberships in `lead_list_memberships`
-* **Clean Inbox Invariant**: `recent-messages` and `inbound-replies` queries enforce strict `deleted_at IS NULL` checks, ensuring deleted contacts never leak into inbox modals or conversation timelines.
-* **Instant State Purge**: Frontend store immediately removes all matching messages from `inboundReplies` state upon single, bulk, or permanent delete.
-
-### 2.17 Human-in-the-Loop AI Copy Improvisation Engine (Phase 12)
-* **"Your Words → Ask AI to Improvise" Engine**: Senders type rough notes or bullet points (e.g. *"free audit of website, checking local ranking, quick chat"*), and click **"✨ Improvise with AI"** (`POST /api/ai/improvise`).
-* **Anti-Hype Mandate**: Eliminates all hyperbolic, unrealistic promises (*"double bookings"*, *"cut no-shows by 40%"*) in favor of consultative, grounded digital solutions (free Google Map pack review, mobile speed checks, inquiry response streamlining).
-* **5-Channel Specific Copy**: Tailored word counts and formats for Email (< 85 words), WhatsApp (< 45 words), LinkedIn (< 70 words), Instagram (< 45 words), and Facebook (< 55 words).
-
-### 2.18 WhatsApp Country Code Standardization & 12-Hour Automated GMB Sync Engine (Phase 14)
-* **International Country Code Enforcement**:
-  * All phone numbers in PostgreSQL, CSV/Maps imports (`POST /api/leads/import`), single lead creations (`POST /api/leads`), and updates (`PUT /api/leads/:id`) are strictly formatted with their full international country code:
-    * **India**: `+91 XXXXX XXXXX` (10-digit mobile detection with 6-9 leading prefix)
-    * **North America**: `+1 XXX-XXX-XXXX` (US/Canada with NANP pattern & toll-free discrimination)
-    * **Australia**: `+61 XXX XXX XXX` (mobile detection with 04xx prefix)
-    * **United Kingdom**: `+44 XXXX XXXXXX` (mobile detection with 07xx prefix)
-  * Eliminates WhatsApp failed dispatch errors caused by missing country code prefixes.
-  * Dedicated **"💬 Chat (+Code) ↗"** deep-link button in the contact details modal opens WhatsApp directly with the verified country code.
-* **12-Hour Automated Google Business Profile (GMB) Sync Engine**:
-  * Background daemon runs on startup and recurs every 12 hours (`12 * 60 * 60 * 1000`) via `googleEnrichmentService.start12HourGmbSync()`.
-  * Matches each active lead with Google Maps/Places data, refreshing star ratings (e.g. `4.8★`), reviews volume, verified physical address, and operational business presence.
-  * **Intelligent Industry Category Inference**: Automatically maps raw or noisy categories (e.g. *"No public email found"*, placeholder text) to verified business verticals (`Fitness & Gym`, `Dental & Healthcare`, `Beauty & Wellness`, `Restaurants & Hospitality`, `Plumbing Services`, etc.).
-  * **On-Demand GMB Sync Trigger**: **"Sync GMB Now 🔄"** button with a live **"12h Auto"** pulse badge in the CRM header allows senders to trigger immediate synchronization across all active leads on demand (`POST /api/leads/sync-gmb` and `GET /api/leads/sync-gmb-status`).
-* **Real-Time Profile Auto-Updates (Zero Manual Refresh Invariant)**:
-  * **Silent Background Polling**: CRM runs a silent 20-second polling cycle (`store.fetchLeads()`), streaming backend GMB sync updates directly into the UI.
-  * **Deep Reactive Modal Synchronization**: The contact details modal tracks `store.leads` with deep object comparison—any background enrichment, rating shift, category correction, or phone edit immediately reflects on screen without requiring the user to refresh the page.
+### 2.5 Deliverability Shield & Suppression
+* **Global Suppression Register**: Instant suppression for unsubscribed or opted-out contacts (`stop`, `unsubscribe`, `remove`, `cancel`).
+* **Auto-Quarantine on Bounce**: Automatically moves invalid email addresses to the `manual_review` queue to protect domain sender reputation.
+* **Auto-Throttling**: Halts cold outreach automatically if bounce rate exceeds 5% or spam complaint rate exceeds 0.3%.
 
 ---
 
-## 3. Database Schema (PostgreSQL 16)
+## 3. Database Schema Overview
 
 ```mermaid
 erDiagram
     LEADS ||--o{ CONVERSATIONS : "has threads"
-    LEADS ||--o{ SEND_QUEUE : "has pending"
-    CLIENTS ||--o{ CONVERSATIONS : "has threads"
-    CLIENTS ||--o{ SEND_QUEUE : "has pending"
+    LEADS ||--o{ DEALS : "has deals"
+    LEADS ||--o{ TASKS : "has tasks"
+    LEADS ||--o{ ACTIVITY_LOGS : "logs history"
+    LEADS ||--o{ LEAD_LIST_MEMBERSHIPS : "belongs to"
     CONVERSATIONS ||--o{ MESSAGES : "contains"
-    CAMPAIGNS ||--o{ CAMPAIGN_STEPS : "contains"
-    CAMPAIGNS ||--o{ SEND_QUEUE : "targets"
-    FOLLOW_UP_RULES ||--o{ FOLLOW_UP_LOGS : "logs"
+    DEALS ||--o{ TASKS : "has tasks"
+    LISTS ||--o{ LEAD_LIST_MEMBERSHIPS : "contains"
 
     LEADS {
         uuid id PK
-        varchar business_name
-        varchar category
-        varchar phone
-        varchar email
-        varchar instagram
-        varchar facebook
-        varchar whatsapp
-        varchar consent_status
-        varchar status
-        uuid batch_id FK
-        varchar outreach_stage
-        timestamptz last_contacted_at
-        timestamptz deleted_at
-        timestamptz deleted_expires_at
-        text notes
-        jsonb metadata
-        timestamptz created_at
-        timestamptz updated_at
-    }
-
-    CLIENTS {
-        uuid id PK
-        uuid original_lead_id FK
         varchar business_name
         varchar primary_contact_name
         varchar category
         varchar phone
         varchar email
+        varchar website
+        varchar location
+        varchar country
+        varchar outreach_stage
         varchar status
-        numeric contract_value
-        timestamptz deleted_at
-        timestamptz deleted_expires_at
-        timestamptz onboarded_at
+        timestamptz last_contacted_at
+        jsonb metadata
+    }
+
+    DEALS {
+        uuid id PK
+        uuid lead_id FK
+        varchar title
+        numeric value
+        varchar stage
+        integer probability
+        date expected_close_date
+    }
+
+    TASKS {
+        uuid id PK
+        uuid lead_id FK
+        uuid deal_id FK
+        varchar title
+        date due_date
+        varchar priority
+        varchar status
+    }
+
+    ACTIVITY_LOGS {
+        uuid id PK
+        uuid lead_id FK
+        uuid deal_id FK
+        varchar activity_type
+        varchar title
+        text description
         timestamptz created_at
-        timestamptz updated_at
     }
 
     CONVERSATIONS {
         uuid id PK
-        varchar entity_type
         uuid lead_id FK
-        uuid client_id FK
         varchar channel
         varchar status
         timestamptz last_message_at
@@ -288,139 +206,124 @@ erDiagram
         varchar channel
         varchar direction
         text text
-        varchar status
         timestamptz sent_at
     }
 
-    SEND_QUEUE {
+    GLOBAL_SUPPRESSION_LIST {
         uuid id PK
-        uuid lead_id FK
-        uuid client_id FK
-        uuid campaign_id FK
-        varchar channel
-        text message_preview
-        varchar status
+        varchar email
+        varchar phone
+        varchar reason
+        timestamptz created_at
     }
 
-    DAILY_SEND_METRICS {
-        date metric_date PK
-        varchar channel PK
-        integer sent_count
-        integer bounced_count
-        integer complaints_count
-        integer drafted_count
+    WHATSAPP_SESSION_KEYS {
+        varchar key_id PK
+        text key_data
+        timestamptz updated_at
     }
 ```
 
 ---
 
-## 4. API Reference
+## 4. Local Quick Start
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api` | Service operational health check |
-| `GET` | `/api/leads` | List leads (supports `consent`, `category`, `search` filters) |
-| `GET` | `/api/leads/:id` | Get single lead by ID |
-| `POST` | `/api/leads` | Create single lead |
-| `POST` | `/api/leads/import` | Bulk import with multi-table deduplication & validation |
-| `PATCH`| `/api/leads/:id/consent` | Update lead consent status (`none`, `replied`, `opted_out`) |
-| `PATCH`| `/api/leads/:id/status` | Mark lead as `active`, `inactive`, or `paused` |
-| `POST` | `/api/leads/bulk-status` | Bulk update status for multiple leads (`active`, `inactive`) |
-| `DELETE`| `/api/leads/:id` | Soft-delete lead & matching client (moves to Trash for 28 days) |
-| `POST` | `/api/leads/bulk-delete` | Bulk soft-delete leads & matching clients (28-day retention) |
-| `GET` | `/api/leads/trash` | List soft-deleted leads & clients preserved within 28-day window |
-| `POST` | `/api/leads/:id/enrich-google` | Fetch & update Google Business Profile & Maps data for a lead |
-| `POST` | `/api/leads/batch-enrich-google` | Batch update Google data for multiple leads |
-| `POST` | `/api/leads/:id/restore` | Restore soft-deleted lead & matching client to active CRM |
-| `POST` | `/api/leads/bulk-restore` | Bulk restore soft-deleted leads & clients to active CRM |
-| `DELETE`| `/api/leads/:id/permanent` | Permanently purge lead & matching client from database |
-| `POST` | `/api/leads/trash/bulk-permanent-delete` | Permanently purge selected trash leads & clients |
-| `POST` | `/api/leads/trash/clear` | Empty / clear all records in trash permanently at once |
-| `GET` | `/api/clients` | List paying clients (filters out soft-deleted records) |
-| `GET` | `/api/clients/:id` | Get single client by ID |
-| `POST` | `/api/clients/convert` | Promote lead to client and enroll in Conversation Orchestrator |
-| `PUT` | `/api/clients/:id` | Update full client information (business, contacts, notes, value) |
-| `PATCH`| `/api/clients/:id/status` | Update client status (`active`, `paused`, `churned`) |
-| `DELETE`| `/api/clients/:id` | Soft-delete client & matching lead (moves to Trash for 28 days) |
-| `GET` | `/api/batches` | List 28-day upload batches with remaining days and stats |
-| `POST` | `/api/batches/:id/shoot-emails` | 1-click batch sequence email dispatch via Gmail SMTP |
-| `GET` | `/api/conversations/by-lead/:leadId` | Get message history for a lead |
-| `GET` | `/api/conversations/by-client/:clientId` | Get message history for a client |
-| `GET` | `/api/conversations/recent-messages` | Fetch recent omni-channel messages across all channels |
-| `GET` | `/api/conversations/inbound-replies` | Fetch inbound replies center messages (pending / unread / handled) |
-| `POST` | `/api/conversations/reply` | Send message (enforces Channel Router for cold leads) |
-| `POST` | `/api/conversations/inbound` | Inbound reply receiver, opt-out suppression & client auto-conversion |
-| `POST` | `/api/conversations/auto-send-next` | Condition-based automated sequence message dispatcher |
-| `GET` | `/api/conversations/stage/:leadId` | Inspect contact sequence stage and next step copy |
-| `GET` | `/api/campaigns` | List campaigns with sequence steps |
-| `POST` | `/api/campaigns` | Create campaign and sequence steps |
-| `GET` | `/api/queue` | List manual send queue drafts |
-| `POST` | `/api/queue/:id/send` | Mark queue draft as sent and log message |
-| `POST` | `/api/queue/:id/discard` | Discard queue draft |
-| `GET` | `/api/health` | Deliverability metrics, spam signals, warmup limits & system status |
-| `POST` | `/api/health/signal` | Inject deliverability event signal (bounce, spam complaint, sent) |
-| `POST` | `/api/health/reset-today` | Reset today's deliverability test signals back to baseline |
-| `GET` | `/api/adapters/email/warmup` | Get dedicated subdomain SPF/DKIM/DMARC status & warm-up stage |
-| `POST` | `/api/adapters/email/stage` | Update progressive email warm-up stage (1-5) |
-| `POST` | `/api/adapters/email/subdomain` | Configure dedicated outreach subdomain |
-| `GET` | `/api/adapters/whatsapp/window/:id` | Check 24-hour customer service window status for a contact |
-| `POST` | `/api/adapters/whatsapp/webhook` | WhatsApp webhook simulator & receiver |
-| `GET` | `/api/ai/status` | Check local Ollama daemon & model availability |
-| `POST` | `/api/ai/draft` | Generate AI cold outreach draft via Ollama |
-| `POST` | `/api/ai/improvise` | Improvise rough user words into polished, realistic copy |
+### Prerequisites
+* **Node.js**: v18.0.0 or higher (v20+ recommended)
+* **PostgreSQL**: v14.0 or higher running locally on port 5432
+* **Ollama** *(Optional)*: If running local AI generation, install from [ollama.com](https://ollama.com) and pull `llama3.1:8b`.
+
+### Step 1: Clone the Repository
+```bash
+git clone git@github.com:helloujjawal007/Outreach-Dashboard.git
+cd Outreach-Dashboard
+```
+
+### Step 2: Install Dependencies
+```bash
+npm install
+```
+
+### Step 3: Configure Environment Variables
+Copy the template configuration file:
+```bash
+cp .env.example .env
+```
+Edit `.env` with your PostgreSQL database credentials and Zoho Mail settings:
+```env
+PORT=5001
+NODE_ENV=development
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/outreach_dashboard
+
+# Zoho Mail SMTP (Outbound Sending)
+SMTP_HOST=smtppro.zoho.in
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=sales@yourdomain.com
+SMTP_PASS=your-16-char-zoho-app-password
+SMTP_FROM="Your Agency" <sales@yourdomain.com>
+
+# Zoho Mail IMAP (Inbound Sync)
+IMAP_HOST=imappro.zoho.in
+IMAP_PORT=993
+
+# Security & Dashboard Login
+ADMIN_PASSWORD=admin123
+SESSION_SECRET=your-random-32-character-secret-key
+```
+
+### Step 4: Run Database Migrations & Seed
+```bash
+npm run db:migrate
+```
+To populate the CRM with realistic enterprise leads, deals, tasks, and activity logs:
+```bash
+npx tsx server/src/db/seed_realistic_crm.ts
+```
+
+### Step 5: Start Development Servers
+```bash
+npm run dev
+```
+This concurrently starts:
+* **Frontend Web App**: [http://localhost:5173](http://localhost:5173)
+* **Express API Server**: [http://localhost:5001](http://localhost:5001)
 
 ---
 
-## 5. Getting Started
+## 5. Deployment on Render.com
 
-### Prerequisites
-* **Node.js**: v18+ (tested on Node v24)
-* **PostgreSQL**: PostgreSQL 16+ running locally on port `5432`
-* **Ollama (Optional)**: For local AI draft generation (`ollama serve`)
+The repository is pre-configured for one-click deployment on Render.
 
-### Setup Instructions
+### Deployment Configuration (`render.yaml`)
+* **Service Type**: Web Service
+* **Runtime**: Node
+* **Build Command**: `./render-build.sh` (installs dependencies, builds Vite frontend, installs headless Chrome, runs migrations)
+* **Start Command**: `npm start` (launches `server/src/index.ts`)
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/helloujjawal007/Outreach-Dashboard.git
-   cd Outreach-Dashboard
-   ```
+### Required Render Environment Variables
+In your Render Dashboard (**Web Service → Environment Variables**), configure:
 
-2. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
+| Key | Example Value | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | Production environment flag |
+| `PORT` | `5001` | Server listening port |
+| `DATABASE_URL` | `postgresql://...` | Connection URL to Cloud Postgres ([Neon](https://neon.tech) or [Supabase](https://supabase.com)) |
+| `SMTP_HOST` | `smtppro.zoho.in` | Outbound Zoho SMTP host |
+| `SMTP_PORT` | `465` | SSL port |
+| `SMTP_SECURE` | `true` | Enforce SSL connection |
+| `SMTP_USER` | `sales@cloudconsultancy.in` | Sender email address |
+| `SMTP_PASS` | *(Zoho App Password)* | Generated Zoho Application-Specific Password |
+| `SMTP_FROM` | `"Cloud Consultancy" <sales@...>` | From header display |
+| `IMAP_HOST` | `imappro.zoho.in` | Inbound Zoho IMAP host |
+| `IMAP_PORT` | `993` | IMAP SSL port |
+| `ADMIN_PASSWORD` | `your-secure-password` | Dashboard authentication password |
+| `SESSION_SECRET` | `your-random-32-char-key` | Session encryption secret |
 
-3. **Configure Environment Variables**:
-   Copy `.env.example` to `.env` and configure your database credentials:
-   ```bash
-   cp .env.example .env
-   ```
-   Example configuration:
-   ```env
-   PORT=5001
-   NODE_ENV=development
-   DATABASE_URL=postgresql://localhost:5432/outreach_dashboard
-   PGUSER=your_postgres_user
-   PGPORT=5432
-   PGDATABASE=outreach_dashboard
-   OLLAMA_BASE_URL=http://localhost:11434
-   OLLAMA_MODEL=llama3.1:8b
-   ```
-
-4. **Run Database Migrations & Seed**:
-   ```bash
-   npm run db:migrate   # Creates tables, enums, triggers, indexes
-   npm run db:seed      # Seeds initial sample leads, clients, campaigns, metrics
-   ```
-
-5. **Start the Application**:
-   ```bash
-   npm run dev
-   ```
-   This concurrently launches:
-   * **Vite Client**: `http://localhost:5173`
-   * **Express Backend**: `http://localhost:5001` (proxied via Vite `/api`)
+### Render Reliability Built-ins
+1. **15-Minute Sleep Prevention**: Express runs a 12-minute keep-alive ping loop against `RENDER_EXTERNAL_URL` to prevent the service from sleeping on the Free tier.
+2. **Ephemeral Disk Resilience**: WhatsApp Web authentication keys are stored in PostgreSQL (`whatsapp_session_keys`), not on disk, so pairing remains active across redeployments.
+3. **Headless Chrome for Scraping**: `render-build.sh` installs Chrome into `./chrome-bin`, enabling Google Business Profile lead scraping in Linux cloud containers.
 
 ---
 
@@ -428,126 +331,71 @@ erDiagram
 
 ```
 Outreach-Dashboard/
+├── .env.example                    # Environment variable template
+├── Dockerfile                      # Production Docker container configuration
+├── render-build.sh                 # Render build script (Vite + Chrome + Migrations)
+├── render.yaml                     # Render Infrastructure as Code definition
+├── package.json                    # Scripts and dependencies
+├── tailwind.config.js              # Tailwind styling theme
+├── vite.config.ts                  # Vite bundling config with API proxy
+├── scripts/
+│   └── keep-alive.js               # Standalone 24/7 pinger bot
 ├── server/
 │   ├── src/
-│   │   ├── adapters/
-│   │   │   ├── emailAdapter.ts     # Dedicated subdomain SPF/DKIM/DMARC & progressive warm-up
-│   │   │   ├── whatsappAdapter.ts  # 24h inbound window enforcement & webhook receiver
-│   │   │   └── instagramAdapter.ts # "Draft, needs human send" queue with deep-links
-│   │   ├── config/
-│   │   │   ├── db.ts               # PostgreSQL connection pool & helpers
-│   │   │   └── env.ts              # Typed environment variables
-│   │   ├── db/
-│   │   │   ├── schema.sql          # PostgreSQL DDL migrations
-│   │   │   ├── seed.sql            # Initial sample seed records
-│   │   │   ├── migrate.ts          # Migration runner
-│   │   │   └── seed.ts             # Seed runner
-│   │   ├── routes/
-│   │   │   ├── leads.ts            # /api/leads CRUD & bulk import
-│   │   │   ├── clients.ts          # /api/clients & conversion
-│   │   │   ├── conversations.ts    # /api/conversations & inbound simulator
-│   │   │   ├── campaigns.ts        # /api/campaigns & sequence steps
-│   │   │   ├── queue.ts            # /api/queue manual approval
-│   │   │   ├── health.ts           # /api/health deliverability metrics
-│   │   │   ├── ai.ts               # /api/ai Ollama draft generator
-│   │   │   └── adapters.ts         # /api/adapters email warmup & WhatsApp window endpoints
-│   │   ├── services/
-│   │   │   ├── outreachService.ts        # Outreach Engine (cold leads & consent gate router)
-│   │   │   ├── orchestratorService.ts    # Conversation Orchestrator (clients)
-│   │   │   ├── ollamaService.ts          # Local Ollama LLM integration
-│   │   │   ├── googleEnrichmentService.ts # Google Business Profile & Maps enrichment
-│   │   │   ├── aiResearchWriterService.ts # Anti-hype AI improvisation & copy generator
-│   │   │   ├── emailInboundService.ts    # Gmail IMAP listener & reply ingestor
-│   │   │   └── whatsappValidator.ts      # WhatsApp number format & eligibility validator
-│   │   └── index.ts                      # Express server entrypoint
+│   │   ├── adapters/               # Channel adapters (email, whatsapp, instagram, facebook)
+│   │   ├── config/                 # DB pool, environment typing, caching
+│   │   ├── db/                     # Migrations, schemas, realistic CRM seeders
+│   │   ├── middleware/             # Auth barrier, session validator, rate limiters
+│   │   ├── routes/                 # Express API route handlers
+│   │   │   ├── activities.ts       # Lead activity history & logging
+│   │   │   ├── auth.ts             # Session login & logout
+│   │   │   ├── conversations.ts    # Multi-channel messaging & IMAP sync
+│   │   │   ├── deals.ts            # Sales pipeline CRUD & stage changes
+│   │   │   ├── inboxes.ts          # Rotating inbox pool & health checks
+│   │   │   ├── leads.ts            # Leads CRUD, stages, bulk import
+│   │   │   ├── scraper.ts          # Google Maps lead scraping endpoints
+│   │   │   ├── sequences.ts        # Cadence steps & enrollments
+│   │   │   ├── suppression.ts      # Global suppression register
+│   │   │   └── tasks.ts            # CRM follow-up tasks
+│   │   ├── services/               # Core business logic services
+│   │   │   ├── autonomousDripEngine.ts        # Autonomous sequence evaluator
+│   │   │   ├── emailInboundService.ts         # IMAP reply fetcher & parser
+│   │   │   ├── gmbScraperService.ts           # Headless Google Maps extractor
+│   │   │   ├── technicalAuditPdfService.ts    # Agency audit PDF generator
+│   │   │   ├── whatsappPostgresAuth.ts        # Baileys Postgres session store
+│   │   │   └── whatsappSessionService.ts     # WhatsApp QR pairing & listener
+│   │   └── index.ts                # Express server entrypoint
 │   └── tsconfig.json
-├── src/
-│   ├── components/                 # Sidebar, Modal, Badge, ChannelIcon
-│   ├── pages/
-│   │   ├── LeadImportPage.tsx      # Real CSV/text import & deduplication
-│   │   ├── CampaignBuilderPage.tsx # Multi-channel sequence builder + AI
-│   │   ├── CrmPage.tsx             # Leads & Clients CRM + conversation timeline & channel router
-│   │   └── SendingHealthPage.tsx   # Deliverability metrics, warm-up status, & send queue
-│   ├── services/
-│   │   └── api.ts                  # Typed frontend API client & adapter endpoints
-│   ├── utils/
-│   │   └── parseImport.ts          # Multi-table and intra-batch dedupe parser
-│   ├── store.ts                    # Live state store wired to PostgreSQL
-│   ├── types.ts                    # TypeScript data models
-│   ├── App.tsx                     # Main layout & router
-│   └── main.tsx                    # React DOM entrypoint
-├── .env.example                    # Environment variable template
-├── package.json                    # Scripts & dependencies
-├── tailwind.config.js              # Styling theme
-└── vite.config.ts                  # Vite config with /api reverse proxy
+└── src/
+    ├── components/                 # Modals, drawer, badge, channel icons
+    │   ├── CommandPalette.tsx      # Cmd+K quick navigation palette
+    │   ├── LeadActivityDrawer.tsx  # 360° HubSpot-grade CRM lead drawer
+    │   ├── InboundRepliesModal.tsx # Multi-channel messenger & inbox
+    │   └── SuppressionListModal.tsx# Global suppression management
+    ├── pages/
+    │   ├── CrmPage.tsx             # 3-Way CRM Hub (Table, Kanban, Dispatch)
+    │   ├── DealsPipelinePage.tsx   # Standalone Deals Kanban board
+    │   ├── LeadImportPage.tsx      # CSV & raw text lead ingestion
+    │   ├── LeadScraperPage.tsx     # Google My Business lead scraper
+    │   ├── LoginPage.tsx           # Dashboard access gate
+    │   └── SendingHealthPage.tsx   # Deliverability & warm-up metrics
+    ├── services/
+    │   └── api.ts                  # Typed Axios/Fetch API client
+    ├── store.ts                    # Global React state store
+    ├── types.ts                    # Core TypeScript models
+    └── App.tsx                     # Main layout & router
 ```
 
 ---
 
-## 7. Phased Roadmap Status
+## 7. Security Best Practices
+* **Zero Credential Leaks**: `.env` is strictly excluded in `.gitignore`.
+* **Path Traversal Protection**: The Express server inspects all request paths for null bytes, relative traversal tokens (`..`, `\`), and hidden configuration files (`.env`, `.git`).
+* **Session Security**: Session tokens are encrypted and transmitted via HTTP-only security standards.
+* **Strict Suppression**: Contacts who opt out or bounce are globally barred from future cold campaigns across all channels.
 
-- [x] **Phase 0: Environment & Backend Setup**
-  - Node.js/Express TypeScript backend structure.
-  - PostgreSQL connection pool configured.
-  - Local Ollama LLM integration module with fallback handling.
-- [x] **Phase 1: Data Model & PostgreSQL Schema**
-  - Strict table separation (`leads` vs `clients`).
-  - Added `consent_status` (`none`, `replied`, `opted_out`).
-  - Full relational schema: `conversations`, `messages`, `follow_up_rules`, `follow_up_logs`, `campaigns`, `campaign_steps`, `send_queue`, `daily_send_metrics`.
-- [x] **Phase 2: UI & Data Wiring**
-  - Bolt frontend connected to real backend API endpoints via Vite proxy.
-  - Real CSV/paste import with multi-table and intra-batch deduplication.
-  - Live CRM detail, quick reply via Channel Router, and Lead $\rightarrow$ Client conversion.
-- [x] **Phase 3: Channel Adapters**
-  - Email adapter: Dedicated subdomain verification (SPF, DKIM, DMARC) + 5-stage progressive warm-up tracker.
-  - WhatsApp adapter: Inbound reply handling only (strict 24-hour customer service window). Cold-send disabled by policy.
-  - Instagram/Facebook adapter: "Draft, needs human send" queue workflow creating actionable pending drafts with direct profile links.
-- [x] **Phase 4: Channel-Aware Send Router**
-  - Channel-aware routing logic: Direct email dispatch, draft queuing for Instagram/FB, policy gating for cold WhatsApp.
-  - Rate-limiting & warm-up auto-throttling against `daily_send_metrics`.
-  - Hard consent gate blocking any dispatch to opted-out contacts.
-- [x] **Phase 5: Inbound Reply Detection & Lead -> Client Conversion**
-  - Inbound reply detector: automatically updates `leads.consent_status = 'replied'`.
-  - Automatic conversion: creates full `clients` row in PostgreSQL with status `'active'`.
-  - Conversation Orchestrator hand-off: automatically enrolls converted clients in `follow_up_rules` (e.g. Bi-Weekly Health Check-in) and creates initial task in `follow_up_logs`.
-  - Cold queue cancellation: automatically purges pending cold drafts in `send_queue` for converted leads.
-- [x] **Phase 6: Hard Suppression & Consent Gate**
-  - Robust keyword parser: catches `stop`, `unsubscribe`, `remove`, `cancel`, `quit`, `opt out`, `dont message`, `do not contact`.
-  - Immediate suppression: updates `leads.consent_status = 'opted_out'`, purges pending queue drafts, prevents client conversion.
-  - Pre-send hard gate in send router: verifies contact consent status and cross-checks global email/phone suppression register.
-- [x] **Phase 7: Sending Health & Reputation Monitoring**
-  - Deliverability metrics: tracks 7-day sent volume, bounces, spam complaints, and drafted items.
-  - Spam complaint monitoring: calculates complaint rate aligned with Google/Yahoo sender standards ($< 0.1\%$ Safe, $> 0.3\%$ Critical).
-  - Deliverability auto-throttling engine: automatically halts cold outreach if bounce rate $> 5\%$ or complaint rate $> 0.3\%$.
-  - Interactive simulator: allows simulating bounce and spam spikes and testing instant auto-throttling and baseline recovery.
-- [x] **Phase 8: 28-Day Retention, Batch Shooting, Client Editing & Sequence Automation**
-  - 28-day soft deletion: leads preserved for 28 days with interactive trash modal, remaining days calculation, and 100% conversation history preservation on restore.
-  - Deletion audit table: `deletion_history` tracks all purge and soft-deletion operations.
-  - 28-day upload batches: `upload_batches` tracks all imports with 28-day expiration and automatic 24-hour cleanup cron.
-  - Batch email shoot: 1-click "Shoot Emails to this Batch" dispatches personalized, stage-appropriate emails to all eligible contacts in a batch.
-  - Condition-based automated sequence: dynamically evaluates each recipient's outbound email count (0 sent $\rightarrow$ Intro, 1 sent $\rightarrow$ Follow-up 1, 2 sent $\rightarrow$ Follow-up 2, $\ge 3$ sent $\rightarrow$ Completed).
-  - Admin client info updating: full editable modal for clients (`PUT /api/clients/:id`) updating business info, contact person, contract value, status, and notes.
-- [x] **Phase 9: Lead & Client Deletion Synchronization & Inactive Status Management**
-  - Lead & client deletion synchronization: deleting a lead automatically removes it from both active leads and active clients, moving both to Trash with 28-day retention.
-  - Bidirectional client soft-deletion: deleting a client (`DELETE /api/clients/:id`) soft-deletes both the client and corresponding lead, keeping lists strictly consistent.
-  - Interactive Trash with Empty Trash & Multi-Purge: full support for empty trash at once (`POST /api/leads/trash/clear`), bulk permanent purge (`POST /api/leads/trash/bulk-permanent-delete`), and single-record purge (`DELETE /api/leads/:id/permanent`).
-  - Mark as inactive option: interactive row toggle, detail modal toggle, and floating bulk action bar ("Mark Inactive" / "Mark Active" via `PATCH /api/leads/:id/status` and `POST /api/leads/bulk-status`).
-  - CRM status filtering: instant filtering by `All Status`, `Active Only`, and `Inactive Only` with interactive visual badges.
-- [x] **Phase 10: Live Inbound Email Synchronization, Real-time Alert Popup & Inbound Inbox Center**
-  - Live Gmail IMAP polling (`emailInboundService.ts`): polls Gmail inbox (`imap.gmail.com:993`, SSL) every 30 seconds, automatically parses incoming emails, extracts clean reply bodies without quoted threads, matches senders to leads or clients in PostgreSQL, and updates consent status to `replied`.
-  - Direct reply delivery via Gmail SMTP: outbound replies sent from the CRM conversation modal are dispatched live to recipient inboxes via authenticated Gmail SMTP.
-  - Global Floating Inbound Email Popup (`InboundEmailPopup.tsx`): whenever a new email reply is received, an eye-catching floating alert card displays on the top right across the entire dashboard with sender name, email, message snippet, auto-dismiss progress timer, and an instant "Open Conversation" button.
-  - Dedicated Inbound Email Replies Center Modal (`InboundRepliesModal.tsx`): accessible directly via the `[📥 Inbound Inbox]` button in the CRM header. Features full-text search, live Gmail sync button, detailed cards for every reply received, and 1-click "Open Conversation & Reply" navigation.
-  - Dedicated CRM "Email Replies" Filter Tab: interactive `[📩 Email Replies ({count})]` filter in the entity bar that isolates all contacts who have sent email replies, accompanied by an informative action banner.
-- [x] **Phase 11: Google Business Profile Auto-Enrichment, Live Email Display & Cascading Deletion**
-  - Google Business Profile enrichment service (`googleEnrichmentService.ts`): queries/synthesizes verified ratings, reviews count, address, and Google Maps URL, persisting to `leads.metadata.google_profile`.
-  - On-demand Google refresh: `POST /api/leads/:id/enrich-google` and batch update `POST /api/leads/batch-enrich-google`.
-  - Live Google Info Bar while emailing: displays rating, review count, address, and direct Google Maps link right above the reply textarea.
-  - 1-Click Profile navigation: clickable contact names and dedicated "👤 View Profile" buttons in message cards.
-  - Cascading deletion: deleting any lead or client immediately purges all associated messages, conversations, send queue drafts, and memberships, leaving zero orphan messages in inbox or dashboard.
-- [x] **Phase 12: Human-in-the-Loop AI Improvisation Engine & Multi-Channel Anti-Hype Copy**
-  - "Your words → Improvise with AI" feature (`POST /api/ai/improvise`): transforms rough bullet points into polished, realistic pitches.
-  - Elimination of unrealistic hype: grounds all copy in consultative digital solutions for Cloud Consultancy.
-  - 5-Channel support: Email, WhatsApp, LinkedIn, Facebook, and Instagram with channel-appropriate word count limits.
+---
 
+## 8. License
 
+This project is proprietary software developed for Cloud Consultancy. All rights reserved.

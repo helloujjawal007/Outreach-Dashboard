@@ -1,6 +1,5 @@
 import makeWASocket, {
   DisconnectReason,
-  useMultiFileAuthState,
   makeCacheableSignalKeyStore,
   type WASocket,
 } from '@whiskeysockets/baileys';
@@ -9,6 +8,8 @@ import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
 import { whatsappAdapter } from '../adapters/whatsappAdapter';
+import { usePostgresAuthState } from './whatsappPostgresAuth';
+import { query } from '../config/db';
 
 export type WhatsAppConnectionStatus = 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
 
@@ -29,6 +30,7 @@ export class WhatsAppSessionService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private isExplicitDisconnect: boolean = false;
   private isStarting: boolean = false;
+  private clearAuthFn: (() => Promise<void>) | null = null;
 
   private state: WhatsAppSessionState = {
     status: 'disconnected',
@@ -54,10 +56,15 @@ export class WhatsAppSessionService {
   }
 
   /**
-   * Check if credentials exist on disk
+   * Check if credentials exist in PostgreSQL or on disk
    */
-  hasSavedSession(): boolean {
+  async hasSavedSession(): Promise<boolean> {
     try {
+      const res = await query<{ count: string }>(
+        `SELECT COUNT(*)::int as count FROM whatsapp_session_keys WHERE key_id = 'creds.json'`
+      );
+      if (parseInt(res.rows[0]?.count || '0', 10) > 0) return true;
+
       const credsPath = path.join(this.sessionDir, 'creds.json');
       return fs.existsSync(credsPath) && fs.statSync(credsPath).size > 10;
     } catch {
@@ -83,7 +90,8 @@ export class WhatsAppSessionService {
     this.state.lastError = null;
 
     try {
-      const { state: authState, saveCreds } = await useMultiFileAuthState(this.sessionDir);
+      const { state: authState, saveCreds, clearAuth } = await usePostgresAuthState();
+      this.clearAuthFn = clearAuth;
 
       const sock = makeWASocket({
         auth: {
@@ -340,7 +348,7 @@ export class WhatsAppSessionService {
       this.sock = null;
     }
 
-    this.cleanupSession();
+    await this.cleanupSession();
 
     this.state = {
       status: 'disconnected',
@@ -360,8 +368,8 @@ export class WhatsAppSessionService {
    * Automatically restores session on server startup if credentials exist
    */
   async autoRestoreSession(): Promise<void> {
-    if (this.hasSavedSession()) {
-      console.log('[WhatsApp Socket] Saved session found. Auto-restoring WhatsApp connection...');
+    if (await this.hasSavedSession()) {
+      console.log('[WhatsApp Socket] Saved PostgreSQL session found. Auto-restoring WhatsApp connection...');
       await this.startSession();
     } else {
       console.log('[WhatsApp Socket] No saved WhatsApp session. Ready for QR or pairing code linking.');
@@ -369,10 +377,13 @@ export class WhatsAppSessionService {
   }
 
   /**
-   * Purges multi-file auth credentials folder
+   * Purges PostgreSQL session keys and local fallback credentials folder
    */
-  private cleanupSession(): void {
+  private async cleanupSession(): Promise<void> {
     try {
+      if (this.clearAuthFn) {
+        await this.clearAuthFn();
+      }
       if (fs.existsSync(this.sessionDir)) {
         const files = fs.readdirSync(this.sessionDir);
         for (const file of files) {

@@ -2,7 +2,6 @@ import { query } from '../config/db';
 import { emailValidatorService } from './emailValidatorService';
 import { humanCopywriterService } from './humanCopywriterService';
 import { channelListAutoAssignmentService, type ChannelAssignmentSummary } from './channelListAutoAssignmentService';
-import { emailSchedulerService } from './emailSchedulerService';
 import { workflowRoutingService } from './workflowRoutingService';
 
 export interface AutomatedIntakeResult {
@@ -69,6 +68,8 @@ export class AutomatedIntakeEngine {
           addedToWhatsAppList: 0,
           addedToLinkedInList: 0,
           addedToInstagramList: 0,
+          addedToFacebookList: 0,
+          addedToWebsiteList: 0,
           addedToCustomList: 0,
         },
       };
@@ -86,6 +87,7 @@ export class AutomatedIntakeEngine {
         linkedin: l.linkedin,
         instagram: l.instagram,
         facebook: l.facebook,
+        website: l.website,
       })),
       customListId
     );

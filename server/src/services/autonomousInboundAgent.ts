@@ -127,7 +127,7 @@ export class AutonomousInboundAgent {
     }
 
     // 4. Update lead metadata and suggestions
-    let convertedToClient = false;
+    const convertedToClient = false;
     let autoReplySent = false;
 
     if (params.entityType === 'lead') {
@@ -142,24 +142,54 @@ export class AutonomousInboundAgent {
         [classification.intent, classification.confidence, classification.suggestedReplyBody, params.entityId]
       );
 
-      // 5. Extreme Automation: Autonomous Lead-to-Client Conversion on positive intent
+      // 5. Extreme Automation: Autonomous Deal Creation in 'Interested' stage on positive intent
       const isHighIntent =
         (classification.intent === 'meeting_request' || classification.intent === 'interested') &&
         classification.confidence >= (settings.confidence_threshold || 0.85);
 
       if (settings.auto_convert_hot_leads && isHighIntent) {
-        console.log(`[AutonomousInboundAgent] 🚀 High-intent reply detected! Autonomously converting Lead "${businessName}" to Client.`);
+        console.log(`[AutonomousInboundAgent] 🚀 High-intent reply detected! Creating Deal in 'Interested' stage for "${businessName}".`);
         try {
-          const conversion = await conversationOrchestrator.convertLeadToClient(
-            params.entityId,
-            `Autonomously converted via Inbound AI: Positive interest detected ("${classification.summary}")`
+          // Check if active deal already exists for this lead
+          const existingDeal = await query<{ id: string }>(
+            `SELECT id FROM deals WHERE lead_id = $1 AND stage NOT IN ('won', 'lost') LIMIT 1`,
+            [params.entityId]
           );
-          if (conversion.success) {
-            convertedToClient = true;
-            console.log(`[AutonomousInboundAgent] ✅ Successfully converted Lead ${params.entityId} -> Client ${conversion.clientId}`);
+
+          if (existingDeal.rows.length === 0) {
+            const dealTitle = `${businessName} - High Intent Lead`;
+            const dealRes = await query<{ id: string }>(
+              `INSERT INTO deals (
+                lead_id, title, value, stage, probability, contact_name, contact_email, notes, updated_at
+              ) VALUES ($1, $2, $3, 'interested', 35, $4, $5, $6, NOW())
+              RETURNING id;`,
+              [
+                params.entityId,
+                dealTitle,
+                1500, // estimated project value default
+                businessName,
+                params.senderEmail || null,
+                `Autonomously created via Inbound AI: Positive interest detected ("${classification.summary}")`,
+              ]
+            );
+
+            // Log activity in unified timeline
+            await query(
+              `INSERT INTO activity_logs (lead_id, deal_id, actor_type, activity_type, title, description, metadata)
+               VALUES ($1, $2, 'ai', 'deal_created', $3, $4, $5);`,
+              [
+                params.entityId,
+                dealRes.rows[0]?.id || null,
+                `Deal created in Interested stage: ${dealTitle}`,
+                `AI Intent: ${classification.intent} (${Math.round(classification.confidence * 100)}% confidence). Inbound reply summary: "${classification.summary}"`,
+                JSON.stringify({ intent: classification.intent, confidence: classification.confidence }),
+              ]
+            );
+
+            console.log(`[AutonomousInboundAgent] 🎯 Successfully created Deal ${dealRes.rows[0]?.id} in 'Interested' stage!`);
           }
-        } catch (convErr) {
-          console.error('[AutonomousInboundAgent] Lead conversion error:', convErr);
+        } catch (dealErr) {
+          console.error('[AutonomousInboundAgent] Deal creation error:', dealErr);
         }
       }
 

@@ -14,9 +14,11 @@ import {
   Phone,
   MessageCircle,
   Instagram,
+  Facebook,
   Globe,
   Tag,
   FolderPlus,
+  Zap,
   Sparkles,
   RotateCcw,
   ShieldCheck,
@@ -63,6 +65,7 @@ interface SingleLeadFormData {
   instagram: string;
   facebook: string;
   linkedin: string;
+  website: string;
   status: 'active' | 'inactive';
   listId: string;
   batchTag: string;
@@ -79,6 +82,7 @@ const emptySingleLead: SingleLeadFormData = {
   instagram: '',
   facebook: '',
   linkedin: '',
+  website: '',
   status: 'active',
   listId: 'none',
   batchTag: '',
@@ -96,6 +100,7 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     instagram: '@apexcloud',
     facebook: 'ApexCloudSystems',
     linkedin: 'https://linkedin.com/company/apex-cloud',
+    website: 'https://apexcloud.io',
     status: 'active',
     listId: 'none',
     batchTag: 'Inbound Inquiries',
@@ -110,6 +115,7 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     instagram: '@luminadental',
     facebook: 'LuminaDentalStudio',
     linkedin: 'https://linkedin.com/company/lumina-dental',
+    website: 'https://luminadental.com',
     status: 'active',
     listId: 'none',
     batchTag: 'Local Clinic Outreach',
@@ -124,6 +130,7 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     instagram: '@vanguardgrowth',
     facebook: 'VanguardMarketingLab',
     linkedin: 'https://linkedin.com/company/vanguard-marketing-lab',
+    website: 'https://vanguardagency.co',
     status: 'inactive',
     listId: 'none',
     batchTag: 'Q3 Agency Prospects',
@@ -171,6 +178,8 @@ export function LeadImportPage({ store, onNavigate }: Props) {
         addedToWhatsAppList: number;
         addedToLinkedInList: number;
         addedToInstagramList: number;
+        addedToFacebookList?: number;
+        addedToWebsiteList?: number;
         addedToCustomList: number;
       };
     };
@@ -225,6 +234,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
         instagram: formattedInstagram || undefined,
         facebook: singleLead.facebook.trim() || undefined,
         linkedin: singleLead.linkedin.trim() || undefined,
+        website: singleLead.website.trim() || undefined,
         status: singleLead.status,
         notes: singleLead.notes.trim() || undefined,
         listId: singleLead.listId !== 'none' ? singleLead.listId : undefined,
@@ -710,19 +720,153 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                     />
                   </div>
 
-                  <div className="sm:col-span-2">
+                  <div className="sm:col-span-1">
+                    <label className="label flex items-center gap-1.5" htmlFor="website">
+                      <Globe size={13} className="text-teal-600" /> Company Website
+                    </label>
+                    <input
+                      id="website"
+                      type="text"
+                      value={singleLead.website}
+                      onChange={(e) => setSingleLead({ ...singleLead, website: e.target.value })}
+                      placeholder="https://example.com"
+                      className="input"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-1">
                     <label className="label flex items-center gap-1.5" htmlFor="linkedin">
-                      <Linkedin size={13} className="text-sky-600" /> LinkedIn Profile / Company URL
+                      <Linkedin size={13} className="text-sky-600" /> LinkedIn Profile / URL
                     </label>
                     <input
                       id="linkedin"
                       type="text"
                       value={singleLead.linkedin}
                       onChange={(e) => setSingleLead({ ...singleLead, linkedin: e.target.value })}
-                      placeholder="https://linkedin.com/in/prospect or /company/name"
+                      placeholder="https://linkedin.com/in/prospect"
                       className="input"
                     />
                   </div>
+                </div>
+              </div>
+
+              {/* Live Channel Auto-Assignment Preview */}
+              <div className="rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 via-blue-50/20 to-emerald-50/20 p-3.5 text-xs space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between font-bold text-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <Zap size={14} className="text-amber-500 fill-amber-500" />
+                    <span>Automatic Channel List Categorization</span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Auto-enrolled on save
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Leads are automatically placed into corresponding lists based on the contact fields you provide:
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                      singleLead.email.trim().includes('@')
+                        ? 'bg-blue-100 text-blue-900 border-blue-300 shadow-xs'
+                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <Mail
+                      size={12}
+                      className={singleLead.email.trim().includes('@') ? 'text-blue-600' : 'text-slate-400'}
+                    />
+                    <span>Email Leads {singleLead.email.trim().includes('@') ? '✓' : ''}</span>
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                      singleLead.whatsapp.replace(/\D/g, '').length >= 7 ||
+                      singleLead.phone.replace(/\D/g, '').length >= 7
+                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300 shadow-xs'
+                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <Phone
+                      size={12}
+                      className={
+                        singleLead.whatsapp.replace(/\D/g, '').length >= 7 ||
+                        singleLead.phone.replace(/\D/g, '').length >= 7
+                          ? 'text-emerald-600'
+                          : 'text-slate-400'
+                      }
+                    />
+                    <span>
+                      WhatsApp Leads{' '}
+                      {singleLead.whatsapp.replace(/\D/g, '').length >= 7 ||
+                      singleLead.phone.replace(/\D/g, '').length >= 7
+                        ? '✓'
+                        : ''}
+                    </span>
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                      singleLead.website.trim() && !singleLead.website.includes('google.com/maps')
+                        ? 'bg-teal-100 text-teal-900 border-teal-300 shadow-xs'
+                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <Globe
+                      size={12}
+                      className={
+                        singleLead.website.trim() && !singleLead.website.includes('google.com/maps')
+                          ? 'text-teal-600'
+                          : 'text-slate-400'
+                      }
+                    />
+                    <span>
+                      Website Leads{' '}
+                      {singleLead.website.trim() && !singleLead.website.includes('google.com/maps') ? '✓' : ''}
+                    </span>
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                      singleLead.linkedin.trim()
+                        ? 'bg-sky-100 text-sky-900 border-sky-300 shadow-xs'
+                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <Linkedin
+                      size={12}
+                      className={singleLead.linkedin.trim() ? 'text-sky-600' : 'text-slate-400'}
+                    />
+                    <span>LinkedIn Leads {singleLead.linkedin.trim() ? '✓' : ''}</span>
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                      singleLead.instagram.trim()
+                        ? 'bg-purple-100 text-purple-900 border-purple-300 shadow-xs'
+                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <Instagram
+                      size={12}
+                      className={singleLead.instagram.trim() ? 'text-purple-600' : 'text-slate-400'}
+                    />
+                    <span>Instagram Leads {singleLead.instagram.trim() ? '✓' : ''}</span>
+                  </span>
+
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
+                      singleLead.facebook.trim()
+                        ? 'bg-indigo-100 text-indigo-900 border-indigo-300 shadow-xs'
+                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
+                    }`}
+                  >
+                    <Facebook
+                      size={12}
+                      className={singleLead.facebook.trim() ? 'text-indigo-600' : 'text-slate-400'}
+                    />
+                    <span>Facebook Leads {singleLead.facebook.trim() ? '✓' : ''}</span>
+                  </span>
                 </div>
               </div>
 
@@ -730,7 +874,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
               <div className="space-y-4 pt-2 border-t border-slate-100">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-ink-500">
                   <Tag size={14} className="text-brand-600" />
-                  <span>Pipeline Status & List Assignment</span>
+                  <span>Pipeline Status & Additional Custom List</span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -767,7 +911,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
 
                   <div>
                     <label className="label" htmlFor="listAssignment">
-                      Assign to Custom List
+                      Optional Extra Custom List
                     </label>
                     <div className="relative">
                       <select
@@ -776,12 +920,25 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                         onChange={(e) => setSingleLead({ ...singleLead, listId: e.target.value })}
                         className="input bg-white pr-8 text-xs font-medium"
                       >
-                        <option value="none">Default (No list)</option>
-                        {store.lists.map((list) => (
-                          <option key={list.id} value={list.id}>
-                            {list.name} ({list.lead_count ?? 0} leads)
-                          </option>
-                        ))}
+                        <option value="none">Auto-channel sorting only</option>
+                        {store.lists
+                          .filter(
+                            (l) =>
+                              ![
+                                'email leads',
+                                'whatsapp leads',
+                                'linkedin leads',
+                                'instagram leads',
+                                'facebook leads',
+                                'website leads',
+                                'invalid list',
+                              ].includes(l.name.toLowerCase())
+                          )
+                          .map((list) => (
+                            <option key={list.id} value={list.id}>
+                              📁 {list.name} ({list.lead_count ?? 0} leads)
+                            </option>
+                          ))}
                       </select>
                     </div>
                   </div>
@@ -1098,6 +1255,18 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-800 font-semibold border border-purple-200">
                         <Instagram size={12} className="text-purple-600" />
                         <span>Instagram Leads List ({importResult.automatedIntake.channelAssignments.addedToInstagramList})</span>
+                      </span>
+                    )}
+                    {Boolean(importResult.automatedIntake.channelAssignments.addedToFacebookList && importResult.automatedIntake.channelAssignments.addedToFacebookList > 0) && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 font-semibold border border-indigo-200">
+                        <Facebook size={12} className="text-indigo-600" />
+                        <span>Facebook Leads List ({importResult.automatedIntake.channelAssignments.addedToFacebookList})</span>
+                      </span>
+                    )}
+                    {Boolean(importResult.automatedIntake.channelAssignments.addedToWebsiteList && importResult.automatedIntake.channelAssignments.addedToWebsiteList > 0) && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-teal-50 text-teal-800 font-semibold border border-teal-200">
+                        <Globe size={12} className="text-teal-600" />
+                        <span>Website Leads List ({importResult.automatedIntake.channelAssignments.addedToWebsiteList})</span>
                       </span>
                     )}
                   </div>

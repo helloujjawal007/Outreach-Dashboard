@@ -26,7 +26,7 @@ function getEnvVar(...keys: string[]): string {
 
 // Extract clean host, stripping explanatory parentheticals like " (or Google Workspace...)"
 function cleanHostValue(rawHost: string, user: string): string {
-  let cleaned = rawHost.split('(')[0].trim().replace(/['"]/g, '');
+  const cleaned = rawHost.split('(')[0].trim().replace(/['"]/g, '');
   // If host is numeric (e.g. port 465 was entered as host), empty, or placeholder for cloudconsultancy.in, resolve to Zoho India
   if (
     !cleaned ||
@@ -42,7 +42,7 @@ function cleanHostValue(rawHost: string, user: string): string {
 
 // Extract clean IMAP host
 function cleanImapHostValue(rawHost: string, user: string): string {
-  let cleaned = rawHost.split('(')[0].trim().replace(/['"]/g, '');
+  const cleaned = rawHost.split('(')[0].trim().replace(/['"]/g, '');
   if (
     !cleaned ||
     /^\d+$/.test(cleaned) ||
@@ -97,7 +97,9 @@ export const env = {
   // IMAP Configuration for inbound / sent sync
   IMAP_HOST: parsedImapHost,
   IMAP_PORT: parsedImapPort,
-  IS_PLACEHOLDER_PASS: isPlaceholderPass,
+  // Security & Authentication
+  ADMIN_PASSWORD: getEnvVar('ADMIN_PASSWORD', 'DASHBOARD_PASSWORD') || 'admin123',
+  SESSION_SECRET: getEnvVar('SESSION_SECRET', 'JWT_SECRET') || 'ods-outreach-dashboard-secret-key-2026',
 };
 
 

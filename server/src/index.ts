@@ -22,11 +22,19 @@ import { autopilotRouter } from './routes/autopilot';
 import { scraperRouter } from './routes/scraper';
 import { emailVerifierRouter } from './routes/emailVerifier';
 import { auditRouter } from './routes/audit';
+import { authRouter } from './routes/auth';
+import { dealsRouter } from './routes/deals';
+import { activitiesRouter } from './routes/activities';
+import { tasksRouter } from './routes/tasks';
+import { suppressionRouter } from './routes/suppression';
+import { sequencesRouter } from './routes/sequences';
+import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { autonomousDripEngine } from './services/autonomousDripEngine';
 import { addExtremeAutomation } from './db/add_extreme_automation';
 import { addAutomatedCadenceAndChannelLists } from './db/add_automated_cadence_and_channel_lists';
+import { addChannelAutoAssignmentTrigger } from './db/add_channel_auto_assignment_trigger';
 import { addInboundEmailSyncTable } from './db/add_inbound_email_sync';
 import { addScheduledDispatchesTable } from './db/add_scheduled_dispatches';
 import { addMultiChannelScheduling } from './db/add_multichannel_scheduling';
@@ -155,7 +163,13 @@ app.get('/api', (_req: Request, res: Response) => {
   });
 });
 
-// Mount Routes
+// Public Authentication Routes (login, logout, session check)
+app.use('/api/auth', authRouter);
+
+// Global Authentication Gate (protects all /api routes except /api/health and /api/auth)
+app.use('/api', requireAuth);
+
+// Mount Protected API Routes
 app.use('/api/leads', leadsRouter);
 app.use('/api/clients', clientsRouter);
 app.use('/api/conversations', conversationsRouter);
@@ -173,6 +187,11 @@ app.use('/api/autopilot', autopilotRouter);
 app.use('/api/scraper', scraperRouter);
 app.use('/api/email-verifier', emailVerifierRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api/deals', dealsRouter);
+app.use('/api/activities', activitiesRouter);
+app.use('/api/tasks', tasksRouter);
+app.use('/api/suppression', suppressionRouter);
+app.use('/api/sequences', sequencesRouter);
 
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {
@@ -315,6 +334,14 @@ async function startServer() {
     console.error('[Migration Warning] Location and website clean migration error:', err);
   }
 
+  // Initialize WhatsApp persistent session storage in PostgreSQL
+  try {
+    const { addWhatsAppPostgresSessionTable } = await import('./db/add_whatsapp_postgres_session');
+    await addWhatsAppPostgresSessionTable();
+  } catch (err) {
+    console.error('[WhatsApp Migration Warning]', err);
+  }
+
   // Check and auto-restore saved WhatsApp session if credentials exist
   try {
     const { whatsappSessionService } = await import('./services/whatsappSessionService');
@@ -334,6 +361,7 @@ async function startServer() {
   try {
     await addExtremeAutomation();
     await addAutomatedCadenceAndChannelLists();
+    await addChannelAutoAssignmentTrigger();
     autonomousDripEngine.startScheduler(30000);
   } catch (err) {
     console.error('[Autopilot Warning] Failed to initialize Extreme Automation & Cadence:', err);

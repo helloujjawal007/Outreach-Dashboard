@@ -2,6 +2,8 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { query } from '../config/db';
 import { env } from '../config/env';
+import { suppressionService } from './suppressionService';
+import { sequenceEnrollmentService } from './sequenceEnrollmentService';
 
 export interface InboundEmailResult {
   syncedCount: number;
@@ -145,7 +147,20 @@ export class EmailInboundService {
     senderAddress: string,
     lowerSubject: string,
     lowerBody: string
-  ): { isIgnored: boolean; reason: string } {
+  ): { isIgnored: boolean; isOoo: boolean; reason: string } {
+    // 0. Detect Out-of-Office specifically so it can be rescheduled rather than discarded
+    const isOoo =
+      /out of office|away from the office|vacation response|auto-reply|autoreply|automatic reply/i.test(lowerSubject) ||
+      lowerBody.includes('i am currently out of the office') ||
+      lowerBody.includes('i am away from the office') ||
+      lowerBody.includes('out of office until') ||
+      lowerBody.includes('limited access to email') ||
+      lowerBody.includes('will respond upon my return');
+
+    if (isOoo) {
+      return { isIgnored: false, isOoo: true, reason: 'Out of Office auto-reply detected' };
+    }
+
     const listUnsubscribe = String(parsed?.headers?.get('list-unsubscribe') || '');
     const listId = String(parsed?.headers?.get('list-id') || '');
     const precedence = String(parsed?.headers?.get('precedence') || '').toLowerCase();
@@ -154,13 +169,13 @@ export class EmailInboundService {
 
     // 1. Mailing lists, bulk newsletters, auto-submitted headers
     if (listUnsubscribe || listId) {
-      return { isIgnored: true, reason: 'Mailing list / newsletter header detected' };
+      return { isIgnored: true, isOoo: false, reason: 'Mailing list / newsletter header detected' };
     }
     if (precedence === 'bulk' || precedence === 'list' || precedence === 'junk') {
-      return { isIgnored: true, reason: `Precedence header: ${precedence}` };
+      return { isIgnored: true, isOoo: false, reason: `Precedence header: ${precedence}` };
     }
     if (autoSubmitted.includes('auto-replied') || autoSubmitted.includes('auto-generated') || xAutoReply === 'yes') {
-      return { isIgnored: true, reason: 'Auto-reply / auto-submitted header detected' };
+      return { isIgnored: true, isOoo: false, reason: 'Auto-reply / auto-submitted header detected' };
     }
 
     // 2. Automated sender prefix patterns
@@ -169,7 +184,7 @@ export class EmailInboundService {
         senderAddress
       )
     ) {
-      return { isIgnored: true, reason: `Automated sender prefix pattern in ${senderAddress}` };
+      return { isIgnored: true, isOoo: false, reason: `Automated sender prefix pattern in ${senderAddress}` };
     }
 
     // 3. Known automated / platform / newsletter / SaaS domains
@@ -199,13 +214,11 @@ export class EmailInboundService {
     ];
     const senderDomain = senderAddress.split('@')[1] || '';
     if (automatedDomains.some((dom) => senderDomain === dom || senderDomain.endsWith('.' + dom))) {
-      return { isIgnored: true, reason: `Automated platform domain ${senderDomain}` };
+      return { isIgnored: true, isOoo: false, reason: `Automated platform domain ${senderDomain}` };
     }
 
     // 4. Subject patterns
     const automatedSubjectPatterns = [
-      /automatic reply|auto reply|auto-reply|autoreply/i,
-      /out of office|away from the office|vacation response/i,
       /new crawl complete|robots\.txt rules/i,
       /performance report|monthly build/i,
       /terms of service|privacy policy|security alert/i,
@@ -221,7 +234,7 @@ export class EmailInboundService {
     ];
     for (const pat of automatedSubjectPatterns) {
       if (pat.test(lowerSubject)) {
-        return { isIgnored: true, reason: `Automated subject match: "${lowerSubject}"` };
+        return { isIgnored: true, isOoo: false, reason: `Automated subject match: "${lowerSubject}"` };
       }
     }
 
@@ -231,14 +244,12 @@ export class EmailInboundService {
       lowerBody.includes('this is an automated message') ||
       lowerBody.includes('please do not reply to this email') ||
       lowerBody.includes('do not reply to this email') ||
-      lowerBody.includes('this inbox is not monitored') ||
-      lowerBody.includes('i am currently out of the office') ||
-      lowerBody.includes('i am away from the office')
+      lowerBody.includes('this inbox is not monitored')
     ) {
-      return { isIgnored: true, reason: 'Automated body text pattern' };
+      return { isIgnored: true, isOoo: false, reason: 'Automated body text pattern' };
     }
 
-    return { isIgnored: false, reason: '' };
+    return { isIgnored: false, isOoo: false, reason: '' };
   }
 
   /**
@@ -451,6 +462,27 @@ export class EmailInboundService {
                   // Update conversation status to closed so it doesn't appear as an active open reply thread
                   await query(`UPDATE conversations SET status = 'closed', last_message_at = NOW() WHERE id = $1`, [convId]);
 
+                  // 1. Auto-suppress recipient in global_suppression_list
+                  await suppressionService.suppress({
+                    email: bouncedRecipient,
+                    reason: `Hard bounce: ${bounceReason}`,
+                    source: 'dsn_bounce',
+                  });
+
+                  // 2. Update sequence enrollments
+                  await sequenceEnrollmentService.updateStatusForLead(matchedLeadId, 'bounced');
+
+                  // 3. Log to unified activity_logs
+                  await query(
+                    `INSERT INTO activity_logs (lead_id, actor_type, activity_type, title, description, metadata)
+                     VALUES ($1, 'system', 'email_bounced', 'Hard Bounce: Recipient Mailbox Unavailable', $2, $3)`,
+                    [
+                      matchedLeadId,
+                      bounceReason,
+                      JSON.stringify({ email: bouncedRecipient, reason: bounceReason, dsn: parsed.subject || 'Delivery Failure' }),
+                    ]
+                  ).catch(() => {});
+
                   console.log(
                     `[EmailInboundService] ⚠️ MOVED LEAD "${leadMatch.rows[0].business_name}" (${bouncedRecipient}) to Manual Checking. Reason: ${bounceReason}`
                   );
@@ -503,6 +535,71 @@ export class EmailInboundService {
                  ON CONFLICT (message_id) 
                  DO UPDATE SET is_unmatched = false`,
                 [messageId, message.uid, senderAddress, parsed.subject || 'Automated Reply']
+              );
+              continue;
+            }
+
+            // Handle Out-of-Office specifically: reschedule sequence by 7 days instead of dropping or treating as hot reply
+            if (autoCheck.isOoo) {
+              console.log(`[EmailInboundService] 🏖️ Out-of-Office auto-reply detected from ${senderAddress}: "${parsed.subject}"`);
+
+              const oooLeadRes = await query<{ id: string; business_name: string }>(
+                `SELECT id, business_name FROM leads WHERE deleted_at IS NULL AND LOWER(email) = LOWER($1) LIMIT 1`,
+                [senderAddress]
+              );
+
+              if (oooLeadRes.rows.length > 0) {
+                const oooLead = oooLeadRes.rows[0];
+
+                // 1. Postpone sequence enrollment by 7 days
+                await sequenceEnrollmentService.delayForOoo(oooLead.id, 7);
+
+                // 2. Postpone lead's next contact window
+                await query(
+                  `UPDATE leads SET last_contacted_at = NOW() + INTERVAL '7 days', updated_at = NOW() WHERE id = $1`,
+                  [oooLead.id]
+                );
+
+                // 3. Save message into thread marked read/seen so it doesn't pop as unread hot reply
+                const convRes = await query<{ id: string }>(
+                  `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'email' LIMIT 1`,
+                  [oooLead.id]
+                );
+                const convId = convRes.rows.length > 0
+                  ? convRes.rows[0].id
+                  : (await query<{ id: string }>(
+                      `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at) VALUES ('lead', $1, 'email', 'open', NOW()) RETURNING id`,
+                      [oooLead.id]
+                    )).rows[0].id;
+
+                await query(
+                  `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, created_at, is_read, is_seen, is_replied, metadata)
+                   VALUES ($1, 'email', 'inbound', $2, 'delivered', NOW(), NOW(), true, true, false, $3)`,
+                  [
+                    convId,
+                    `[OUT OF OFFICE AUTO-REPLY]: ${parsed.text || parsed.subject || 'Prospect is out of office'}`,
+                    JSON.stringify({ is_ooo: true, subject: parsed.subject }),
+                  ]
+                );
+
+                // 4. Log to unified activity timeline
+                await query(
+                  `INSERT INTO activity_logs (lead_id, actor_type, activity_type, title, description, metadata)
+                   VALUES ($1, 'system', 'auto_reply_ooo', 'Out of Office Auto-Reply Received', $2, $3)`,
+                  [
+                    oooLead.id,
+                    `Out-of-office notification received. Follow-up sequence postponed by 7 days.`,
+                    JSON.stringify({ subject: parsed.subject, snippet: (parsed.text || '').slice(0, 300) }),
+                  ]
+                ).catch(() => {});
+              }
+
+              await query(
+                `INSERT INTO processed_inbound_emails (message_id, uid, sender_email, subject, is_unmatched, processed_at)
+                 VALUES ($1, $2, $3, $4, false, NOW()) 
+                 ON CONFLICT (message_id) 
+                 DO UPDATE SET is_unmatched = false`,
+                [messageId, message.uid, senderAddress, parsed.subject || 'Out of Office Reply']
               );
               continue;
             }
@@ -565,7 +662,16 @@ export class EmailInboundService {
                    WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2)) AND status IN ('scheduled', 'processing')`,
                   [matchedLead.id, senderAddress]
                 );
-                console.log(`[EmailInboundService] Lead ${matchedLead.id} marked opted_out. Cancelled all pending scheduled dispatches.`);
+
+                // Auto-suppress globally
+                await suppressionService.suppress({
+                  email: senderAddress,
+                  reason: 'Unsubscribe requested by prospect',
+                  source: 'email_reply',
+                });
+                await sequenceEnrollmentService.updateStatusForLead(matchedLead.id, 'paused');
+
+                console.log(`[EmailInboundService] Lead ${matchedLead.id} marked opted_out. Added to global suppression list.`);
               } else {
                 await query(
                   `UPDATE leads SET consent_status = 'replied', last_contacted_at = $2, updated_at = NOW() WHERE id = $1`,
@@ -581,7 +687,11 @@ export class EmailInboundService {
                    WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2)) AND status IN ('scheduled', 'processing')`,
                   [matchedLead.id, senderAddress]
                 );
-                console.log(`[EmailInboundService] Lead ${matchedLead.id} replied. Cancelled all pending follow-up scheduled dispatches.`);
+
+                // Update sequence enrollment to replied
+                await sequenceEnrollmentService.updateStatusForLead(matchedLead.id, 'replied');
+
+                console.log(`[EmailInboundService] Lead ${matchedLead.id} replied. Sequence updated and follow-ups stopped.`);
               }
 
               // Locate or create conversation thread for this lead

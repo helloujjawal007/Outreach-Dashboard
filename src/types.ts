@@ -43,7 +43,21 @@ export interface Lead {
   emailVerified?: boolean;
   emailVerificationStatus?: string;
   batchId?: string;
-  outreachStage?: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
+  outreachStage?:
+    | 'initial'
+    | 'contacted'
+    | 'followup_1'
+    | 'followup_2'
+    | 'followup_3'
+    | 'replied'
+    | 'meeting_scheduled'
+    | 'audit_sent'
+    | 'proposal_sent'
+    | 'negotiation'
+    | 'won'
+    | 'lost'
+    | 'completed'
+    | string;
   stage?: string;
   deletedAt?: string | null;
   daysRemaining?: number;
@@ -762,4 +776,139 @@ export interface AuditPitchResult {
   emailBody: string;
   whatsappMessage: string;
   recommendedServices: string[];
+}
+
+// Deals Pipeline & CRM Core Types
+export type DealStage =
+  | 'interested'
+  | 'audit_sent'
+  | 'meeting_booked'
+  | 'proposal_sent'
+  | 'negotiation'
+  | 'won'
+  | 'lost';
+
+export interface Deal {
+  id: string;
+  lead_id: string | null;
+  title: string;
+  value: number;
+  stage: DealStage;
+  probability: number;
+  lost_reason: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  expected_close_date: string | null;
+  closed_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  business_name?: string;
+  category?: string;
+  website?: string;
+  location?: string;
+}
+
+export interface PipelineSummary {
+  totalPipelineValue: number;
+  weightedPipelineValue: number;
+  wonValue: number;
+  totalDeals: number;
+  activeDeals: number;
+  wonCount: number;
+  lostCount: number;
+  winRate: number;
+  stageCounts: Record<string, number>;
+}
+
+export interface CrmTask {
+  id: string;
+  lead_id: string | null;
+  deal_id: string | null;
+  title: string;
+  due_date: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'pending' | 'completed' | 'cancelled';
+  task_type: 'call' | 'email' | 'meeting' | 'review' | 'audit' | 'follow_up';
+  notes: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  business_name?: string;
+  deal_title?: string;
+}
+
+export interface TaskSummary {
+  today: number;
+  overdue: number;
+  pending: number;
+  completed: number;
+}
+
+export interface LeadActivity {
+  id: string;
+  lead_id: string;
+  deal_id: string | null;
+  actor_type: 'system' | 'user' | 'ai';
+  activity_type:
+    | 'email_sent'
+    | 'email_reply'
+    | 'email_bounced'
+    | 'auto_reply_ooo'
+    | 'suppression_added'
+    | 'sequence_enrolled'
+    | 'sequence_step_advanced'
+    | 'sequence_completed'
+    | 'ooo_delayed'
+    | 'outreach_sent'
+    | 'whatsapp_sent'
+    | 'whatsapp_reply'
+    | 'website_form'
+    | 'audit_generated'
+    | 'stage_change'
+    | 'stage_changed'
+    | 'inbound_received'
+    | 'note_added'
+    | 'deal_created'
+    | 'call_logged'
+    | 'meeting_scheduled'
+    | string;
+  title: string;
+  description: string | null;
+  metadata?: Record<string, any>;
+  created_at: string;
+}
+
+export interface SuppressedRecord {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  domain: string | null;
+  reason: string;
+  source: string;
+  created_at: string;
+}
+
+export interface SuppressionStats {
+  total: number;
+  unsubscribed: number;
+  hardBounce: number;
+  complaint: number;
+  manual: number;
+  invalidMx: number;
+}
+
+export interface SequenceEnrollment {
+  id: string;
+  lead_id: string;
+  sequence_name: string;
+  current_step: number;
+  total_steps: number;
+  status: 'active' | 'paused' | 'completed' | 'bounced' | 'replied' | 'ooo_delayed';
+  next_step_due_at: string | null;
+  last_step_sent_at: string | null;
+  enrolled_at: string;
+  completed_at: string | null;
+  metadata?: Record<string, any>;
 }

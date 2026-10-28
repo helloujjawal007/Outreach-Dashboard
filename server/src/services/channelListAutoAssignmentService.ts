@@ -6,6 +6,8 @@ export interface ChannelAssignmentSummary {
   addedToWhatsAppList: number;
   addedToLinkedInList: number;
   addedToInstagramList: number;
+  addedToFacebookList: number;
+  addedToWebsiteList: number;
   addedToCustomList: number;
 }
 
@@ -21,16 +23,20 @@ export class ChannelListAutoAssignmentService {
     whatsappListId: string;
     linkedinListId: string;
     instagramListId: string;
+    facebookListId: string;
+    websiteListId: string;
     invalidListId: string;
   }> {
     const now = Date.now();
     // Cache for 2 minutes to minimize repeated queries
-    if (this.listCache.size >= 5 && now - this.cacheLoadedAt < 120000) {
+    if (this.listCache.size >= 7 && now - this.cacheLoadedAt < 120000) {
       return {
         emailListId: this.listCache.get('Email Leads') || '',
         whatsappListId: this.listCache.get('WhatsApp Leads') || '',
         linkedinListId: this.listCache.get('LinkedIn Leads') || '',
         instagramListId: this.listCache.get('Instagram Leads') || '',
+        facebookListId: this.listCache.get('Facebook Leads') || '',
+        websiteListId: this.listCache.get('Website Leads') || '',
         invalidListId: this.listCache.get('Invalid List') || '',
       };
     }
@@ -51,6 +57,14 @@ export class ChannelListAutoAssignmentService {
       {
         name: 'Instagram Leads',
         description: 'Auto-populated list of all imported leads with Instagram handles or profiles.',
+      },
+      {
+        name: 'Facebook Leads',
+        description: 'Auto-populated list of all imported leads with Facebook business pages.',
+      },
+      {
+        name: 'Website Leads',
+        description: 'Auto-populated list of all imported leads with active company websites.',
       },
       {
         name: 'Invalid List',
@@ -80,6 +94,8 @@ export class ChannelListAutoAssignmentService {
       whatsappListId: this.listCache.get('WhatsApp Leads') || '',
       linkedinListId: this.listCache.get('LinkedIn Leads') || '',
       instagramListId: this.listCache.get('Instagram Leads') || '',
+      facebookListId: this.listCache.get('Facebook Leads') || '',
+      websiteListId: this.listCache.get('Website Leads') || '',
       invalidListId: this.listCache.get('Invalid List') || '',
     };
   }
@@ -95,6 +111,8 @@ export class ChannelListAutoAssignmentService {
       whatsapp?: string;
       linkedin?: string;
       instagram?: string;
+      facebook?: string;
+      website?: string;
     }>,
     customListId?: string
   ): Promise<ChannelAssignmentSummary> {
@@ -104,6 +122,8 @@ export class ChannelListAutoAssignmentService {
         addedToWhatsAppList: 0,
         addedToLinkedInList: 0,
         addedToInstagramList: 0,
+        addedToFacebookList: 0,
+        addedToWebsiteList: 0,
         addedToCustomList: 0,
       };
     }
@@ -114,6 +134,8 @@ export class ChannelListAutoAssignmentService {
       addedToWhatsAppList: 0,
       addedToLinkedInList: 0,
       addedToInstagramList: 0,
+      addedToFacebookList: 0,
+      addedToWebsiteList: 0,
       addedToCustomList: 0,
     };
 
@@ -127,9 +149,9 @@ export class ChannelListAutoAssignmentService {
         const syntax = emailValidatorService.validateSyntax(email);
         if (syntax.isValid && channelLists.emailListId) {
           const res = await query(
-            `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
-             VALUES ($1, $2, NOW())
-             ON CONFLICT DO NOTHING
+            `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+             VALUES ($1, $2, NOW(), NOW())
+             ON CONFLICT (list_id, lead_id) DO NOTHING
              RETURNING lead_id`,
             [channelLists.emailListId, leadId]
           );
@@ -144,13 +166,13 @@ export class ChannelListAutoAssignmentService {
         }
       }
 
-      // 2. WhatsApp / Phone Channel List
+      // 2. WhatsApp / Phone Channel List (digits >= 7)
       const phoneDigits = (lead.whatsapp || lead.phone || '').replace(/\D/g, '');
       if (phoneDigits.length >= 7 && channelLists.whatsappListId) {
         const res = await query(
-          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT DO NOTHING
+          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (list_id, lead_id) DO NOTHING
            RETURNING lead_id`,
           [channelLists.whatsappListId, leadId]
         );
@@ -161,9 +183,9 @@ export class ChannelListAutoAssignmentService {
       const linkedin = (lead.linkedin || '').trim();
       if (linkedin && channelLists.linkedinListId) {
         const res = await query(
-          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT DO NOTHING
+          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (list_id, lead_id) DO NOTHING
            RETURNING lead_id`,
           [channelLists.linkedinListId, leadId]
         );
@@ -174,21 +196,52 @@ export class ChannelListAutoAssignmentService {
       const instagram = (lead.instagram || '').trim();
       if (instagram && channelLists.instagramListId) {
         const res = await query(
-          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT DO NOTHING
+          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (list_id, lead_id) DO NOTHING
            RETURNING lead_id`,
           [channelLists.instagramListId, leadId]
         );
         if (res.rows.length > 0) summary.addedToInstagramList++;
       }
 
-      // 5. User Custom List (if provided and valid)
+      // 5. Facebook Channel List
+      const facebook = (lead.facebook || '').trim();
+      if (facebook && channelLists.facebookListId) {
+        const res = await query(
+          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (list_id, lead_id) DO NOTHING
+           RETURNING lead_id`,
+          [channelLists.facebookListId, leadId]
+        );
+        if (res.rows.length > 0) summary.addedToFacebookList++;
+      }
+
+      // 6. Website Channel List
+      const website = (lead.website || '').trim();
+      if (
+        website &&
+        channelLists.websiteListId &&
+        !website.includes('google.com/maps') &&
+        !website.includes('maps.google')
+      ) {
+        const res = await query(
+          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (list_id, lead_id) DO NOTHING
+           RETURNING lead_id`,
+          [channelLists.websiteListId, leadId]
+        );
+        if (res.rows.length > 0) summary.addedToWebsiteList++;
+      }
+
+      // 7. User Custom List (if provided and valid)
       if (customListId && customListId !== 'none' && customListId !== 'all') {
         const res = await query(
-          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
-           VALUES ($1, $2, NOW())
-           ON CONFLICT DO NOTHING
+          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (list_id, lead_id) DO NOTHING
            RETURNING lead_id`,
           [customListId, leadId]
         );
@@ -197,10 +250,42 @@ export class ChannelListAutoAssignmentService {
     }
 
     console.log(
-      `[ChannelListAutoAssignment] Assigned leads: Email=${summary.addedToEmailList}, WhatsApp=${summary.addedToWhatsAppList}, LinkedIn=${summary.addedToLinkedInList}, IG=${summary.addedToInstagramList}, Custom=${summary.addedToCustomList}`
+      `[ChannelListAutoAssignment] Assigned leads: Email=${summary.addedToEmailList}, WhatsApp=${summary.addedToWhatsAppList}, LinkedIn=${summary.addedToLinkedInList}, IG=${summary.addedToInstagramList}, FB=${summary.addedToFacebookList}, Web=${summary.addedToWebsiteList}, Custom=${summary.addedToCustomList}`
     );
 
     return summary;
+  }
+
+  /**
+   * Synchronizes a single lead into all matching channel lists
+   */
+  public async syncLead(leadId: string): Promise<ChannelAssignmentSummary> {
+    const leadRes = await query<any>(
+      `SELECT id, email, phone, whatsapp, linkedin, instagram, facebook, website FROM leads WHERE id = $1 AND deleted_at IS NULL`,
+      [leadId]
+    );
+    if (leadRes.rows.length === 0) {
+      return {
+        addedToEmailList: 0,
+        addedToWhatsAppList: 0,
+        addedToLinkedInList: 0,
+        addedToInstagramList: 0,
+        addedToFacebookList: 0,
+        addedToWebsiteList: 0,
+        addedToCustomList: 0,
+      };
+    }
+    return this.autoAssignLeads([leadRes.rows[0]]);
+  }
+
+  /**
+   * Synchronizes all existing leads in the database into appropriate channel lists
+   */
+  public async syncAllExistingLeads(): Promise<ChannelAssignmentSummary> {
+    const leadsRes = await query<any>(
+      `SELECT id, email, phone, whatsapp, linkedin, instagram, facebook, website FROM leads WHERE deleted_at IS NULL`
+    );
+    return this.autoAssignLeads(leadsRes.rows);
   }
 }
 

@@ -1,4 +1,3 @@
-import fs from 'fs';
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
 import { whatsappValidator } from '../services/whatsappValidator';
@@ -6,6 +5,7 @@ import { googleEnrichmentService } from '../services/googleEnrichmentService';
 import { leadScraperService, cleanSiteUrl } from '../services/leadScraperService';
 import { autonomousLeadEnricher } from '../services/autonomousLeadEnricher';
 import { automatedIntakeEngine } from '../services/automatedIntakeEngine';
+import { channelListAutoAssignmentService } from '../services/channelListAutoAssignmentService';
 import { humanCopywriterService } from '../services/humanCopywriterService';
 import { workflowRoutingService, type PdfValidationResult } from '../services/workflowRoutingService';
 
@@ -654,6 +654,7 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const whatsapp = (req.body.whatsapp !== undefined ? req.body.whatsapp : current.whatsapp) || '';
     const facebook = (req.body.facebook !== undefined ? req.body.facebook : current.facebook) || '';
     const instagram = (req.body.instagram !== undefined ? req.body.instagram : current.instagram) || '';
+    const linkedin = (req.body.linkedin !== undefined ? req.body.linkedin : current.linkedin) || '';
     const notes = req.body.notes !== undefined ? req.body.notes : current.notes;
     const status = req.body.status !== undefined ? req.body.status : current.status;
     const consentStatus =
@@ -673,6 +674,7 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const trimmedWhatsapp = String(whatsapp || '').trim();
     const trimmedFacebook = String(facebook || '').trim();
     const trimmedInstagram = String(instagram || '').trim();
+    const trimmedLinkedin = String(linkedin || '').trim();
 
     // Re-evaluate WhatsApp eligibility and standardize international country code
     const waEval = whatsappValidator.evaluate({ phone: trimmedPhone, whatsapp: trimmedWhatsapp });
@@ -684,6 +686,8 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     if (trimmedEmail && trimmedEmail.includes('@')) detectedChannels.push('email');
     if (waEval.isEligible) detectedChannels.push('whatsapp');
     if (trimmedInstagram) detectedChannels.push('instagram');
+    if (trimmedFacebook) detectedChannels.push('facebook');
+    if (trimmedLinkedin) detectedChannels.push('linkedin');
 
     // Merge updated metadata (including manual or verified google_profile changes)
     let updatedMetadata = typeof current.metadata === 'object' && current.metadata !== null ? { ...current.metadata } : {};
@@ -711,6 +715,22 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const country = req.body.country !== undefined ? String(req.body.country).trim() : current.country || '';
     const location = req.body.location !== undefined ? String(req.body.location).trim() : current.location || '';
 
+    const outreachStage =
+      req.body.outreachStage !== undefined
+        ? req.body.outreachStage
+        : req.body.outreach_stage !== undefined
+        ? req.body.outreach_stage
+        : req.body.stage !== undefined
+        ? req.body.stage
+        : current.outreach_stage || 'initial';
+
+    const primaryContactName =
+      req.body.primaryContactName !== undefined
+        ? req.body.primaryContactName
+        : req.body.primary_contact_name !== undefined
+        ? req.body.primary_contact_name
+        : current.primary_contact_name || '';
+
     const updateRes = await query(
       `UPDATE leads
        SET business_name = $1,
@@ -720,18 +740,21 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
            instagram = $5,
            facebook = $6,
            whatsapp = $7,
-           notes = $8,
-           status = $9,
-           consent_status = $10,
-           whatsapp_eligible = $11,
-           whatsapp_decision_reason = $12,
-           detected_channels = $13,
-           metadata = $14,
-           website = $15,
-           country = $16,
-           location = $17,
+           linkedin = $8,
+           notes = $9,
+           status = $10,
+           consent_status = $11,
+           whatsapp_eligible = $12,
+           whatsapp_decision_reason = $13,
+           detected_channels = $14,
+           metadata = $15,
+           website = $16,
+           country = $17,
+           location = $18,
+           outreach_stage = $19,
+           primary_contact_name = $20,
            updated_at = NOW()
-       WHERE id = $18
+       WHERE id = $21
        RETURNING *`,
       [
         trimmedBusinessName,
@@ -741,6 +764,7 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
         trimmedInstagram,
         trimmedFacebook,
         standardizedWhatsapp,
+        trimmedLinkedin,
         notes || '',
         status || 'active',
         consentStatus,
@@ -751,9 +775,13 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
         website,
         country,
         location,
+        outreachStage,
+        primaryContactName,
         id,
       ]
     );
+
+    const updatedLead = updateRes.rows[0];
 
     // Sync to matching client if one exists
     await query(
@@ -765,16 +793,17 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
            instagram = $5,
            facebook = $6,
            whatsapp = $7,
-           notes = $8,
-           status = $9,
-           whatsapp_eligible = $10,
-           whatsapp_decision_reason = $11,
-           detected_channels = $12,
-           website = $13,
-           country = $14,
-           location = $15,
+           linkedin = $8,
+           notes = $9,
+           status = $10,
+           whatsapp_eligible = $11,
+           whatsapp_decision_reason = $12,
+           detected_channels = $13,
+           website = $14,
+           country = $15,
+           location = $16,
            updated_at = NOW()
-       WHERE id = $16 OR original_lead_id = $16`,
+       WHERE id = $17 OR original_lead_id = $17`,
       [
         trimmedBusinessName,
         category || 'Uncategorized',
@@ -783,6 +812,7 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
         trimmedInstagram,
         trimmedFacebook,
         standardizedWhatsapp,
+        trimmedLinkedin,
         notes || '',
         status || 'active',
         waEval.isEligible,
@@ -795,7 +825,25 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
       ]
     );
 
-    res.json({ success: true, lead: updateRes.rows[0], message: 'Lead updated successfully' });
+    // Auto-assign updated lead to platform channel lists
+    try {
+      await channelListAutoAssignmentService.autoAssignLeads([
+        {
+          id: updatedLead.id,
+          email: updatedLead.email,
+          phone: updatedLead.phone,
+          whatsapp: updatedLead.whatsapp,
+          linkedin: updatedLead.linkedin,
+          instagram: updatedLead.instagram,
+          facebook: updatedLead.facebook,
+          website: updatedLead.website,
+        },
+      ]);
+    } catch (assignErr) {
+      console.warn('[leadsRouter.updateLead] Channel auto-assignment warning:', assignErr);
+    }
+
+    res.json({ success: true, lead: updatedLead, message: 'Lead updated successfully' });
   } catch (error) {
     console.error('[leadsRouter.updateLead]', error);
     res.status(500).json({ success: false, error: 'Failed to update lead' });
@@ -1441,6 +1489,23 @@ leadsRouter.post('/import-audit', async (req: Request, res: Response) => {
         ]
       );
       savedLead = insertRes.rows[0];
+    }
+
+    if (savedLead) {
+      channelListAutoAssignmentService
+        .autoAssignLeads([
+          {
+            id: savedLead.id,
+            email: savedLead.email,
+            phone: savedLead.phone,
+            whatsapp: savedLead.whatsapp,
+            linkedin: savedLead.linkedin,
+            instagram: savedLead.instagram,
+            facebook: savedLead.facebook,
+            website: savedLead.website,
+          },
+        ])
+        .catch((err) => console.warn('[leadsRouter.import-audit] Channel auto-assignment warning:', err));
     }
 
     // Pre-generate tailored email copy

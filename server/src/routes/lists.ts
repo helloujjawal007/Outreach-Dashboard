@@ -1,7 +1,19 @@
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
+import { channelListAutoAssignmentService } from '../services/channelListAutoAssignmentService';
 
 export const listsRouter = Router();
+
+// POST /api/lists/sync-channels - Auto-organize and sync all leads into their corresponding channel lists
+listsRouter.post('/sync-channels', async (_req: Request, res: Response) => {
+  try {
+    const summary = await channelListAutoAssignmentService.syncAllExistingLeads();
+    res.json({ success: true, summary, message: 'All channel lists synchronized successfully' });
+  } catch (error) {
+    console.error('[listsRouter.syncChannels]', error);
+    res.status(500).json({ success: false, error: 'Failed to sync channel lists' });
+  }
+});
 
 // GET /api/lists - List all custom lists with member count
 listsRouter.get('/', async (_req: Request, res: Response) => {

@@ -11,11 +11,16 @@ import { InboundEmailPopup } from '@/components/InboundEmailPopup';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
+import { LoginPage } from '@/pages/LoginPage';
+import { DealsPipelinePage } from '@/pages/DealsPipelinePage';
+import { CommandPalette } from '@/components/CommandPalette';
+import { SuppressionListModal } from '@/components/SuppressionListModal';
+import { api } from '@/services/api';
 import type { CrmSubFilter } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
-import { MessageSquare, RefreshCw, Zap, AlertTriangle } from 'lucide-react';
+import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search } from 'lucide-react';
 
-const VALID_PAGES: PageId[] = ['copilot', 'crm', 'import', 'scraper', 'builder', 'health'];
+const VALID_PAGES: PageId[] = ['copilot', 'pipeline', 'crm', 'import', 'scraper', 'builder', 'health'];
 
 function getInitialPage(): PageId {
   if (typeof window === 'undefined') return 'copilot';
@@ -27,6 +32,7 @@ function getInitialPage(): PageId {
 }
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [page, setPage] = useState<PageId>(getInitialPage);
   const [crmSubFilter, setCrmSubFilter] = useState<CrmSubFilter>('all');
   const [crmCountryFilter, setCrmCountryFilter] = useState<string>('all');
@@ -34,8 +40,40 @@ function App() {
   const [isMessagesModalOpen, setIsMessagesModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isSuppressionModalOpen, setIsSuppressionModalOpen] = useState(false);
   const [autoOpenContact, setAutoOpenContact] = useState<{ id: string; entityType: 'lead' | 'client' } | null>(null);
   const store = useStore();
+
+  useEffect(() => {
+    // Check initial authentication state with backend
+    api.checkAuth().then((authed) => {
+      setIsAuthenticated(authed);
+    });
+
+    const handleUnauthorized = () => {
+      setIsAuthenticated(false);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('ods:unauthorized', handleUnauthorized);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('ods:unauthorized', handleUnauthorized);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    await api.logout();
+    setIsAuthenticated(false);
+  };
 
   useEffect(() => {
     const handlePopState = () => {
@@ -194,7 +232,28 @@ function App() {
         : 'Leads & Clients CRM',
     health: 'Sending Infrastructure & Health',
     copilot: 'AI Executive Command Center & Growth Copilot',
+    pipeline: 'Deals & Sales Pipeline • Kanban Board',
   };
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-mono tracking-wider">Verifying secure session...</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        onLoginSuccess={() => {
+          setIsAuthenticated(true);
+          store.refreshAll();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -208,6 +267,9 @@ function App() {
         onNavigate={handleNavigate}
         onOpenMessages={() => setIsMessagesModalOpen(true)}
         onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
+        onOpenSuppression={() => setIsSuppressionModalOpen(true)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onLogout={handleLogout}
         counts={counts}
       />
 
@@ -221,6 +283,18 @@ function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Quick Search Shortcut Button */}
+            <button
+              onClick={() => setIsCommandPaletteOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors shadow-2xs"
+              title="Search leads, deals, or run quick actions (Cmd+K)"
+            >
+              <Search size={13} className="text-slate-400" />
+              <span>Search or jump to...</span>
+              <kbd className="px-1.5 py-0.2 text-[10px] font-mono bg-white border border-slate-200 rounded text-slate-400">
+                ⌘K
+              </kbd>
+            </button>
             {/* 24/7 Autopilot Master Button */}
             <button
               onClick={() => setIsAutopilotModalOpen(true)}
@@ -305,6 +379,7 @@ function App() {
               {page === 'import' && <LeadImportPage store={store} onNavigate={setPage} />}
               {page === 'scraper' && <LeadScraperPage store={store} onNavigate={setPage} />}
               {page === 'builder' && <CampaignBuilderPage store={store} />}
+              {page === 'pipeline' && <DealsPipelinePage />}
               {page === 'crm' && (
                 <CrmPage
                   store={store}
@@ -358,6 +433,21 @@ function App() {
         isOpen={isAutopilotModalOpen}
         onClose={() => setIsAutopilotModalOpen(false)}
         store={store}
+      />
+
+      {/* Global Command Palette (Cmd+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={handleNavigate}
+        onOpenSuppression={() => setIsSuppressionModalOpen(true)}
+        onOpenAutopilot={() => setIsAutopilotModalOpen(true)}
+      />
+
+      {/* Global Email Suppression List Modal */}
+      <SuppressionListModal
+        isOpen={isSuppressionModalOpen}
+        onClose={() => setIsSuppressionModalOpen(false)}
       />
     </div>
   );

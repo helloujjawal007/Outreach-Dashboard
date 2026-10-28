@@ -243,6 +243,7 @@ export function useStore() {
       facebook?: string;
       whatsapp?: string;
       linkedin?: string;
+      website?: string;
       status?: 'active' | 'inactive' | 'paused';
       notes?: string;
       listId?: string;
@@ -907,6 +908,23 @@ export function useStore() {
     }
   }, []);
 
+  const syncChannelLists = useCallback(async () => {
+    try {
+      const res = await api.syncChannelLists();
+      const [freshLists, freshLeads, freshClients] = await Promise.all([
+        api.getLists(),
+        api.getLeads(),
+        api.getClients(),
+      ]);
+      setLists(freshLists);
+      setLeads([...freshLeads, ...freshClients]);
+      return res;
+    } catch (err) {
+      console.error('[Store] syncChannelLists error:', err);
+      throw err;
+    }
+  }, []);
+
 
   const shootBatchEmails = useCallback(
     async (batchId: string) => {
@@ -1348,6 +1366,7 @@ export function useStore() {
       addLeadsToList,
       removeLeadsFromList,
       removeLeadFromList,
+      syncChannelLists,
       fetchBatches,
       shootBatchEmails,
       deleteBatch,
@@ -1447,6 +1466,7 @@ export function useStore() {
       addLeadsToList,
       removeLeadsFromList,
       removeLeadFromList,
+      syncChannelLists,
       fetchBatches,
       shootBatchEmails,
       deleteBatch,

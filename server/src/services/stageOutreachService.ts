@@ -1,4 +1,3 @@
-import fs from 'fs';
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanCopywriterService } from './humanCopywriterService';
@@ -8,6 +7,8 @@ import { workflowRoutingService } from './workflowRoutingService';
 import { clientAuditService } from './clientAuditIntelligenceService';
 import { technicalAuditPdfService } from './technicalAuditPdfService';
 import { leadIsolationService } from './leadIsolationService';
+import { suppressionService } from './suppressionService';
+import { sequenceEnrollmentService } from './sequenceEnrollmentService';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -302,6 +303,23 @@ export class StageOutreachService {
       }
     }
 
+    // Global Suppression Check
+    const suppressionCheck = await suppressionService.isSuppressed({ email: lead.email, phone: lead.phone });
+    if (suppressionCheck.suppressed) {
+      return {
+        leadId,
+        businessName: lead.business_name,
+        email: lead.email,
+        phone: lead.phone,
+        stage: 'completed',
+        stageLabel: 'Suppressed',
+        subject: '',
+        success: false,
+        skipped: true,
+        reason: `Global Suppression: Recipient is in suppression list (${suppressionCheck.reason || 'unsubscribed'})`,
+      };
+    }
+
     if (lead.consent_status === 'opted_out' || lead.consent_status === 'unsubscribed') {
       return {
         leadId,
@@ -591,6 +609,25 @@ export class StageOutreachService {
          WHERE id = $2`,
         [nextStageName, leadId]
       );
+
+      // Advance structured sequence enrollment step
+      await sequenceEnrollmentService.advanceStep(leadId).catch((seqErr) => {
+        console.warn(`[StageOutreachService] Sequence advance error for lead ${leadId}:`, seqErr?.message);
+      });
+
+      // Unified Activity Timeline log
+      await query(
+        `INSERT INTO activity_logs (lead_id, actor_type, activity_type, title, description, metadata)
+         VALUES ($1, 'system', 'outreach_sent', $2, $3, $4)`,
+        [
+          leadId,
+          `Dispatched ${stageInfo.stageLabel} via ${channelsDispatched.join(', ')}`,
+          `Subject: "${stageInfo.subject}". Channels: ${channelsDispatched.join(', ')}.`,
+          JSON.stringify({ channels: channelsDispatched, stage: stageInfo.stage, subject: stageInfo.subject }),
+        ]
+      ).catch((actErr) => {
+        console.warn(`[StageOutreachService] Activity log error:`, actErr?.message);
+      });
 
       return {
         leadId,

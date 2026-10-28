@@ -41,6 +41,14 @@ import type {
   EmailVerificationTestResponse,
   ClientAuditReport,
   AuditPitchResult,
+  Deal,
+  PipelineSummary,
+  CrmTask,
+  TaskSummary,
+  LeadActivity,
+  SuppressedRecord,
+  SuppressionStats,
+  SequenceEnrollment,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -57,14 +65,46 @@ export function cleanSiteUrl(url?: string | null): string {
   return trimmed;
 }
 
+const TOKEN_KEY = 'ods_admin_token';
+
+export function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setStoredToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> || {}),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    credentials: 'include',
     ...options,
+    headers,
   });
+
+  if (res.status === 401 && path !== '/auth/login' && path !== '/auth/me') {
+    setStoredToken(null);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('ods:unauthorized'));
+    }
+    throw new Error('Unauthorized');
+  }
 
   if (!res.ok) {
     let errorMsg = `Request failed: ${res.statusText}`;
@@ -113,7 +153,11 @@ export interface BackendLead {
   metadata?: Record<string, any>;
   google_profile?: GoogleBusinessProfile;
   website?: string;
+  linkedin?: string;
   country?: string;
+  primary_contact_name?: string;
+  inbound_intent?: string;
+  inbound_intent_confidence?: number;
 }
 
 export interface BackendClient {
@@ -302,6 +346,7 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     deletedAt: b.deleted_at,
     daysRemaining: b.days_remaining,
     notes: b.notes || '',
+    primaryContactName: b.primary_contact_name || (b as any).primaryContactName || '',
     status: b.status || 'active',
     manualReviewReason: b.manual_review_reason,
     manualReviewAt: b.manual_review_at,
@@ -311,8 +356,11 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     detectedChannels: b.detected_channels || [],
     googleProfile: b.metadata?.google_profile || b.google_profile || undefined,
     website: cleanSiteUrl(b.website || b.metadata?.google_profile?.website || ''),
+    linkedin: b.linkedin || '',
     location: b.location || b.metadata?.location || '',
     country: b.country || '',
+    inboundIntent: b.inbound_intent || undefined,
+    inboundIntentConfidence: b.inbound_intent_confidence ? Number(b.inbound_intent_confidence) : undefined,
     metadata: b.metadata || {},
   };
 }
@@ -398,6 +446,7 @@ export const api = {
     facebook?: string;
     whatsapp?: string;
     linkedin?: string;
+    website?: string;
     status?: 'active' | 'inactive' | 'paused';
     notes?: string;
     listId?: string;
@@ -419,6 +468,7 @@ export const api = {
     if (updates.instagram !== undefined) payload.instagram = updates.instagram;
     if (updates.facebook !== undefined) payload.facebook = updates.facebook;
     if (updates.whatsapp !== undefined) payload.whatsapp = updates.whatsapp;
+    if (updates.linkedin !== undefined) payload.linkedin = updates.linkedin;
     if (updates.notes !== undefined) payload.notes = updates.notes;
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.consentStatus !== undefined) payload.consentStatus = updates.consentStatus;
@@ -747,6 +797,22 @@ export const api = {
   async getLists(): Promise<CustomList[]> {
     const data = await request<{ success: boolean; lists: CustomList[] }>('/lists');
     return data.lists || [];
+  },
+
+  async syncChannelLists(): Promise<{
+    success: boolean;
+    summary: {
+      addedToEmailList: number;
+      addedToWhatsAppList: number;
+      addedToLinkedInList: number;
+      addedToInstagramList: number;
+      addedToFacebookList: number;
+      addedToWebsiteList: number;
+      addedToCustomList: number;
+    };
+    message: string;
+  }> {
+    return request('/lists/sync-channels', { method: 'POST' });
   },
 
   async createList(name: string, description?: string): Promise<CustomList> {
@@ -1839,6 +1905,172 @@ export const api = {
     return request<{ success: boolean; pitch: AuditPitchResult }>('/audit/pitch', {
       method: 'POST',
       body: JSON.stringify(options),
+    });
+  },
+
+  // Authentication & Session
+  async login(password: string): Promise<{ success: boolean; token: string }> {
+    const res = await request<{ success: boolean; token: string; expiresAt: string }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+    if (res.token) {
+      setStoredToken(res.token);
+    }
+    return res;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await request('/auth/logout', { method: 'POST' });
+    } finally {
+      setStoredToken(null);
+    }
+  },
+
+  async checkAuth(): Promise<boolean> {
+    try {
+      const res = await request<{ success: boolean; authenticated: boolean }>('/auth/me');
+      return Boolean(res.authenticated);
+    } catch {
+      return false;
+    }
+  },
+
+  // Deals Pipeline
+  async getDeals(): Promise<{ success: boolean; deals: Deal[]; summary: PipelineSummary }> {
+    return request<{ success: boolean; deals: Deal[]; summary: PipelineSummary }>('/deals');
+  },
+
+  async createDeal(data: Partial<Deal> & { title: string; leadId?: string }): Promise<{ success: boolean; deal: Deal }> {
+    return request<{ success: boolean; deal: Deal }>('/deals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateDeal(id: string, updates: Partial<Deal> & { lostReason?: string }): Promise<{ success: boolean; deal: Deal }> {
+    return request<{ success: boolean; deal: Deal }>(`/deals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async deleteDeal(id: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/deals/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Tasks & Reminders
+  async getTasks(filter?: 'today' | 'overdue' | 'upcoming' | 'all'): Promise<{ success: boolean; tasks: CrmTask[]; summary: TaskSummary }> {
+    const query = filter && filter !== 'all' ? `?filter=${filter}` : '';
+    return request<{ success: boolean; tasks: CrmTask[]; summary: TaskSummary }>(`/tasks${query}`);
+  },
+
+  async createTask(data: Partial<CrmTask> & { title: string }): Promise<{ success: boolean; task: CrmTask }> {
+    return request<{ success: boolean; task: CrmTask }>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async toggleTask(id: string): Promise<{ success: boolean; task: CrmTask }> {
+    return request<{ success: boolean; task: CrmTask }>(`/tasks/${id}/toggle`, {
+      method: 'PATCH',
+    });
+  },
+
+  async deleteTask(id: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>(`/tasks/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Unified Lead Activity Timeline
+  async getLeadActivities(leadId: string): Promise<{ success: boolean; activities: LeadActivity[] }> {
+    return request<{ success: boolean; activities: LeadActivity[] }>(`/activities/by-lead/${leadId}`);
+  },
+
+  async logActivity(data: {
+    leadId: string;
+    dealId?: string;
+    title: string;
+    description?: string;
+    activityType?: string;
+  }): Promise<{ success: boolean; activity: LeadActivity }> {
+    return request<{ success: boolean; activity: LeadActivity }>('/activities', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Global Suppression List
+  async getSuppressionList(params?: {
+    search?: string;
+    reason?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ success: boolean; records: SuppressedRecord[]; total: number; stats: SuppressionStats }> {
+    const sp = new URLSearchParams();
+    if (params?.search) sp.set('search', params.search);
+    if (params?.reason && params.reason !== 'all') sp.set('reason', params.reason);
+    if (params?.limit) sp.set('limit', String(params.limit));
+    if (params?.offset) sp.set('offset', String(params.offset));
+    const qs = sp.toString() ? `?${sp.toString()}` : '';
+    return request<{ success: boolean; records: SuppressedRecord[]; total: number; stats: SuppressionStats }>(`/suppression${qs}`);
+  },
+
+  async addSuppression(data: {
+    email?: string;
+    phone?: string;
+    domain?: string;
+    reason?: string;
+  }): Promise<{ success: boolean; message: string; recordId: string }> {
+    return request<{ success: boolean; message: string; recordId: string }>('/suppression', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async removeSuppression(id: string): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>(`/suppression/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async checkSuppression(params: {
+    email?: string;
+    phone?: string;
+    domain?: string;
+  }): Promise<{ success: boolean; suppressed: boolean; reason?: string; source?: string }> {
+    const sp = new URLSearchParams();
+    if (params.email) sp.set('email', params.email);
+    if (params.phone) sp.set('phone', params.phone);
+    if (params.domain) sp.set('domain', params.domain);
+    return request<{ success: boolean; suppressed: boolean; reason?: string; source?: string }>(`/suppression/check?${sp.toString()}`);
+  },
+
+  // Sequence Enrollments
+  async getLeadSequenceEnrollments(leadId: string): Promise<{ success: boolean; enrollments: SequenceEnrollment[] }> {
+    return request<{ success: boolean; enrollments: SequenceEnrollment[] }>(`/sequences/enrollments/${leadId}`);
+  },
+
+  async enrollInSequence(data: {
+    leadId: string;
+    sequenceName?: string;
+    totalSteps?: number;
+  }): Promise<{ success: boolean; enrollment: SequenceEnrollment }> {
+    return request<{ success: boolean; enrollment: SequenceEnrollment }>('/sequences/enroll', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async delaySequenceForOoo(leadId: string, delayDays: number = 7): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>('/sequences/delay-ooo', {
+      method: 'POST',
+      body: JSON.stringify({ leadId, delayDays }),
     });
   },
 };

@@ -7,11 +7,16 @@ export const inboxesRouter = Router();
 inboxesRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const inboxes = await inboxRotationService.getAllInboxes();
+    const sanitizedInboxes = inboxes.map((inbox) => ({
+      ...inbox,
+      has_password: Boolean(inbox.smtp_pass && inbox.smtp_pass.trim()),
+      smtp_pass: inbox.smtp_pass ? '••••••••' : '',
+    }));
     const summary = await inboxRotationService.getPoolSummary();
     res.json({
       success: true,
-      count: inboxes.length,
-      inboxes,
+      count: sanitizedInboxes.length,
+      inboxes: sanitizedInboxes,
       summary,
     });
   } catch (err: unknown) {

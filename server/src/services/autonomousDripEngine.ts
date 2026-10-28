@@ -331,6 +331,11 @@ export class AutonomousDripEngine {
              OR (phone IS NOT NULL AND TRIM(phone) != '')
              OR (website IS NOT NULL AND TRIM(website) != '')
            )
+           AND NOT EXISTS (
+             SELECT 1 FROM global_suppression_list 
+             WHERE (LOWER(email) = LOWER(leads.email) AND leads.email IS NOT NULL)
+                OR (phone = leads.phone AND leads.phone IS NOT NULL)
+           )
          ORDER BY 
            CASE 
              WHEN outreach_stage = 'followup_3' THEN 1

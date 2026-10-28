@@ -801,7 +801,7 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
       }
 
       // 1. Consent check
-      if (lead.consent_status === 'opted_out') {
+      if (lead.consent_status === 'opted_out' || lead.consent_status === 'unsubscribed') {
         skippedCount++;
         results.push({
           leadId: lead.id,
@@ -809,7 +809,23 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
           channel,
           success: false,
           status: 'skipped',
-          reason: 'Lead has explicitly opted out',
+          reason: 'Lead has explicitly opted out or unsubscribed',
+        });
+        continue;
+      }
+
+      // Global Suppression Check
+      const { suppressionService } = await import('../services/suppressionService');
+      const suppCheck = await suppressionService.isSuppressed({ email: lead.email, phone: lead.phone });
+      if (suppCheck.suppressed) {
+        skippedCount++;
+        results.push({
+          leadId: lead.id,
+          businessName: lead.business_name,
+          channel,
+          success: false,
+          status: 'skipped',
+          reason: `Global Suppression: Recipient is in suppression list (${suppCheck.reason || 'unsubscribed'})`,
         });
         continue;
       }
@@ -859,6 +875,22 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
             success: false,
             status: 'skipped',
             reason: 'No valid email address available',
+          });
+          continue;
+        }
+
+        // Pre-send validation: Verify DNS MX records, syntax, and disposable domains before dispatch
+        const { emailValidatorService } = await import('../services/emailValidatorService');
+        const validation = await emailValidatorService.validateEmail(lead.email);
+        if (!validation.isValid) {
+          skippedCount++;
+          results.push({
+            leadId: lead.id,
+            businessName: lead.business_name,
+            channel: 'email',
+            success: false,
+            status: 'skipped',
+            reason: `Pre-send skipped: ${validation.reason || 'Domain has no MX records or is invalid'}`,
           });
           continue;
         }
@@ -962,8 +994,25 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
 
         const sendResult = await whatsappSessionService.sendMessage(waEval.cleanNumber, bodyText);
         if (!sendResult.success) {
-          failedCount++;
           const failMsg = sendResult.error || 'Direct WhatsApp dispatch failed';
+          const isLandlineOrNotOnWa = /not registered on WhatsApp|landline|inactive number/i.test(failMsg);
+
+          if (isLandlineOrNotOnWa) {
+            skippedCount++;
+            results.push({
+              leadId: lead.id,
+              businessName: lead.business_name,
+              channel: 'whatsapp',
+              success: false,
+              status: 'skipped',
+              reason: `Skipped: Landline or number not registered on WhatsApp.`,
+              deepLink: waDeepLink,
+              messagePreview: bodyText,
+            });
+            continue;
+          }
+
+          failedCount++;
           await leadIsolationService.isolateFailedLead(lead.id, failMsg);
 
           results.push({

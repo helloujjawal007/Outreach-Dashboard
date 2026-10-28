@@ -20,10 +20,14 @@ import {
   Compass,
   MailX,
   Copy,
+  LogOut,
+  TrendingUp,
+  ShieldAlert,
+  Search,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 
-export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot';
+export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot' | 'pipeline';
 
 export interface CountryCountItem {
   country: string;
@@ -48,6 +52,8 @@ interface SidebarProps {
   onNavigate: (page: PageId, subFilter?: CrmSubFilter, country?: string, channel?: string) => void;
   onOpenMessages?: () => void;
   onOpenScheduleModal?: () => void;
+  onOpenSuppression?: () => void;
+  onOpenCommandPalette?: () => void;
   counts: {
     leads: number;
     addedLeads: number;
@@ -60,6 +66,7 @@ interface SidebarProps {
     queue: number;
     unreadMessages: number;
   };
+  onLogout?: () => void;
 }
 
 export function Sidebar({
@@ -72,6 +79,9 @@ export function Sidebar({
   onNavigate,
   onOpenMessages,
   onOpenScheduleModal: _onOpenScheduleModal,
+  onOpenSuppression,
+  onOpenCommandPalette,
+  onLogout,
   counts,
 }: SidebarProps) {
   const [crmExpanded, setCrmExpanded] = useState(false);
@@ -176,6 +186,28 @@ export function Sidebar({
             className={current === 'builder' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
           />
           <span>Create Campaign</span>
+        </button>
+
+        {/* 5. Deals & Pipeline */}
+        <button
+          onClick={() => onNavigate('pipeline')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
+            current === 'pipeline'
+              ? 'bg-blue-50 text-blue-800 font-semibold ring-1 ring-blue-300/70 shadow-2xs'
+              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
+          }`}
+          title="Sales Pipeline, Kanban Stages & Deal Value"
+        >
+          <div className="flex items-center gap-3">
+            <TrendingUp
+              size={18}
+              className={current === 'pipeline' ? 'text-blue-600' : 'text-ink-300 group-hover:text-blue-600'}
+            />
+            <span>Deals &amp; Pipeline</span>
+          </div>
+          <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] font-bold text-blue-700 shadow-2xs">
+            Kanban
+          </span>
         </button>
 
         {/* 4. Leads & Clients (With Subitems) */}
@@ -537,6 +569,40 @@ export function Sidebar({
           )}
         </button>
 
+        {/* Quick Search / Command Palette (Cmd+K) */}
+        {onOpenCommandPalette && (
+          <button
+            onClick={onOpenCommandPalette}
+            className="group flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors border border-slate-200/80 bg-slate-50/50"
+            title="Search leads, deals, or execute actions (Cmd+K)"
+          >
+            <div className="flex items-center gap-2">
+              <Search size={14} className="text-slate-400 group-hover:text-indigo-600" />
+              <span>Quick Search</span>
+            </div>
+            <kbd className="px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-white border border-slate-200 rounded shadow-3xs">
+              ⌘K
+            </kbd>
+          </button>
+        )}
+
+        {/* Global Suppression List */}
+        {onOpenSuppression && (
+          <button
+            onClick={onOpenSuppression}
+            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition-all"
+            title="Manage unsubscribes, hard bounces, and blacklists"
+          >
+            <ShieldAlert size={16} className="text-slate-400 group-hover:text-rose-500" />
+            <div className="flex-1 text-left min-w-0">
+              <span className="block truncate">Suppression List</span>
+            </div>
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-100 group-hover:bg-rose-100 text-slate-500 group-hover:text-rose-700">
+              Safety
+            </span>
+          </button>
+        )}
+
         {/* 7. Send Tracker & Health (Track sent, received, bounced per day) */}
         <button
           onClick={() => onNavigate('health')}
@@ -568,13 +634,22 @@ export function Sidebar({
       {/* User Footer */}
       <div className="border-t border-slate-200 px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 text-xs font-bold text-white shadow-xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-600 text-xs font-bold text-white shadow-xs shrink-0">
             CC
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-ink-700 truncate">Cloud Consultancy</p>
-            <p className="text-xs text-ink-500 truncate">Engineering & Outreach Systems</p>
+            <p className="text-xs text-ink-500 truncate">Engineering &amp; Outreach</p>
           </div>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              title="Log out of session"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
         </div>
       </div>
     </aside>

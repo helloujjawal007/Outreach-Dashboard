@@ -11,6 +11,7 @@ export interface AppendSentEmailParams {
   html?: string;
   inboxEmail?: string;
   inboxId?: string;
+  attachments?: Array<{ filename: string; path?: string; content?: any }>;
 }
 
 export class EmailSentSyncService {
@@ -79,6 +80,7 @@ export class EmailSentSyncService {
         subject: params.subject,
         text: params.text || '',
         html: params.html || undefined,
+        attachments: params.attachments,
       });
 
       const rawBuffer = await composer.compile().build();

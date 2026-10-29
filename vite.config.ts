@@ -14,6 +14,9 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   server: {
+    watch: {
+      ignored: ['**/server/data/**', '**/chrome-bin/**'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:5001',

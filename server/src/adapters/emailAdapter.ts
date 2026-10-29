@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import nodemailer from 'nodemailer';
 import { query } from '../config/db';
 import { env } from '../config/env';
@@ -217,6 +219,8 @@ export class EmailAdapter {
     // Dynamic Token Replacement & Residual Placeholder Sweep (Checklist Item 2)
     let sanitizedSubject = params.subject || 'Outreach Follow-up';
     let sanitizedBody = params.body;
+    let finalAttachments: Array<{ filename: string; path?: string; content?: Buffer | string }> =
+      params.attachments && Array.isArray(params.attachments) ? [...params.attachments] : [];
 
     if (params.leadId) {
       try {
@@ -226,11 +230,12 @@ export class EmailAdapter {
           website: string;
           audit_key_takeaways: string;
           audit_pdf_name: string;
+          audit_pdf_path: string;
           category: string;
           location: string;
           gmb_notes: string;
         }>(
-          `SELECT business_name, primary_contact_name, website, audit_key_takeaways, audit_pdf_name, category, location, gmb_notes 
+          `SELECT business_name, primary_contact_name, website, audit_key_takeaways, audit_pdf_name, audit_pdf_path, category, location, gmb_notes 
            FROM leads WHERE id = $1`,
           [params.leadId]
         );
@@ -256,6 +261,44 @@ export class EmailAdapter {
             city: l.location,
             gmb_notes: l.gmb_notes,
           });
+
+          // Auto-attach Audit PDF Report if not already attached
+          if (finalAttachments.length === 0) {
+            let pdfPath = (l.audit_pdf_path || '').trim();
+            let pdfName = (l.audit_pdf_name || '').trim();
+
+            if (pdfPath && !fs.existsSync(pdfPath)) {
+              console.warn(`[EmailAdapter] Audit PDF path "${pdfPath}" not found on disk, re-compiling...`);
+              pdfPath = '';
+            }
+
+            // Auto-compile missing audit PDF on-the-fly if lead has a valid website
+            if (!pdfPath && l.website && workflowRoutingService.hasValidWebsite(l.website)) {
+              try {
+                console.log(`[EmailAdapter] ⚡ Auto-compiling missing audit PDF report for ${l.business_name}...`);
+                const { clientAuditService } = await import('../services/clientAuditIntelligenceService');
+                const { technicalAuditPdfService } = await import('../services/technicalAuditPdfService');
+                const auditReport = await clientAuditService.auditWebsite(l.website);
+                const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, l.business_name);
+                pdfPath = pdfGen.pdfPath;
+                pdfName = pdfGen.pdfName;
+                await query(
+                  `UPDATE leads SET audit_score = $1, audit_key_takeaways = $2, audit_pdf_name = $3, audit_pdf_path = $4 WHERE id = $5`,
+                  [auditReport.overallScore, auditReport.auditKeyTakeaways, pdfGen.pdfName, pdfGen.pdfPath, params.leadId]
+                );
+              } catch (genErr: any) {
+                console.warn(`[EmailAdapter] Could not auto-compile audit PDF for ${l.business_name}:`, genErr?.message);
+              }
+            }
+
+            if (pdfPath && fs.existsSync(pdfPath)) {
+              finalAttachments.push({
+                filename: pdfName || path.basename(pdfPath) || 'Technical_Audit_Report.pdf',
+                path: pdfPath,
+              });
+              console.log(`[EmailAdapter] 📎 Attached Technical Audit PDF: ${pdfName || path.basename(pdfPath)} for ${l.business_name}`);
+            }
+          }
         }
       } catch (tokenErr) {
         console.warn('[EmailAdapter] Token replacement query warning:', tokenErr);
@@ -301,7 +344,7 @@ export class EmailAdapter {
           subject: finalSubject,
           text: plainText,
           html: htmlBody,
-          attachments: params.attachments,
+          attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
           headers: {
             'List-Unsubscribe': `<mailto:${activeInbox.email}?subject=unsubscribe>`,
             'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -310,7 +353,7 @@ export class EmailAdapter {
 
         liveDelivery = 'sent_live';
         await inboxRotationService.recordDispatch(activeInbox.id, true);
-        console.log(`[EmailAdapter] Dispatched via Rotating Inbox [${activeInbox.name} (${activeInbox.email})] to ${params.to}`);
+        console.log(`[EmailAdapter] Dispatched via Rotating Inbox [${activeInbox.name} (${activeInbox.email})] to ${params.to} with ${finalAttachments.length} attachment(s)`);
 
         // Sync sent message to IMAP Sent Mail so it appears in user's Gmail client
         emailSentSyncService.appendSentEmail({
@@ -321,6 +364,7 @@ export class EmailAdapter {
           html: htmlBody,
           inboxEmail: activeInbox.email,
           inboxId: activeInbox.id,
+          attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         }).catch((err) => console.warn('[EmailAdapter] Sent mail sync warning:', err?.message));
       } catch (smtpErr: unknown) {
         liveDelivery = 'smtp_failed';
@@ -351,7 +395,7 @@ export class EmailAdapter {
           subject: finalSubject,
           text: plainText,
           html: htmlBody,
-          attachments: params.attachments,
+          attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
           headers: {
             'List-Unsubscribe': `<mailto:${cleanReplyTo}?subject=unsubscribe>`,
             'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
@@ -367,6 +411,7 @@ export class EmailAdapter {
           text: plainText,
           html: htmlBody,
           inboxEmail: env.SMTP_USER,
+          attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         }).catch((err) => console.warn('[EmailAdapter] Sent mail sync warning:', err?.message));
       } catch (smtpErr: unknown) {
         liveDelivery = 'smtp_failed';
@@ -379,15 +424,14 @@ export class EmailAdapter {
     // Check if live delivery resulted in permanent rejection/bounce or general SMTP delivery failure
     const isPermanentBounce =
       liveDelivery === 'smtp_failed' &&
-      /55\d|no such user|address not found|recipient rejected|mailbox unavailable|user unknown/i.test(
+      /55\d|no such user|address not found|recipient rejected|mailbox unavailable|user unknown|invalid recipient/i.test(
         liveError || ''
       );
 
-    // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
-    if (liveDelivery === 'smtp_failed' && params.leadId) {
-      const failReason = isPermanentBounce
-        ? `SMTP Bounce / Rejection: ${liveError}`
-        : `SMTP Delivery Failure: ${liveError || 'Failed to deliver email'}`;
+    // Only quarantine lead if permanent rejection/bounce occurred
+    if (liveDelivery === 'smtp_failed' && params.leadId && isPermanentBounce) {
+      const failReason = `SMTP Bounce / Rejection: ${liveError}`;
+      console.warn(`[EmailAdapter] Quarantining hard-bounced lead ${params.leadId}: ${failReason}`);
       await leadIsolationService.isolateFailedLead(params.leadId, failReason);
     }
 
@@ -415,11 +459,14 @@ export class EmailAdapter {
       }
 
       const messageStatus = isPermanentBounce ? 'bounced' : liveDelivery === 'smtp_failed' ? 'failed' : 'sent';
+      const msgMetadata = finalAttachments.length > 0
+        ? { attachments: finalAttachments.map((a) => ({ filename: a.filename, path: a.path })) }
+        : {};
       const msgRes = await query<{ id: string }>(
-        `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_id, inbox_email)
-         VALUES ($1, 'email', 'outbound', $2, $3, NOW(), $4, $5)
+        `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_id, inbox_email, metadata)
+         VALUES ($1, 'email', 'outbound', $2, $3, NOW(), $4, $5, $6)
          RETURNING id`,
-        [convId, finalBodyText, messageStatus, activeInbox?.id || null, activeInbox?.email || env.SMTP_USER || '']
+        [convId, finalBodyText, messageStatus, activeInbox?.id || null, activeInbox?.email || env.SMTP_USER || '', JSON.stringify(msgMetadata)]
       );
 
       // Mark all preceding inbound messages in this thread as replied & seen

@@ -290,7 +290,7 @@ auditRouter.post('/pitch', async (req: Request, res: Response) => {
 
     if (leadId) {
       const leadResult = await query(
-        'SELECT id, business_name, website, category, city, primary_contact_name, metadata, notes FROM leads WHERE id = $1',
+        'SELECT id, business_name, website, category, location, primary_contact_name, metadata, notes FROM leads WHERE id = $1',
         [leadId]
       );
       if (leadResult.rows.length > 0) {
@@ -299,7 +299,7 @@ auditRouter.post('/pitch', async (req: Request, res: Response) => {
           businessName: row.business_name,
           website: customWebsite || row.website || row.metadata?.google_profile?.website || '',
           category: row.category,
-          city: row.city,
+          city: row.location || '',
           contactName: row.primary_contact_name,
         };
       }

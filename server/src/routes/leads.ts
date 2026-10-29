@@ -1208,15 +1208,16 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
     const outreachWorkflow = routeDecision.workflow;
     const auditStatus = routeDecision.auditStatus;
     const effectiveStatus = routeDecision.status; // 'pending_audit' for Workflow A, 'active' for Workflow B
+    const primaryContactName = (req.body.primaryContactName || req.body.primary_contact_name || '').trim();
 
     const result = await query(
       `INSERT INTO leads (
         business_name, category, phone, email, instagram, facebook, whatsapp,
         linkedin, notes, consent_status, status, batch_id, whatsapp_eligible,
         whatsapp_decision_reason, detected_channels, metadata, website, country,
-        location, outreach_workflow, audit_status
+        location, outreach_workflow, audit_status, primary_contact_name
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
       ) RETURNING *`,
       [
         businessName.trim(),
@@ -1239,6 +1240,7 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
         location,
         outreachWorkflow,
         auditStatus,
+        primaryContactName,
       ]
     );
 

@@ -234,6 +234,69 @@ export function CrmPage({
   const [bulkActionSuccess, setBulkActionSuccess] = useState<string | null>(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
 
+  // Quick Add Contact Modal state
+  const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
+  const [newContactForm, setNewContactForm] = useState({
+    businessName: '',
+    primaryContactName: '',
+    email: '',
+    phone: '',
+    whatsapp: '',
+    website: '',
+    category: '',
+    city: '',
+    country: 'USA',
+    dealValue: 1500,
+    notes: '',
+    listId: '',
+  });
+  const [isCreatingContact, setIsCreatingContact] = useState(false);
+  const [createContactError, setCreateContactError] = useState<string | null>(null);
+
+  const handleCreateContactSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newContactForm.businessName.trim()) {
+      setCreateContactError('Company / Business name is required.');
+      return;
+    }
+    try {
+      setIsCreatingContact(true);
+      setCreateContactError(null);
+      await store.createSingleLead({
+        businessName: newContactForm.businessName.trim(),
+        primaryContactName: newContactForm.primaryContactName.trim() || undefined,
+        email: newContactForm.email.trim() || undefined,
+        phone: newContactForm.phone.trim() || undefined,
+        whatsapp: newContactForm.whatsapp.trim() || undefined,
+        website: newContactForm.website.trim() || undefined,
+        category: newContactForm.category.trim() || undefined,
+        notes: newContactForm.notes.trim() || undefined,
+        listId: newContactForm.listId || undefined,
+      });
+      setIsAddContactModalOpen(false);
+      setNewContactForm({
+        businessName: '',
+        primaryContactName: '',
+        email: '',
+        phone: '',
+        whatsapp: '',
+        website: '',
+        category: '',
+        city: '',
+        country: 'USA',
+        dealValue: 1500,
+        notes: '',
+        listId: '',
+      });
+      setBulkActionSuccess('Contact successfully created and added to your CRM database.');
+      setTimeout(() => setBulkActionSuccess(null), 4000);
+    } catch (err: any) {
+      setCreateContactError(err?.message || 'Failed to create contact.');
+    } finally {
+      setIsCreatingContact(false);
+    }
+  };
+
   // 28-day Deletion History / Trash state
   const [isTrashOpen, setIsTrashOpen] = useState(false);
 
@@ -2067,81 +2130,68 @@ export function CrmPage({
   return (
     <div>
       <PageHeader
-        title="Leads & Clients CRM"
-        subtitle="Manage prospects and paying clients. Unified omni-channel tracking with 28-day retention."
+        title="Contacts & Accounts CRM"
+        subtitle="Manage customer relationships, multi-channel touchpoints & revenue pipeline."
         actions={
-          <div className="flex items-center gap-2">
-            {/* 24/7 Autopilot Master Button */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Primary Action: Add Contact */}
+            <button
+              type="button"
+              onClick={() => setIsAddContactModalOpen(true)}
+              className="btn-primary text-xs flex items-center gap-1.5 shadow-xs bg-brand-600 hover:bg-brand-700 text-white font-bold py-1.5 px-3 rounded-lg transition-all"
+              title="Add a new lead or contact record to CRM"
+            >
+              <Plus size={14} />
+              <span>+ Add Contact</span>
+            </button>
+
+            {/* Schedule Outreach */}
+            <button
+              type="button"
+              onClick={() => setIsScheduleModalOpen(true)}
+              className="btn-secondary text-xs flex items-center gap-1.5 shadow-2xs border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold py-1.5 px-3 rounded-lg"
+              title="Schedule automated multi-channel outreach for a list"
+            >
+              <Calendar size={13} className="text-brand-600" />
+              <span>Schedule Outreach</span>
+            </button>
+
+            {/* Lists & Segments */}
+            <button
+              type="button"
+              onClick={() => setIsManageListsOpen(true)}
+              className="btn-secondary text-xs flex items-center gap-1.5 shadow-2xs border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold py-1.5 px-3 rounded-lg"
+              title="Manage custom lists and contact segments"
+            >
+              <ListFilter size={13} className="text-slate-500" />
+              <span>Lists ({store.lists.length})</span>
+            </button>
+
+            {/* Sync Inbox */}
+            <button
+              type="button"
+              onClick={handleSyncInbox}
+              disabled={isSyncingInbox}
+              className="btn-secondary text-xs flex items-center gap-1.5 shadow-2xs border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold py-1.5 px-3 rounded-lg"
+              title="Sync inboxes for prospect replies"
+            >
+              <RefreshCw size={13} className={isSyncingInbox ? 'animate-spin text-brand-600' : 'text-slate-500'} />
+              <span>{isSyncingInbox ? 'Syncing...' : 'Sync Inbox'}</span>
+            </button>
+
+            {/* Autopilot Status Pill */}
             <button
               type="button"
               onClick={() => setIsAutopilotModalOpen(true)}
-              className="btn-secondary text-xs flex items-center gap-1.5 shadow-sm border-indigo-300 text-indigo-950 bg-gradient-to-r from-indigo-50/90 to-purple-50/90 hover:from-indigo-100 hover:to-purple-100 transition cursor-pointer"
-              title="Autonomous 24/7 Drip Engine, Inbound AI & Contact Enricher"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50/70 text-indigo-900 text-xs font-semibold hover:bg-indigo-100/70 transition-colors cursor-pointer"
+              title="Autonomous 24/7 Drip Engine & Contact Enricher"
             >
               <span className="relative flex h-2 w-2">
                 <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${store.autopilotStatus?.dripEngine.enabled ? 'bg-emerald-400 animate-ping' : 'bg-slate-400'}`}></span>
                 <span className={`relative inline-flex rounded-full h-2 w-2 ${store.autopilotStatus?.dripEngine.enabled ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
               </span>
-              <Zap size={14} className="text-amber-500 fill-amber-500" />
-              <span className="font-bold">⚡ Autopilot ({store.autopilotStatus?.dripEngine.leadsDueTotal ?? 0} Due)</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5">
-                {store.autopilotStatus?.dripEngine.enabled ? '24/7 Active' : 'Paused'}
-              </span>
-            </button>
-
-            {/* 12-Hour GMB Auto-Sync Status & Trigger */}
-            <button
-              type="button"
-              onClick={handleSyncGmbAll}
-              disabled={isSyncingGmb}
-              className="btn-secondary text-xs flex items-center gap-1.5 shadow-sm border-amber-300 text-amber-900 bg-amber-50/80 hover:bg-amber-100 transition"
-              title="12-Hour Automated Sync is active. Click to trigger instant Google My Business matching on all leads."
-            >
-              <RefreshCw size={13} className={isSyncingGmb ? 'animate-spin text-amber-600' : 'text-amber-600'} />
-              <span className="font-semibold">{isSyncingGmb ? 'Matching GMB...' : 'Sync GMB Now 🔄'}</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-1.5 py-0.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                12h Auto
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSyncInbox}
-              disabled={isSyncingInbox}
-              className="btn-secondary text-xs flex items-center gap-1.5 shadow-sm border-brand-200 text-brand-700 hover:bg-brand-50"
-              title="Check Gmail inbox for new incoming replies from prospects"
-            >
-              <RefreshCw size={14} className={isSyncingInbox ? 'animate-spin text-brand-600' : 'text-brand-600'} />
-              <span>{isSyncingInbox ? 'Checking Gmail...' : 'Sync Email Replies'}</span>
-            </button>
-
-            {/* Lead Scraper (Gradual Location Identification) */}
-            <button
-              type="button"
-              onClick={isScrapingLocations ? handleStopLocationScrape : handleStartLocationScrape}
-              disabled={isScrapingSingle}
-              className={`btn-secondary text-xs flex items-center gap-1.5 shadow-sm transition border-indigo-300 ${
-                isScrapingLocations
-                  ? 'text-indigo-900 bg-indigo-100 hover:bg-indigo-200 ring-2 ring-indigo-400'
-                  : 'text-indigo-800 bg-indigo-50/90 hover:bg-indigo-100'
-              }`}
-              title="Inspects lead email domains, website addresses and phone area codes to find city/region or mark as (Not identified)."
-            >
-              <Compass
-                size={14}
-                className={isScrapingLocations ? 'animate-spin text-indigo-600' : 'text-indigo-600'}
-              />
-              <span className="font-semibold">
-                {isScrapingLocations
-                  ? `Scraping Locations (${scraperStatus?.processed ?? 0}/${scraperStatus?.total ?? '...'})`
-                  : '📍 Scrape Locations'}
-              </span>
-              {isScrapingLocations && (
-                <span className="ml-1 px-1.5 py-0.2 text-[10px] font-bold rounded bg-rose-200 text-rose-800 hover:bg-rose-300">
-                  Stop
-                </span>
-              )}
+              <Zap size={13} className="text-amber-500 fill-amber-500" />
+              <span>Autopilot</span>
             </button>
           </div>
         }
@@ -5973,6 +6023,181 @@ export function CrmPage({
         lead={timelineLead}
         onClose={() => setTimelineLead(null)}
       />
+
+      {/* Quick Add Contact Modal */}
+      <Modal
+        open={isAddContactModalOpen}
+        onClose={() => setIsAddContactModalOpen(false)}
+        title="Add New Contact / Lead"
+        width="lg"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-slate-400">* Required fields</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddContactModalOpen(false)}
+                className="btn-secondary text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="add-contact-form"
+                disabled={isCreatingContact || !newContactForm.businessName.trim()}
+                className="btn-primary text-xs flex items-center gap-1.5 font-bold"
+              >
+                {isCreatingContact ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus size={14} />
+                    <span>Create Contact</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <form id="add-contact-form" onSubmit={handleCreateContactSubmit} className="space-y-4">
+          {createContactError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-xs flex items-start gap-2">
+              <AlertCircle size={15} className="shrink-0 text-rose-600 mt-0.5" />
+              <span>{createContactError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Company / Business Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={newContactForm.businessName}
+                onChange={(e) => setNewContactForm({ ...newContactForm, businessName: e.target.value })}
+                placeholder="e.g. Apex Health Partners LLC"
+                className="input w-full text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Primary Contact Name
+              </label>
+              <input
+                type="text"
+                value={newContactForm.primaryContactName}
+                onChange={(e) => setNewContactForm({ ...newContactForm, primaryContactName: e.target.value })}
+                placeholder="e.g. Dr. Sarah Jenkins"
+                className="input w-full text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={newContactForm.email}
+                onChange={(e) => setNewContactForm({ ...newContactForm, email: e.target.value })}
+                placeholder="sarah@apexhealth.com"
+                className="input w-full text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Phone / WhatsApp Number
+              </label>
+              <input
+                type="text"
+                value={newContactForm.phone}
+                onChange={(e) => setNewContactForm({ ...newContactForm, phone: e.target.value, whatsapp: e.target.value })}
+                placeholder="+1 555-234-5678"
+                className="input w-full text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Website URL
+              </label>
+              <input
+                type="text"
+                value={newContactForm.website}
+                onChange={(e) => setNewContactForm({ ...newContactForm, website: e.target.value })}
+                placeholder="https://apexhealth.com"
+                className="input w-full text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Industry / Category
+              </label>
+              <input
+                type="text"
+                value={newContactForm.category}
+                onChange={(e) => setNewContactForm({ ...newContactForm, category: e.target.value })}
+                placeholder="e.g. Healthcare, Legal, Tech"
+                className="input w-full text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Estimated Deal Value ($)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={newContactForm.dealValue}
+                onChange={(e) => setNewContactForm({ ...newContactForm, dealValue: Number(e.target.value) || 0 })}
+                className="input w-full text-xs font-semibold"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Add to Custom List (Optional)
+              </label>
+              <select
+                value={newContactForm.listId}
+                onChange={(e) => setNewContactForm({ ...newContactForm, listId: e.target.value })}
+                className="input w-full text-xs"
+              >
+                <option value="">No list (Main Database)</option>
+                {store.lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    🏷️ {l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Initial Notes &amp; Context
+            </label>
+            <textarea
+              rows={3}
+              value={newContactForm.notes}
+              onChange={(e) => setNewContactForm({ ...newContactForm, notes: e.target.value })}
+              placeholder="e.g. Met at trade show, interested in technical audit and Q4 retainer..."
+              className="input w-full text-xs resize-none"
+            />
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

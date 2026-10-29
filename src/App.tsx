@@ -20,15 +20,15 @@ import type { CrmSubFilter } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search } from 'lucide-react';
 
-const VALID_PAGES: PageId[] = ['copilot', 'pipeline', 'crm', 'import', 'scraper', 'builder', 'health'];
+const VALID_PAGES: PageId[] = ['crm', 'pipeline', 'builder', 'copilot', 'import', 'scraper', 'health'];
 
 function getInitialPage(): PageId {
-  if (typeof window === 'undefined') return 'copilot';
+  if (typeof window === 'undefined') return 'crm';
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase() as PageId;
   if (VALID_PAGES.includes(hash)) return hash;
   const path = window.location.pathname.replace(/^\//, '').toLowerCase() as PageId;
   if (VALID_PAGES.includes(path)) return path;
-  return 'copilot';
+  return 'crm';
 }
 
 function App() {
@@ -87,7 +87,7 @@ function App() {
         setPage(path);
         return;
       }
-      setPage('copilot');
+      setPage('crm');
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -205,34 +205,34 @@ function App() {
   };
 
   const pageTitleMap: Record<PageId, string> = {
-    import: 'Lead Import & Ingestion',
-    scraper: 'Google Business Profile (GMB) Lead Scraper',
-    builder: 'Multi-Channel Campaign Builder',
     crm:
       crmCountryFilter !== 'all'
-        ? `Leads & Clients • ${getCountryFlag(crmCountryFilter)} ${crmCountryFilter}`
+        ? `Contacts & Accounts • ${getCountryFlag(crmCountryFilter)} ${crmCountryFilter}`
         : crmChannelFilter !== 'all'
-        ? `Leads & Clients • Channel: ${crmChannelFilter}`
+        ? `Contacts & Accounts • Channel: ${crmChannelFilter}`
         : crmSubFilter === 'lead_added'
-        ? 'Leads & Clients • Added Leads'
+        ? 'Contacts & Accounts • Added Leads'
         : crmSubFilter === 'lead_not_added'
-        ? 'Leads & Clients • Not Added (Unassigned)'
+        ? 'Contacts & Accounts • Not Added (Unassigned)'
         : crmSubFilter === 'client'
-        ? 'Leads & Clients • Converted Clients'
+        ? 'Contacts & Accounts • Won Retainers & Clients'
         : crmSubFilter === 'manual_review'
-        ? 'Leads & Clients • Manual Checking (Bounced & Anonymous)'
+        ? 'Contacts & Accounts • Needs Review (Flagged)'
         : crmSubFilter === 'invalid_list'
-        ? 'Leads & Clients • Invalid List (Pre-send Flagged)'
+        ? 'Contacts & Accounts • Invalid List'
         : crmSubFilter === 'inbound'
-        ? 'Leads & Clients • Inbound Replies'
+        ? 'Contacts & Accounts • Inbound Activity'
         : crmSubFilter === 'duplicates'
-        ? 'Leads & Clients • Duplicate Leads Category'
+        ? 'Contacts & Accounts • Duplicates'
         : crmSubFilter === 'trash'
-        ? 'Leads & Clients • Trash Bin'
-        : 'Leads & Clients CRM',
-    health: 'Sending Infrastructure & Health',
-    copilot: 'AI Executive Command Center & Growth Copilot',
-    pipeline: 'Deals & Sales Pipeline • Kanban Board',
+        ? 'Contacts & Accounts • Trash Bin'
+        : 'Contacts & Accounts CRM',
+    pipeline: 'Deals & Revenue Pipeline • Kanban Board',
+    builder: 'Campaign Sequences & Multi-Channel Outreach',
+    import: 'Lead & Contact Import',
+    scraper: 'Google Business Profile (GMB) Lead Scraper',
+    health: 'Infrastructure Deliverability & Health',
+    copilot: 'AI Executive Copilot & Strategy Center',
   };
 
   if (isAuthenticated === null) {

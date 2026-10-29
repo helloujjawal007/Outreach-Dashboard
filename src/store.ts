@@ -236,6 +236,7 @@ export function useStore() {
   const createSingleLead = useCallback(
     async (leadData: {
       businessName: string;
+      primaryContactName?: string;
       category?: string;
       phone?: string;
       email?: string;

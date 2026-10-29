@@ -439,6 +439,7 @@ export const api = {
 
   async createLead(lead: {
     businessName: string;
+    primaryContactName?: string;
     category?: string;
     phone?: string;
     email?: string;

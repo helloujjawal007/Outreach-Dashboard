@@ -106,117 +106,21 @@ export function Sidebar({
       </div>
 
       {/* Navigation items */}
-      <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-        {/* 1. AI Copilot (Proactive Suggestions on What To Do) */}
-        <button
-          onClick={() => onNavigate('copilot')}
-          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'copilot'
-              ? 'bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-900 font-bold ring-1 ring-indigo-300 shadow-2xs'
-              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
-          }`}
-          title="AI Copilot: Smart Suggestions & What to Do Next"
-        >
-          <div className="flex items-center gap-3">
-            <Bot
-              size={18}
-              className={current === 'copilot' ? 'text-indigo-600' : 'text-indigo-400 group-hover:text-indigo-600'}
-            />
-            <div className="flex items-center gap-1.5">
-              <span>AI Copilot</span>
-              <Sparkles size={13} className="text-amber-500 animate-spin-slow" />
-            </div>
-          </div>
-          <span className="rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 px-2 py-0.5 text-[9px] font-extrabold text-white shadow-2xs uppercase tracking-wider">
-            Suggestions
-          </span>
-        </button>
+      <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
+        {/* SECTION 1: CRM & SALES */}
+        <div className="pt-1 pb-1">
+          <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            Sales CRM
+          </p>
+        </div>
 
-        {/* 2. Lead Scraper (GMB) */}
-        <button
-          onClick={() => onNavigate('scraper')}
-          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'scraper'
-              ? 'bg-amber-50 text-amber-900 font-semibold ring-1 ring-amber-300/70 shadow-2xs'
-              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
-          }`}
-          title="Scrape up to 100 leads from Google Business Profiles"
-        >
-          <div className="flex items-center gap-3">
-            <Compass
-              size={18}
-              className={current === 'scraper' ? 'text-amber-600 animate-spin-slow' : 'text-ink-300 group-hover:text-amber-600'}
-            />
-            <span>Lead Scraper</span>
-          </div>
-          <span className="rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-1.5 py-0.2 text-[10px] font-extrabold text-white shadow-2xs">
-            GMB 100
-          </span>
-        </button>
-
-        {/* 3. Lead Import */}
-        <button
-          onClick={() => onNavigate('import')}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'import'
-              ? 'bg-brand-50 text-brand-700 font-semibold'
-              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
-          }`}
-          title="Bulk CSV / Text Ingestion & Manual Entry"
-        >
-          <Upload
-            size={18}
-            className={current === 'import' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
-          />
-          <span>Lead Import</span>
-        </button>
-
-        {/* 4. Create Campaign */}
-        <button
-          onClick={() => onNavigate('builder')}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'builder'
-              ? 'bg-brand-50 text-brand-700 font-semibold'
-              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
-          }`}
-          title="Build & Schedule Multi-Channel Campaigns"
-        >
-          <MessageSquarePlus
-            size={18}
-            className={current === 'builder' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
-          />
-          <span>Create Campaign</span>
-        </button>
-
-        {/* 5. Deals & Pipeline */}
-        <button
-          onClick={() => onNavigate('pipeline')}
-          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'pipeline'
-              ? 'bg-blue-50 text-blue-800 font-semibold ring-1 ring-blue-300/70 shadow-2xs'
-              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
-          }`}
-          title="Sales Pipeline, Kanban Stages & Deal Value"
-        >
-          <div className="flex items-center gap-3">
-            <TrendingUp
-              size={18}
-              className={current === 'pipeline' ? 'text-blue-600' : 'text-ink-300 group-hover:text-blue-600'}
-            />
-            <span>Deals &amp; Pipeline</span>
-          </div>
-          <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] font-bold text-blue-700 shadow-2xs">
-            Kanban
-          </span>
-        </button>
-
-        {/* 4. Leads & Clients (With Subitems) */}
-        <div className="pt-1">
+        {/* 1. Leads & Contacts CRM (With Subitems) */}
+        <div>
           <div
-            className={`group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all cursor-pointer ${
+            className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all cursor-pointer ${
               current === 'crm' && activeSubFilter === 'all' && activeCountryFilter === 'all'
-                ? 'bg-brand-50 text-brand-700'
-                : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
+                ? 'bg-brand-50 text-brand-700 font-bold shadow-2xs'
+                : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
             }`}
             onClick={() => {
               onNavigate('crm', 'all', 'all');
@@ -226,12 +130,12 @@ export function Sidebar({
             <div className="flex items-center gap-3">
               <Users
                 size={18}
-                className={current === 'crm' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
+                className={current === 'crm' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
               />
-              <span className="text-left font-semibold">Leads &amp; Clients</span>
+              <span className="text-left font-bold">Contacts &amp; Accounts</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-ink-300">
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.2 text-[10px] font-bold text-slate-700">
                 {counts.leads + counts.clients}
               </span>
               <button
@@ -240,7 +144,7 @@ export function Sidebar({
                   e.stopPropagation();
                   setCrmExpanded(!crmExpanded);
                 }}
-                className="p-0.5 text-ink-400 hover:text-ink-600"
+                className="p-0.5 text-slate-400 hover:text-slate-600"
               >
                 {crmExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
@@ -544,7 +448,29 @@ export function Sidebar({
           )}
         </div>
 
-        {/* 4. Messages / Inbox Center (Accessible from anywhere!) */}
+        {/* 2. Deals & Pipeline */}
+        <button
+          onClick={() => onNavigate('pipeline')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'pipeline'
+              ? 'bg-blue-50 text-blue-900 font-bold ring-1 ring-blue-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Sales Pipeline, Kanban Stages & Deal Value"
+        >
+          <div className="flex items-center gap-3">
+            <TrendingUp
+              size={18}
+              className={current === 'pipeline' ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-600'}
+            />
+            <span className="font-semibold">Deals &amp; Pipeline</span>
+          </div>
+          <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] font-bold text-blue-700 shadow-2xs">
+            Kanban
+          </span>
+        </button>
+
+        {/* 3. Messages & Inbound Inbox */}
         <button
           onClick={() => {
             if (onOpenMessages) {
@@ -553,27 +479,157 @@ export function Sidebar({
               onNavigate('crm', 'inbound');
             }
           }}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all text-ink-500 hover:bg-slate-50 hover:text-ink-700`}
+          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all text-ink-600 hover:bg-slate-50 hover:text-ink-900`}
+          title="Unified multi-channel customer communications"
         >
           <MessageSquare
             size={18}
-            className="text-ink-300 group-hover:text-ink-500"
+            className={counts.unreadMessages > 0 ? 'text-rose-500' : 'text-slate-400 group-hover:text-brand-600'}
           />
-          <span className="flex-1 text-left">Messages &amp; Inbox</span>
+          <span className="flex-1 text-left font-semibold">Messages &amp; Inbox</span>
           {counts.unreadMessages > 0 ? (
             <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white shadow-xs animate-pulse">
               {counts.unreadMessages}
             </span>
           ) : (
-            <span className="text-xs text-ink-300 font-medium">0</span>
+            <span className="text-[11px] text-slate-400 font-medium">0</span>
           )}
         </button>
 
-        {/* Quick Search / Command Palette (Cmd+K) */}
+        {/* 4. Campaigns & Sequences */}
+        <button
+          onClick={() => onNavigate('builder')}
+          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'builder'
+              ? 'bg-brand-50 text-brand-700 font-bold shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Build & Schedule Multi-Channel Sequences"
+        >
+          <MessageSquarePlus
+            size={18}
+            className={current === 'builder' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
+          />
+          <span className="font-semibold">Campaign Sequences</span>
+        </button>
+
+        {/* SECTION 2: PROSPECTING & CAPTURE */}
+        <div className="pt-3 pb-1">
+          <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            Prospecting
+          </p>
+        </div>
+
+        {/* 5. Lead Import */}
+        <button
+          onClick={() => onNavigate('import')}
+          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'import'
+              ? 'bg-brand-50 text-brand-700 font-bold shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Bulk CSV / Text Ingestion & Manual Entry"
+        >
+          <Upload
+            size={18}
+            className={current === 'import' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
+          />
+          <span className="font-semibold">Import &amp; Ingestion</span>
+        </button>
+
+        {/* 6. Lead Scraper (GMB) */}
+        <button
+          onClick={() => onNavigate('scraper')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'scraper'
+              ? 'bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Google Business Profiles Lead Discovery"
+        >
+          <div className="flex items-center gap-3">
+            <Compass
+              size={18}
+              className={current === 'scraper' ? 'text-amber-600 animate-spin-slow' : 'text-slate-400 group-hover:text-amber-600'}
+            />
+            <span className="font-semibold">Lead Scraper (GMB)</span>
+          </div>
+          <span className="rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-1.5 py-0.2 text-[9px] font-extrabold text-white shadow-2xs">
+            100
+          </span>
+        </button>
+
+        {/* SECTION 3: INTELLIGENCE & OPERATIONS */}
+        <div className="pt-3 pb-1">
+          <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            Operations
+          </p>
+        </div>
+
+        {/* 7. Send Tracker & Health */}
+        <button
+          onClick={() => onNavigate('health')}
+          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'health'
+              ? 'bg-brand-50 text-brand-700 font-bold ring-1 ring-brand-200'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Daily Send Tracker: View deliverability and warmup metrics"
+        >
+          <Activity
+            size={18}
+            className={current === 'health' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
+          />
+          <div className="flex-1 text-left min-w-0">
+            <span className="block font-semibold truncate">Deliverability &amp; Health</span>
+          </div>
+          {counts.queue > 0 && (
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-700">
+              {counts.queue}
+            </span>
+          )}
+        </button>
+
+        {/* 8. AI Strategy Copilot */}
+        <button
+          onClick={() => onNavigate('copilot')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'copilot'
+              ? 'bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-900 font-bold ring-1 ring-indigo-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="AI Copilot: Smart Suggestions & What to Do Next"
+        >
+          <div className="flex items-center gap-3">
+            <Bot
+              size={18}
+              className={current === 'copilot' ? 'text-indigo-600' : 'text-slate-400 group-hover:text-indigo-600'}
+            />
+            <span className="font-semibold">AI Copilot</span>
+          </div>
+          <Sparkles size={13} className="text-amber-500" />
+        </button>
+
+        {/* 9. Global Suppression List */}
+        {onOpenSuppression && (
+          <button
+            onClick={onOpenSuppression}
+            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition-all"
+            title="Manage unsubscribes, hard bounces, and blacklists"
+          >
+            <ShieldAlert size={16} className="text-slate-400 group-hover:text-rose-500" />
+            <span className="flex-1 text-left font-semibold">Suppression List</span>
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-slate-100 group-hover:bg-rose-100 text-slate-500 group-hover:text-rose-700">
+              Compliance
+            </span>
+          </button>
+        )}
+
+        {/* 10. Quick Search (Cmd+K) */}
         {onOpenCommandPalette && (
           <button
             onClick={onOpenCommandPalette}
-            className="group flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors border border-slate-200/80 bg-slate-50/50"
+            className="group flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors border border-slate-200/80 bg-slate-50/50 mt-1"
             title="Search leads, deals, or execute actions (Cmd+K)"
           >
             <div className="flex items-center gap-2">
@@ -585,50 +641,6 @@ export function Sidebar({
             </kbd>
           </button>
         )}
-
-        {/* Global Suppression List */}
-        {onOpenSuppression && (
-          <button
-            onClick={onOpenSuppression}
-            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition-all"
-            title="Manage unsubscribes, hard bounces, and blacklists"
-          >
-            <ShieldAlert size={16} className="text-slate-400 group-hover:text-rose-500" />
-            <div className="flex-1 text-left min-w-0">
-              <span className="block truncate">Suppression List</span>
-            </div>
-            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-100 group-hover:bg-rose-100 text-slate-500 group-hover:text-rose-700">
-              Safety
-            </span>
-          </button>
-        )}
-
-        {/* 7. Send Tracker & Health (Track sent, received, bounced per day) */}
-        <button
-          onClick={() => onNavigate('health')}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
-            current === 'health'
-              ? 'bg-brand-50 text-brand-700 font-semibold ring-1 ring-brand-200'
-              : 'text-ink-500 hover:bg-slate-50 hover:text-ink-700'
-          }`}
-          title="Daily Send Tracker: View how much sent, received and bounced per day"
-        >
-          <Activity
-            size={18}
-            className={current === 'health' ? 'text-brand-600' : 'text-ink-300 group-hover:text-ink-500'}
-          />
-          <div className="flex-1 text-left min-w-0">
-            <span className="block truncate">Send Tracker &amp; Health</span>
-            <span className="block text-[10px] text-ink-400 font-normal leading-tight truncate">
-              Daily Sent · Recv · Bounce
-            </span>
-          </div>
-          {counts.queue > 0 && (
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-xs font-bold text-amber-700">
-              {counts.queue}
-            </span>
-          )}
-        </button>
       </nav>
 
       {/* User Footer */}

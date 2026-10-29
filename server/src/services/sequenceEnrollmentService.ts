@@ -137,10 +137,10 @@ export class SequenceEnrollmentService {
   async updateStatusForLead(leadId: string, status: 'replied' | 'bounced' | 'paused'): Promise<void> {
     await query(
       `UPDATE sequence_enrollments 
-       SET status = $1, 
-           completed_at = CASE WHEN $1 IN ('replied', 'bounced') THEN NOW() ELSE completed_at END,
+       SET status = $1::varchar, 
+           completed_at = CASE WHEN $1::text = 'replied' OR $1::text = 'bounced' THEN NOW() ELSE completed_at END,
            next_step_due_at = NULL 
-       WHERE lead_id = $2 AND status IN ('active', 'ooo_delayed', 'paused')`,
+       WHERE lead_id::text = $2::text AND status IN ('active', 'ooo_delayed', 'paused')`,
       [status, leadId]
     );
   }

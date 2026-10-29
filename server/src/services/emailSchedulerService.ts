@@ -713,7 +713,7 @@ export class EmailSchedulerService {
       };
     }
 
-    // 2b. If email channel and multiple inboxes selected, load inboxes for 50/50 rotational split
+    // 2b. If email channel and inboxes selected, load inboxes for dynamic split (100% single, 50/50 for 2, N-way for 3+)
     const inboxMap = new Map<string, string>();
     if (channel === 'email' && params.inboxIds && params.inboxIds.length > 0) {
       const inboxesRes = await query<{ id: string; email: string }>(
@@ -723,8 +723,9 @@ export class EmailSchedulerService {
       for (const row of inboxesRes.rows) {
         inboxMap.set(row.id, row.email);
       }
+      const splitType = inboxMap.size === 1 ? '100% single inbox' : inboxMap.size === 2 ? '50/50 equal split' : `${inboxMap.size}-way dynamic split`;
       console.log(
-        `[Scheduler] Multi-inbox split active across ${inboxMap.size} inboxes for ${eligibleLeads.length} leads (rotational 50/50 distribution).`
+        `[Scheduler] Multi-inbox distribution active across ${inboxMap.size} inbox(es) for ${eligibleLeads.length} leads (${splitType}).`
       );
     }
 

@@ -243,7 +243,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     return inboxes.filter((i) => selectedInboxIds.includes(i.id));
   }, [inboxes, selectedInboxIds]);
 
-  // 50/50 or N-Way Rotational Split breakdown
+  // Dynamic Load Split breakdown (100% for 1 inbox, 50/50 for 2, N-way for 3+)
   const splitBreakdown = useMemo(() => {
     if (selectedInboxes.length === 0 || eligibleLeadsCount === 0) return [];
     const count = selectedInboxes.length;
@@ -252,7 +252,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     return selectedInboxes.map((inbox, idx) => ({
       ...inbox,
       assignedCount: baseShare + (idx < remainder ? 1 : 0),
-      percentage: count === 2 ? 50 : Math.round((100 / count)),
+      percentage: count === 1 ? 100 : count === 2 ? 50 : Math.round((100 / count)),
     }));
   }, [selectedInboxes, eligibleLeadsCount]);
 
@@ -658,7 +658,11 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                         <span>Email</span>
                       </div>
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
-                        50/50 Split
+                        {selectedInboxes.length <= 1
+                          ? '100% Load'
+                          : selectedInboxes.length === 2
+                          ? '50/50 Split'
+                          : `${selectedInboxes.length}-Way Split`}
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-500">
@@ -721,7 +725,11 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                     <div className="flex items-center gap-1.5">
                       <Split size={14} className="text-brand-600" />
                       <span className="text-xs font-bold text-slate-800">
-                        Sender Inboxes & 50/50 Rotational Split
+                        {selectedInboxes.length <= 1
+                          ? 'Sender Inbox & Delivery Load (100% via Single Account)'
+                          : selectedInboxes.length === 2
+                          ? 'Sender Inboxes & 50/50 Equal Split'
+                          : `Sender Inboxes & ${selectedInboxes.length}-Way Dynamic Split`}
                       </span>
                     </div>
                     <button
@@ -734,7 +742,11 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                   </div>
 
                   <p className="text-[11px] text-slate-600 leading-tight">
-                    Select inboxes to split dispatches automatically. (e.g., 100 emails = 50 from Inbox 1 and 50 from Inbox 2)
+                    {selectedInboxes.length <= 1
+                      ? `Single inbox connected/selected. All ${eligibleLeadsCount} emails will route through this account (100% load). When 2 or more inboxes are connected, workload automatically balances evenly across them (e.g. 50/50 for 2, 33% each for 3).`
+                      : selectedInboxes.length === 2
+                      ? `2 inboxes selected: dispatches are automatically split 50/50 (${splitBreakdown[0]?.assignedCount || 0} & ${splitBreakdown[1]?.assignedCount || 0} emails) across both inboxes.`
+                      : `${selectedInboxes.length} inboxes selected: dispatches are split evenly across all accounts (~${Math.round(100 / selectedInboxes.length)}% each) to safeguard sending reputation.`}
                   </p>
 
                   {/* Inboxes Checkbox List */}
@@ -807,9 +819,19 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                       </div>
                     </div>
                   ) : selectedInboxes.length === 1 ? (
-                    <div className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-                      Single sender active: all {eligibleLeadsCount} emails will send via{' '}
-                      <strong>{selectedInboxes[0]?.email}</strong>. Select a second inbox for automatic 50/50 load balancing.
+                    <div className="p-2.5 rounded-lg bg-amber-50/90 border border-amber-200 text-amber-900 text-[11px] space-y-1">
+                      <div className="flex items-center justify-between font-bold">
+                        <span className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.2 rounded bg-amber-200/70 text-amber-900 text-[10px]">100% Load</span>
+                          <span>Single Sender Active</span>
+                        </span>
+                        <span className="text-[10px] text-amber-800">
+                          {eligibleLeadsCount} Emails
+                        </span>
+                      </div>
+                      <p className="text-slate-700 leading-relaxed">
+                        All {eligibleLeadsCount} emails will route via <strong>{selectedInboxes[0]?.email}</strong>. Jab 2 ya jyada inboxes connect honge, yeh automatically load split kar lega (2 inboxes par 50/50, 3 par 33% each).
+                      </p>
                     </div>
                   ) : (
                     <div className="p-2 rounded bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">
@@ -1224,7 +1246,13 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                       <Zap size={14} />
                       <span>
                         Shoot {eligibleLeadsCount} {channel === 'email' ? 'Emails' : channel === 'whatsapp' ? 'WhatsApp Messages' : 'LinkedIn Messages'} Now
-                        {channel === 'email' && selectedInboxes.length === 2 && ' (50/50 Split)'}
+                        {channel === 'email' && (
+                          selectedInboxes.length === 2
+                            ? ' (50/50 Split)'
+                            : selectedInboxes.length > 2
+                            ? ` (${selectedInboxes.length}-Way Split)`
+                            : ' (100% Single Inbox)'
+                        )}
                         {' '}({intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m` : `${intervalSeconds}s`} intervals)
                       </span>
                     </>
@@ -1233,6 +1261,13 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                       <Calendar size={14} />
                       <span>
                         Schedule {eligibleLeadsCount} {channel === 'email' ? 'Emails' : channel === 'whatsapp' ? 'WhatsApp Messages' : 'LinkedIn Messages'} for {scheduledDateTime || 'Selected Time'}
+                        {channel === 'email' && (
+                          selectedInboxes.length === 2
+                            ? ' (50/50 Split)'
+                            : selectedInboxes.length > 2
+                            ? ` (${selectedInboxes.length}-Way Split)`
+                            : ' (100% Single Inbox)'
+                        )}
                         {' '}({intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m` : `${intervalSeconds}s`} intervals)
                       </span>
                     </>

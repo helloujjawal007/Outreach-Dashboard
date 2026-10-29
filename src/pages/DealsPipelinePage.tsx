@@ -23,7 +23,8 @@ import {
   Check,
 } from 'lucide-react';
 import { api } from '@/services/api';
-import type { Deal, DealStage, PipelineSummary, CrmTask, LeadActivity } from '@/types';
+import type { Deal, DealStage, PipelineSummary, CrmTask, LeadActivity, Lead } from '@/types';
+import { LeadActivityDrawer } from '@/components/LeadActivityDrawer';
 import { useStore } from '@/store';
 
 const STAGES: Array<{
@@ -57,6 +58,8 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
   const [showNewDealModal, setShowNewDealModal] = useState(false);
   const [showTasksDrawer, setShowTasksDrawer] = useState(false);
   const [activeActivityLead, setActiveActivityLead] = useState<{ leadId: string; businessName: string } | null>(null);
+  const [selectedLeadForDrawer, setSelectedLeadForDrawer] = useState<Lead | null>(null);
+  const [isLeadDrawerOpen, setIsLeadDrawerOpen] = useState(false);
   const [activities, setActivities] = useState<LeadActivity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [newNoteText, setNewNoteText] = useState('');
@@ -209,7 +212,60 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
     }
   };
 
+  const handleDealClick = async (deal: Deal) => {
+    if (deal.lead_id) {
+      try {
+        const fullLead = await api.getLeadById(deal.lead_id);
+        if (fullLead) {
+          setSelectedLeadForDrawer(fullLead);
+          setIsLeadDrawerOpen(true);
+          return;
+        }
+      } catch (err) {
+        console.warn('Could not fetch lead by id, building fallback Lead object:', err);
+      }
+    }
+
+    const fallbackLead: Lead = {
+      id: deal.lead_id || deal.id,
+      businessName: deal.business_name || deal.title || 'Untitled Business',
+      primaryContactName: deal.contact_name,
+      email: deal.contact_email,
+      phone: deal.contact_phone,
+      category: 'Sales Deal',
+      status: 'active',
+      consentStatus: 'replied',
+      outreachStage: deal.stage as any,
+      metadata: {
+        deal_value: deal.value,
+        dealValue: deal.value,
+        deal_id: deal.id,
+        notes: deal.notes,
+        probability: deal.probability,
+      },
+      createdAt: deal.created_at || new Date().toISOString(),
+      updatedAt: deal.updated_at || new Date().toISOString(),
+    };
+
+    setSelectedLeadForDrawer(fallbackLead);
+    setIsLeadDrawerOpen(true);
+  };
+
   const openActivityFeed = async (leadId: string, businessName: string) => {
+    // Find matching deal
+    const deal = deals.find((d) => d.lead_id === leadId || d.business_name === businessName);
+    if (deal) {
+      await handleDealClick(deal);
+      return;
+    }
+    try {
+      const fullLead = await api.getLeadById(leadId);
+      if (fullLead) {
+        setSelectedLeadForDrawer(fullLead);
+        setIsLeadDrawerOpen(true);
+        return;
+      }
+    } catch (_) {}
     setActiveActivityLead({ leadId, businessName });
     setLoadingActivities(true);
     try {
@@ -539,14 +595,16 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
                           setDraggedDealId(null);
                           setDragOverStage(null);
                         }}
-                        className={`group bg-white rounded-xl border border-slate-200/90 p-3.5 shadow-2xs hover:shadow-md hover:border-blue-400 transition-all duration-150 relative cursor-grab active:cursor-grabbing ${
+                        onClick={() => handleDealClick(deal)}
+                        className={`group bg-white rounded-xl border border-slate-200/90 p-3.5 shadow-2xs hover:shadow-md hover:border-blue-400 hover:ring-2 hover:ring-blue-100 transition-all duration-150 relative cursor-pointer ${
                           isBeingDragged ? 'opacity-40 ring-2 ring-blue-400 shadow-lg' : ''
                         }`}
+                        title="Click to view full lead details, activities, and communication"
                       >
                         {/* Drag Handle & Delete */}
                         <div className="flex items-start justify-between gap-1.5 mb-1.5">
                           <div className="flex items-center gap-1 min-w-0">
-                            <GripVertical size={13} className="text-slate-300 group-hover:text-slate-500 shrink-0" />
+                            <GripVertical size={13} className="text-slate-300 group-hover:text-slate-500 shrink-0 cursor-grab active:cursor-grabbing" />
                             {deal.business_name ? (
                               <h4 className="text-xs font-bold text-slate-900 truncate" title={deal.business_name}>
                                 {deal.business_name}
@@ -558,9 +616,12 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
                             )}
                           </div>
                           <button
-                            onClick={() => handleDeleteDeal(deal.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteDeal(deal.id);
+                            }}
                             title="Delete deal"
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-opacity rounded"
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-opacity rounded cursor-pointer"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -613,21 +674,17 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
 
                         {/* Actions Toolbar */}
                         <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
-                          {deal.lead_id ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openActivityFeed(deal.lead_id!, deal.business_name || deal.title);
-                              }}
-                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold text-[10px] cursor-pointer"
-                              title="View lead communication timeline & notes"
-                            >
-                              <Activity size={12} />
-                              <span>Timeline</span>
-                            </button>
-                          ) : (
-                            <span className="text-[10px] text-slate-400 italic">Manual Deal</span>
-                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDealClick(deal);
+                            }}
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-semibold text-[10px] cursor-pointer"
+                            title="View full lead info, communication timeline & notes"
+                          >
+                            <Activity size={12} />
+                            <span>Lead Info</span>
+                          </button>
 
                           <div className="flex items-center gap-1 ml-auto">
                             {/* Move Backward */}
@@ -805,70 +862,17 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
         </div>
       )}
 
-      {/* Activity Timeline Slideout Drawer */}
-      {activeActivityLead && (
-        <div className="fixed inset-y-0 right-0 w-[420px] bg-white border-l border-slate-200 shadow-2xl z-50 p-6 flex flex-col animate-in slide-in-from-right duration-200">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <div>
-              <h2 className="font-bold text-slate-900 text-base">Unified Activity Timeline</h2>
-              <p className="text-xs text-slate-500 truncate max-w-[320px]">{activeActivityLead.businessName}</p>
-            </div>
-            <button
-              onClick={() => setActiveActivityLead(null)}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Add Note Form */}
-          <form onSubmit={handleAddNote} className="my-4 space-y-2">
-            <textarea
-              value={newNoteText}
-              onChange={(e) => setNewNoteText(e.target.value)}
-              placeholder="Add call notes, meeting takeaways, or follow-up insights..."
-              rows={2}
-              className="w-full text-xs p-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-            />
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
-              >
-                Log Note
-              </button>
-            </div>
-          </form>
-
-          {/* Timeline Stream */}
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {loadingActivities ? (
-              <div className="text-center py-8 text-xs text-slate-400">Loading timeline...</div>
-            ) : activities.length === 0 ? (
-              <p className="text-center text-xs text-slate-400 py-8">No activities logged yet.</p>
-            ) : (
-              activities.map((act) => (
-                <div key={act.id} className="relative pl-6 pb-2 border-l border-slate-200 last:border-0">
-                  <div className="absolute -left-1.5 top-0 w-3 h-3 rounded-full bg-blue-500 ring-4 ring-white" />
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-xs font-bold text-slate-800">{act.title}</span>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(act.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    {act.description && (
-                      <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">
-                        {act.description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {/* 360° Lead Activity & Details Slideout Drawer */}
+      <LeadActivityDrawer
+        isOpen={isLeadDrawerOpen}
+        lead={selectedLeadForDrawer}
+        onClose={() => {
+          setIsLeadDrawerOpen(false);
+          setSelectedLeadForDrawer(null);
+        }}
+        onDealCreated={fetchPipeline}
+        onStageChanged={fetchPipeline}
+      />
 
       {/* New Deal Modal */}
       {showNewDealModal && (

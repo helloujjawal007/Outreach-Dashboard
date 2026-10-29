@@ -440,6 +440,11 @@ export const api = {
     return (data.leads || []).map(mapBackendLeadToLead);
   },
 
+  async getLeadById(id: string): Promise<Lead> {
+    const data = await request<{ success: boolean; lead: BackendLead }>(`/leads/${id}`);
+    return mapBackendLeadToLead(data.lead);
+  },
+
   async createLead(lead: {
     businessName: string;
     primaryContactName?: string;

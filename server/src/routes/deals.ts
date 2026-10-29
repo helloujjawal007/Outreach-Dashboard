@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
+import { calculateDealValue } from '../services/dealCalculationService';
 
 export const dealsRouter = Router();
 
@@ -116,6 +117,45 @@ dealsRouter.get('/', async (_req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/deals/calculate/:leadId
+ * Returns dynamic deal value calculation based on lead category, website, and audit
+ */
+dealsRouter.get('/calculate/:leadId', async (req: Request, res: Response) => {
+  try {
+    const leadId = Array.isArray(req.params.leadId) ? req.params.leadId[0] : req.params.leadId;
+    const leadRes = await query<{
+      business_name: string;
+      category: string;
+      website: string;
+      location: string;
+      country: string;
+      audit_score: number;
+    }>(
+      `SELECT business_name, category, website, location, country, audit_score FROM leads WHERE id = $1`,
+      [leadId]
+    );
+
+    if (leadRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const lead = leadRes.rows[0];
+    const calculation = calculateDealValue({
+      businessName: lead.business_name,
+      category: lead.category,
+      website: lead.website,
+      location: lead.location,
+      country: lead.country,
+      auditScore: lead.audit_score,
+    });
+
+    res.json({ success: true, calculation });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Failed to calculate deal value' });
+  }
+});
+
+/**
  * POST /api/deals
  * Create a new deal for a lead
  */
@@ -142,10 +182,19 @@ dealsRouter.post('/', async (req: Request, res: Response) => {
     let finalContactName = contactName || null;
     let finalContactEmail = contactEmail || null;
     let finalContactPhone = contactPhone || null;
+    let finalValue = Number(value) || 0;
+    let finalProbability = Number(probability) || 25;
 
     if (leadId) {
-      const leadRes = await query<{ business_name: string; email: string; phone: string }>(
-        `SELECT business_name, email, phone FROM leads WHERE id = $1`,
+      const leadRes = await query<{
+        business_name: string;
+        email: string;
+        phone: string;
+        category?: string;
+        website?: string;
+        audit_score?: number;
+      }>(
+        `SELECT business_name, email, phone, category, website, audit_score FROM leads WHERE id = $1`,
         [leadId]
       );
       if (leadRes.rows.length > 0) {
@@ -153,6 +202,17 @@ dealsRouter.post('/', async (req: Request, res: Response) => {
         if (!finalContactName) finalContactName = lead.business_name;
         if (!finalContactEmail) finalContactEmail = lead.email;
         if (!finalContactPhone) finalContactPhone = lead.phone;
+
+        if (!finalValue) {
+          const calc = calculateDealValue({
+            businessName: lead.business_name,
+            category: lead.category,
+            website: lead.website,
+            auditScore: lead.audit_score,
+          });
+          finalValue = calc.estimatedValue;
+          finalProbability = calc.probability;
+        }
       }
     }
 
@@ -164,9 +224,9 @@ dealsRouter.post('/', async (req: Request, res: Response) => {
       [
         leadId || null,
         title.trim(),
-        Number(value) || 0,
+        finalValue,
         stage,
-        Number(probability) || 25,
+        finalProbability,
         finalContactName,
         finalContactEmail,
         finalContactPhone,

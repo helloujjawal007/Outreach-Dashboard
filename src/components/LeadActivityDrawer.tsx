@@ -64,6 +64,26 @@ function getAvatarGradient(name: string): string {
   return AVATAR_GRADIENTS[index];
 }
 
+export function computeEstimatedDeal(lead: Lead): number {
+  if (lead.metadata?.deal_value || lead.metadata?.dealValue) {
+    return Number(lead.metadata?.deal_value || lead.metadata?.dealValue);
+  }
+  const cat = (lead.category || '').toLowerCase();
+  let base = 24000;
+  if (cat.includes('logistics') || cat.includes('supply chain') || cat.includes('b2b') || cat.includes('pharma')) base = 48000;
+  else if (cat.includes('legal') || cat.includes('law') || cat.includes('wealth') || cat.includes('finance')) base = 42000;
+  else if (cat.includes('dental') || cat.includes('medical') || cat.includes('clinic') || cat.includes('health')) base = 32000;
+  else if (cat.includes('agency') || cat.includes('design') || cat.includes('media') || cat.includes('real estate') || cat.includes('fitness')) base = 26000;
+  else base = 18000;
+
+  const rawWeb = (lead.website || lead.googleProfile?.website || '').trim();
+  const hasWebsite = Boolean(rawWeb && !/google\.com\/maps/i.test(rawWeb) && rawWeb.toLowerCase() !== 'n/a');
+  if (!hasWebsite) base += 8000;
+  else if (lead.auditScore && lead.auditScore < 50) base += 6000;
+  else if (lead.auditScore && lead.auditScore < 75) base += 3500;
+  return base;
+}
+
 export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onStageChanged }: Props) {
   const [activeTab, setActiveTab] = useState<DrawerTab>('timeline');
   const [activities, setActivities] = useState<LeadActivity[]>([]);
@@ -127,7 +147,7 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
   useEffect(() => {
     if (isOpen && lead) {
       setDealTitle(`${lead.businessName} - Omnichannel Growth Retainer`);
-      const estimatedValue = Number(lead.metadata?.deal_value || lead.metadata?.dealValue || 24000);
+      const estimatedValue = computeEstimatedDeal(lead);
       setDealValue(String(estimatedValue));
       setCurrentStage(lead.outreachStage || lead.stage || 'initial');
       fetchHistory();
@@ -250,7 +270,7 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
   if (!isOpen || !lead) return null;
 
   const leadScore = Number(lead.metadata?.lead_score || lead.metadata?.leadScore || 85);
-  const dealVal = Number(lead.metadata?.deal_value || lead.metadata?.dealValue || 24000);
+  const dealVal = computeEstimatedDeal(lead);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">

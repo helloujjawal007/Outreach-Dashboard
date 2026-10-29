@@ -375,7 +375,7 @@ function App() {
           {page === 'copilot' ? (
             <AiCopilotPage />
           ) : (
-            <div className="mx-auto max-w-7xl px-6 py-8">
+            <div className={`mx-auto py-8 px-6 ${page === 'pipeline' ? 'max-w-[1750px] w-full' : 'max-w-7xl'}`}>
               {page === 'import' && <LeadImportPage store={store} onNavigate={setPage} />}
               {page === 'scraper' && <LeadScraperPage store={store} onNavigate={setPage} />}
               {page === 'builder' && <CampaignBuilderPage store={store} />}

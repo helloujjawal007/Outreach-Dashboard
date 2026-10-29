@@ -912,3 +912,44 @@ export interface SequenceEnrollment {
   completed_at: string | null;
   metadata?: Record<string, any>;
 }
+
+export interface AiModelProfile {
+  id: string;
+  name: string;
+  provider: 'google' | 'openai' | 'groq' | 'local_deterministic';
+  tier: 1 | 2 | 3 | 4 | 5;
+  maxRpm: number;
+  maxTpm: number;
+  currentRequests: number;
+  remainingRpm: number;
+  status: 'healthy' | 'rate_limited' | 'cooling_down' | 'standby';
+  cooldownUntil: number;
+  totalCalls: number;
+  successfulCalls: number;
+  rateLimitHits: number;
+  avgLatencyMs: number;
+  description: string;
+}
+
+export interface AiFunctionalityResult {
+  functionality: string;
+  modelUsed: string;
+  modelId: string;
+  provider: string;
+  rateLimitChecked: boolean;
+  rateLimitStatus: string;
+  latencyMs: number;
+  success: boolean;
+  output: any;
+  failoverOccurred?: boolean;
+}
+
+export interface AiDiagnosticReport {
+  timestamp: string;
+  totalFunctionalities: number;
+  passed: number;
+  rateLimitChecksPerformed: number;
+  results: AiFunctionalityResult[];
+  modelsHealth: AiModelProfile[];
+}
+

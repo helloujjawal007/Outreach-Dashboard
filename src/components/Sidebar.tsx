@@ -107,14 +107,60 @@ export function Sidebar({
 
       {/* Navigation items */}
       <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
-        {/* SECTION 1: CRM & SALES */}
+        {/* SECTION 1: PROSPECTING */}
         <div className="pt-1 pb-1">
+          <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            Prospecting
+          </p>
+        </div>
+
+        {/* 1. Lead Scraper (GMB) */}
+        <button
+          onClick={() => onNavigate('scraper')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'scraper'
+              ? 'bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Google Business Profiles Lead Discovery"
+        >
+          <div className="flex items-center gap-3">
+            <Compass
+              size={18}
+              className={current === 'scraper' ? 'text-amber-600 animate-spin-slow' : 'text-slate-400 group-hover:text-amber-600'}
+            />
+            <span className="font-semibold">Lead Scraper (GMB)</span>
+          </div>
+          <span className="rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-1.5 py-0.2 text-[9px] font-extrabold text-white shadow-2xs">
+            Fast
+          </span>
+        </button>
+
+        {/* 2. Lead Import */}
+        <button
+          onClick={() => onNavigate('import')}
+          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'import'
+              ? 'bg-brand-50 text-brand-700 font-bold shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Bulk CSV / Text Ingestion & Manual Entry"
+        >
+          <Upload
+            size={18}
+            className={current === 'import' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
+          />
+          <span className="font-semibold">Import &amp; Ingestion</span>
+        </button>
+
+        {/* SECTION 2: SALES CRM */}
+        <div className="pt-3 pb-1">
           <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
             Sales CRM
           </p>
         </div>
 
-        {/* 1. Leads & Contacts CRM (With Subitems) */}
+        {/* 3. Leads & Contacts CRM (With Subitems) */}
         <div>
           <div
             className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all cursor-pointer ${
@@ -448,7 +494,7 @@ export function Sidebar({
           )}
         </div>
 
-        {/* 2. Deals & Pipeline */}
+        {/* 4. Deals & Pipeline */}
         <button
           onClick={() => onNavigate('pipeline')}
           className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
@@ -470,7 +516,7 @@ export function Sidebar({
           </span>
         </button>
 
-        {/* 3. Messages & Inbound Inbox */}
+        {/* 5. Messages & Inbound Inbox */}
         <button
           onClick={() => {
             if (onOpenMessages) {
@@ -496,7 +542,7 @@ export function Sidebar({
           )}
         </button>
 
-        {/* 4. Campaigns & Sequences */}
+        {/* 6. Campaigns & Sequences */}
         <button
           onClick={() => onNavigate('builder')}
           className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
@@ -511,52 +557,6 @@ export function Sidebar({
             className={current === 'builder' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
           />
           <span className="font-semibold">Campaign Sequences</span>
-        </button>
-
-        {/* SECTION 2: PROSPECTING & CAPTURE */}
-        <div className="pt-3 pb-1">
-          <p className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-            Prospecting
-          </p>
-        </div>
-
-        {/* 5. Lead Import */}
-        <button
-          onClick={() => onNavigate('import')}
-          className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-            current === 'import'
-              ? 'bg-brand-50 text-brand-700 font-bold shadow-2xs'
-              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
-          }`}
-          title="Bulk CSV / Text Ingestion & Manual Entry"
-        >
-          <Upload
-            size={18}
-            className={current === 'import' ? 'text-brand-600' : 'text-slate-400 group-hover:text-brand-600'}
-          />
-          <span className="font-semibold">Import &amp; Ingestion</span>
-        </button>
-
-        {/* 6. Lead Scraper (GMB) */}
-        <button
-          onClick={() => onNavigate('scraper')}
-          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-            current === 'scraper'
-              ? 'bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-300 shadow-2xs'
-              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
-          }`}
-          title="Google Business Profiles Lead Discovery"
-        >
-          <div className="flex items-center gap-3">
-            <Compass
-              size={18}
-              className={current === 'scraper' ? 'text-amber-600 animate-spin-slow' : 'text-slate-400 group-hover:text-amber-600'}
-            />
-            <span className="font-semibold">Lead Scraper (GMB)</span>
-          </div>
-          <span className="rounded-full bg-gradient-to-r from-amber-500 to-orange-500 px-1.5 py-0.2 text-[9px] font-extrabold text-white shadow-2xs">
-            100
-          </span>
         </button>
 
         {/* SECTION 3: INTELLIGENCE & OPERATIONS */}

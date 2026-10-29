@@ -49,6 +49,9 @@ import type {
   SuppressedRecord,
   SuppressionStats,
   SequenceEnrollment,
+  AiModelProfile,
+  AiFunctionalityResult,
+  AiDiagnosticReport,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -1768,6 +1771,58 @@ export const api = {
 
   async clearAiCommandHistory(): Promise<void> {
     await request('/ai/history', { method: 'DELETE' });
+  },
+
+  // 10-Model AI Hub & Real-Time Rate Limiter Engine
+  async getAiModelsStatus(): Promise<{
+    models: AiModelProfile[];
+    totalModels: number;
+    activeModels: number;
+    timestamp: string;
+  }> {
+    const res = await request<{
+      success: boolean;
+      models: AiModelProfile[];
+      totalModels: number;
+      activeModels: number;
+      timestamp: string;
+    }>('/ai/models-status');
+    return {
+      models: res.models || [],
+      totalModels: res.totalModels || 0,
+      activeModels: res.activeModels || 0,
+      timestamp: res.timestamp || new Date().toISOString(),
+    };
+  },
+
+  async runAiDiagnostic(): Promise<AiDiagnosticReport> {
+    const res = await request<{ success: boolean; diagnostic: AiDiagnosticReport }>('/ai/run-diagnostic', {
+      method: 'POST',
+    });
+    return res.diagnostic;
+  },
+
+  async checkAiRateLimit(modelId: string): Promise<{
+    allowed: boolean;
+    modelId: string;
+    modelName: string;
+    status: string;
+    remainingRpm: number;
+    cooldownRemainingMs: number;
+    reason?: string;
+  }> {
+    return request('/ai/check-rate-limit', {
+      method: 'POST',
+      body: JSON.stringify({ modelId }),
+    });
+  },
+
+  async executeAiFunctionality(functionality: string, payload?: Record<string, unknown>): Promise<AiFunctionalityResult> {
+    const res = await request<{ success: boolean; result: AiFunctionalityResult }>('/ai/execute-functionality', {
+      method: 'POST',
+      body: JSON.stringify({ functionality, payload }),
+    });
+    return res.result;
   },
 
   // 24/7 Autopilot, Autonomous Drip Engine & Lead Enricher

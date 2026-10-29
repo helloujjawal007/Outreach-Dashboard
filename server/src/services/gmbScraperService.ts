@@ -74,6 +74,7 @@ export interface GmbImportResult {
 
 export class GmbScraperService {
   private portCounter = 9500;
+  private dnsCache = new Map<string, { resolved: boolean; expires: number }>();
 
   /**
    * Resolves the Google Chrome or Chromium executable path across macOS, Linux (Render/Docker/Ubuntu), and Windows.
@@ -349,14 +350,22 @@ export class GmbScraperService {
       return { isLive: false, verifiedUrl: '', error: 'Malformed URL' };
     }
 
-    // 1. Live DNS Verification: check that the domain exists and resolves to an IP address
-    try {
-      await dns.lookup(parsed.hostname);
-    } catch (dnsErr: any) {
-      return { isLive: false, verifiedUrl: '', error: `DNS resolution failed: ${dnsErr.code || dnsErr.message}` };
+    // 1. Live DNS Verification: check that the domain exists and resolves to an IP address (with 10-min cache)
+    const now = Date.now();
+    const cachedDns = this.dnsCache.get(parsed.hostname);
+    if (!cachedDns || cachedDns.expires < now) {
+      try {
+        await dns.lookup(parsed.hostname);
+        this.dnsCache.set(parsed.hostname, { resolved: true, expires: now + 600000 });
+      } catch (dnsErr: any) {
+        this.dnsCache.set(parsed.hostname, { resolved: false, expires: now + 600000 });
+        return { isLive: false, verifiedUrl: '', error: `DNS resolution failed: ${dnsErr.code || dnsErr.message}` };
+      }
+    } else if (!cachedDns.resolved) {
+      return { isLive: false, verifiedUrl: '', error: 'DNS resolution failed (cached)' };
     }
 
-    // 2. Live HTTP connection check (opening the link in the backend)
+    // 2. Fast HTTP connection check (opening the link in the backend with 3500ms timeout)
     const browserHeaders = {
       'User-Agent':
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -373,7 +382,7 @@ export class GmbScraperService {
         method: 'GET',
         headers: browserHeaders,
         redirect: 'follow',
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(3500),
       });
 
       const isLive = res.ok || (res.status >= 200 && res.status < 400) || res.status === 403;
@@ -509,10 +518,11 @@ export class GmbScraperService {
     // Limit to requested count (strictly authentic leads from Google Maps)
     const selected = rawList.slice(0, limit);
 
-    // Backend verification of websites & genuine contact discovery
-    console.log(`[GmbScraperService] Verifying website reachability & extracting contacts for ${selected.length} listings...`);
+    // High-speed parallel verification of websites & genuine contact discovery
+    console.log(`[GmbScraperService] ⚡ High-speed parallel verification & contact discovery for ${selected.length} listings...`);
     const enriched: ScrapedLeadItem[] = [];
-    const chunkSize = 5;
+    const chunkSize = 25; // 5x concurrency boost for blazing-fast scraping
+
 
     for (let i = 0; i < selected.length; i += chunkSize) {
       const chunk = selected.slice(i, i + chunkSize);
@@ -705,14 +715,14 @@ export class GmbScraperService {
       await send('Page.enable');
       await send('Page.navigate', { url: targetUrl });
 
-      // Wait up to 6 seconds for network response
-      for (let wait = 0; wait < 12; wait++) {
+      // Fast responsiveness: poll every 80ms (break instantly as soon as packet arrives)
+      for (let wait = 0; wait < 60; wait++) {
         if (tbmReqId) break;
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 80));
       }
 
       if (!tbmReqId) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 600));
       }
 
       const results: ScrapedLeadItem[] = [];
@@ -1000,7 +1010,8 @@ export class GmbScraperService {
       );
     } catch (_) {}
 
-    for (const pageUrl of pagesToTry.slice(0, 3)) {
+    const targets = pagesToTry.slice(0, 3);
+    const fetchPromises = targets.map(async (pageUrl) => {
       try {
         const res = await fetch(pageUrl, {
           headers: {
@@ -1008,11 +1019,20 @@ export class GmbScraperService {
               'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             Accept: 'text/html,application/xhtml+xml',
           },
-          signal: AbortSignal.timeout(4500),
+          signal: AbortSignal.timeout(3000),
         });
 
-        if (!res.ok) continue;
-        const html = await res.text();
+        if (!res.ok) return '';
+        return await res.text();
+      } catch (_) {
+        return '';
+      }
+    });
+
+    const pageResults = await Promise.allSettled(fetchPromises);
+    for (const settled of pageResults) {
+      if (settled.status === 'fulfilled' && settled.value) {
+        const html = settled.value;
 
         // 1. Mailto links
         const mailtoMatches = Array.from(
@@ -1044,9 +1064,7 @@ export class GmbScraperService {
           const li = html.match(/https?:\/\/(www\.)?linkedin\.com\/(company|in)\/[a-zA-Z0-9._-]+/i);
           if (li) socials.linkedin = li[0];
         }
-
-        if (emailsFound.size > 0) break;
-      } catch (_) {}
+      }
     }
 
     const email = Array.from(emailsFound)[0] || '';

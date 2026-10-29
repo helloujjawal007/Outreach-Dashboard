@@ -23,7 +23,10 @@ import {
   History,
   Clock,
   X,
+  Cpu,
 } from 'lucide-react';
+import { MultiModelRateLimitModal } from '@/components/MultiModelRateLimitModal';
+
 
 interface ChatMessage {
   id: string;
@@ -55,6 +58,7 @@ export function AiCopilotPage() {
   const [history, setHistory] = useState<AiCommandHistoryItem[]>([]);
   const [lastCommand, setLastCommand] = useState<AiCommandHistoryItem | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showRateLimitModal, setShowRateLimitModal] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -283,6 +287,15 @@ export function AiCopilotPage() {
               <span className="text-slate-400">Focus:</span>
               <kbd className="rounded bg-black/40 px-1.5 py-0.5 font-bold text-amber-300">⌘K</kbd>
             </span>
+            <button
+              type="button"
+              onClick={() => setShowRateLimitModal(true)}
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/40 px-2.5 py-1.5 text-xs font-bold text-indigo-200 hover:text-white transition-all cursor-pointer shadow-2xs"
+              title="10 Models Orchestration Pool & Live Rate Limiter Checks"
+            >
+              <Cpu size={13} className="text-indigo-300" />
+              <span className="hidden sm:inline">10 Models &amp; Rate Limits</span>
+            </button>
             <button
               type="button"
               onClick={() => setShowHistoryModal(true)}
@@ -911,6 +924,12 @@ export function AiCopilotPage() {
           </div>
         </div>
       )}
+      {/* 10-Model AI Hub & Real-Time Rate Limiter Modal */}
+      <MultiModelRateLimitModal
+        isOpen={showRateLimitModal}
+        onClose={() => setShowRateLimitModal(false)}
+      />
     </div>
   );
 }
+

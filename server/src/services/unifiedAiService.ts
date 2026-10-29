@@ -192,6 +192,31 @@ export class UnifiedAiService {
     const salutation = this.buildSalutation(businessName, contactName);
     const cat = category.toLowerCase();
 
+    // Multi-Model Rate Limiting Check & Orchestrated Generation
+    try {
+      const { multiModelOrchestrator } = await import('./multiModelOrchestrator');
+      const execution = await multiModelOrchestrator.executeFunctionality('outreach_copy', {
+        businessName,
+        category,
+        contactName,
+        channel,
+        stage,
+        style,
+        notes,
+        location,
+      });
+
+      if (execution && execution.success && execution.output?.body) {
+        return {
+          subject: execution.output.subject || `Quick question regarding ${cleanBiz}`,
+          body: execution.output.body,
+          modelUsed: execution.modelUsed,
+        };
+      }
+    } catch (orchestratorErr) {
+      console.warn('[UnifiedAiService] MultiModelOrchestrator check skipped:', orchestratorErr);
+    }
+
     // Try Gemini if API key configured
     if (this.geminiApiKey) {
       try {

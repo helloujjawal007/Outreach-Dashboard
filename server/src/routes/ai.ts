@@ -239,3 +239,69 @@ aiRouter.delete('/history', async (_req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to clear command history' });
   }
 });
+
+// GET /api/ai/models-status - 10 Models Pool & Real-Time Rate Limiter State
+aiRouter.get('/models-status', async (_req: Request, res: Response) => {
+  try {
+    const { multiModelOrchestrator } = await import('../services/multiModelOrchestrator');
+    const models = multiModelOrchestrator.getModelsStatus();
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      totalModels: models.length,
+      activeModels: models.filter((m) => m.status === 'healthy').length,
+      models,
+    });
+  } catch (error) {
+    console.error('[aiRouter.modelsStatus]', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch AI models status' });
+  }
+});
+
+// POST /api/ai/run-diagnostic - Comprehensive 10-Functionality Checker with Rate Limiting Checks
+aiRouter.post('/run-diagnostic', async (_req: Request, res: Response) => {
+  try {
+    const { multiModelOrchestrator } = await import('../services/multiModelOrchestrator');
+    const diagnostic = await multiModelOrchestrator.runAllFunctionalityChecks();
+    res.json({
+      success: true,
+      diagnostic,
+    });
+  } catch (error) {
+    console.error('[aiRouter.runDiagnostic]', error);
+    res.status(500).json({ success: false, error: 'Failed to run AI model diagnostic' });
+  }
+});
+
+// POST /api/ai/check-rate-limit - Pre-flight Rate Limit Check for a Specific Model
+aiRouter.post('/check-rate-limit', async (req: Request, res: Response) => {
+  try {
+    const { modelId } = req.body;
+    if (!modelId) {
+      return res.status(400).json({ success: false, error: 'modelId is required' });
+    }
+    const { multiModelOrchestrator } = await import('../services/multiModelOrchestrator');
+    const check = multiModelOrchestrator.checkRateLimit(modelId);
+    res.json({ success: true, ...check });
+  } catch (error) {
+    console.error('[aiRouter.checkRateLimit]', error);
+    res.status(500).json({ success: false, error: 'Failed to check rate limit' });
+  }
+});
+
+// POST /api/ai/execute-functionality - Executes any of the 10 platform functionalities with rate-limited failover
+aiRouter.post('/execute-functionality', async (req: Request, res: Response) => {
+  try {
+    const { functionality, payload } = req.body;
+    if (!functionality) {
+      return res.status(400).json({ success: false, error: 'functionality type is required' });
+    }
+    const { multiModelOrchestrator } = await import('../services/multiModelOrchestrator');
+    const result = await multiModelOrchestrator.executeFunctionality(functionality, payload || {});
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('[aiRouter.executeFunctionality]', error);
+    res.status(500).json({ success: false, error: 'Failed to execute functionality' });
+  }
+});
+

@@ -198,9 +198,7 @@ export class InboxRotationService {
               user: inbox.smtp_user,
               pass: cleanPass,
             },
-            pool: true,
-            maxConnections: 5,
-            maxMessages: 100,
+            pool: false,
           }
         : (() => {
             let host = (inbox.smtp_host || '').trim();
@@ -216,10 +214,15 @@ export class InboxRotationService {
                 user: inbox.smtp_user,
                 pass: cleanPass,
               },
-              connectionTimeout: 10000,
-              pool: true,
-              maxConnections: 5,
-              maxMessages: 100,
+              family: 4,
+              connectionTimeout: 20000,
+              greetingTimeout: 15000,
+              socketTimeout: 25000,
+              tls: {
+                rejectUnauthorized: false,
+                minVersion: 'TLSv1.2',
+              },
+              pool: false,
             };
           })()
     );
@@ -245,6 +248,9 @@ export class InboxRotationService {
           WHERE id = $1;
         `, [inboxId]);
       } else {
+        // Invalidate cached transporter on failure so stale sockets are not reused
+        this.transporterCache.delete(inboxId);
+
         await query(`
           UPDATE connected_inboxes
           SET last_error = $2,

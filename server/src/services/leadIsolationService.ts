@@ -24,6 +24,14 @@ export class LeadIsolationService {
 
     const cleanReason = (failureReason || 'Outreach delivery failure').trim().slice(0, 500);
 
+    // Safeguard: Never isolate/quarantine leads for transient network drops, socket timeouts, or server connection glitches!
+    // A lead should ONLY be moved to 'Need to Check' if their email address is definitively invalid, bounced, or rejected by recipient server.
+    const isNetworkOrTimeout = /timeout|etimedout|econnrefused|econnreset|socket hang up|network error|enotfound|system error|temporarily unavailable/i.test(cleanReason);
+    if (isNetworkOrTimeout) {
+      console.warn(`[LeadIsolationService] ⚠️ Suppressing lead isolation for ${leadId}. Failure was transient network/timeout ("${cleanReason}"), NOT an invalid contact or permanent bounce.`);
+      return;
+    }
+
     try {
       console.warn(`[LeadIsolationService] 🚫 Isolating failed lead ${leadId}. Reason: "${cleanReason}"`);
 

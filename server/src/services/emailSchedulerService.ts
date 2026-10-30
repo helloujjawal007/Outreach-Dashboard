@@ -1840,6 +1840,22 @@ export class EmailSchedulerService {
       console.log(`[Scheduler] Dispatched scheduled email to ${dispatch.recipient_email} (${sendRes.liveDelivery})`);
       return true; // Enforce one-by-one sequential sending (next email waits for 180s interval)
     } else {
+      const isTransientNetworkError = /timeout|etimedout|econnrefused|econnreset|socket hang up|network error|enotfound|system error|temporarily unavailable/i.test(sendRes.reason || '');
+
+      if (isTransientNetworkError) {
+        console.warn(`[Scheduler] ⚠️ Transient network/timeout error encountered during scheduled email dispatch to ${dispatch.recipient_email}: ${sendRes.reason}. Backing off for 15 minutes without isolating lead.`);
+        await query(
+          `UPDATE scheduled_dispatches
+           SET status = 'scheduled',
+               scheduled_for = NOW() + INTERVAL '15 minutes',
+               error_message = $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [`Retry scheduled (network timeout): ${sendRes.reason}`, dispatch.id]
+        );
+        return false;
+      }
+
       await query(
         `UPDATE scheduled_dispatches
          SET status = 'failed', error_message = $1, updated_at = NOW()

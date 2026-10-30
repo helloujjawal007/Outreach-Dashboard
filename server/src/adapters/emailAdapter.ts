@@ -379,9 +379,19 @@ export class EmailAdapter {
         const cleanPass = env.SMTP_PASS.replace(/\s+/g, '');
         const isGmail = (env.SMTP_HOST || '').toLowerCase().includes('gmail') || (env.SMTP_USER || '').toLowerCase().endsWith('@gmail.com');
         const transporter = nodemailer.createTransport(
-          isGmail
+          (isGmail
             ? { service: 'gmail', auth: { user: env.SMTP_USER, pass: cleanPass } }
-            : { host: env.SMTP_HOST, port: env.SMTP_PORT, secure: env.SMTP_SECURE || env.SMTP_PORT === 465, auth: { user: env.SMTP_USER, pass: cleanPass } }
+            : {
+                host: env.SMTP_HOST || 'smtppro.zoho.in',
+                port: env.SMTP_PORT || 465,
+                secure: env.SMTP_SECURE || env.SMTP_PORT === 465,
+                auth: { user: env.SMTP_USER, pass: cleanPass },
+                family: 4,
+                connectionTimeout: 20000,
+                greetingTimeout: 15000,
+                socketTimeout: 25000,
+                tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' },
+              }) as any
         );
 
         const cleanFrom = (env.SMTP_FROM || env.SMTP_USER || 'sales@cloudconsultancy.in').trim();

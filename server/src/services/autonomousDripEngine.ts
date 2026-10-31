@@ -129,6 +129,10 @@ export class AutonomousDripEngine {
             AND last_contacted_at IS NULL
             AND (outreach_stage IS NULL OR outreach_stage = 'initial')
             AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
+            AND NOT EXISTS (
+              SELECT 1 FROM scheduled_dispatches sd
+              WHERE sd.lead_id = leads.id AND sd.status IN ('scheduled', 'processing')
+            )
         ) AS initial_due,
         COUNT(*) FILTER (
           WHERE deleted_at IS NULL
@@ -141,6 +145,10 @@ export class AutonomousDripEngine {
             )
             AND last_contacted_at <= NOW() - INTERVAL '48 hours'
             AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
+            AND NOT EXISTS (
+              SELECT 1 FROM scheduled_dispatches sd
+              WHERE sd.lead_id = leads.id AND sd.status IN ('scheduled', 'processing')
+            )
         ) AS followup1_due,
         COUNT(*) FILTER (
           WHERE deleted_at IS NULL
@@ -152,6 +160,10 @@ export class AutonomousDripEngine {
               OR last_contacted_at <= NOW() - INTERVAL '72 hours'
             )
             AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
+            AND NOT EXISTS (
+              SELECT 1 FROM scheduled_dispatches sd
+              WHERE sd.lead_id = leads.id AND sd.status IN ('scheduled', 'processing')
+            )
         ) AS followup2_due,
         COUNT(*) FILTER (
           WHERE deleted_at IS NULL
@@ -163,6 +175,10 @@ export class AutonomousDripEngine {
               OR last_contacted_at <= NOW() - INTERVAL '108 hours'
             )
             AND ((email IS NOT NULL AND email LIKE '%@%') OR (phone IS NOT NULL AND TRIM(phone) != '') OR (website IS NOT NULL AND TRIM(website) != ''))
+            AND NOT EXISTS (
+              SELECT 1 FROM scheduled_dispatches sd
+              WHERE sd.lead_id = leads.id AND sd.status IN ('scheduled', 'processing')
+            )
         ) AS followup3_due
        FROM leads`
     );
@@ -337,6 +353,12 @@ AND NOT EXISTS (
     FROM public.global_suppression_list AS gsl
     WHERE LOWER(gsl.email) = LOWER(leads.email)
       AND leads.email IS NOT NULL
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM scheduled_dispatches sd
+    WHERE sd.lead_id = leads.id
+      AND sd.status IN ('scheduled', 'processing')
 )
 
          ORDER BY 

@@ -161,6 +161,11 @@ export interface BackendLead {
   primary_contact_name?: string;
   inbound_intent?: string;
   inbound_intent_confidence?: number;
+  audit_pdf_name?: string;
+  audit_pdf_path?: string;
+  audit_score?: number;
+  audit_status?: string;
+  audit_key_takeaways?: string;
 }
 
 export interface BackendClient {
@@ -364,6 +369,11 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     country: b.country || '',
     inboundIntent: b.inbound_intent || undefined,
     inboundIntentConfidence: b.inbound_intent_confidence ? Number(b.inbound_intent_confidence) : undefined,
+    auditPdfName: b.audit_pdf_name || b.metadata?.audit_pdf_name,
+    auditPdfPath: b.audit_pdf_path || b.metadata?.audit_pdf_path,
+    auditScore: b.audit_score ? Number(b.audit_score) : undefined,
+    auditStatus: b.audit_status || 'none',
+    auditKeyTakeaways: b.audit_key_takeaways || '',
     metadata: b.metadata || {},
   };
 }

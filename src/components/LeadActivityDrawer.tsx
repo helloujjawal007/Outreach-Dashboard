@@ -23,6 +23,7 @@ import {
   DollarSign,
   Briefcase,
   AlertCircle,
+  FileText,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import type { Lead, LeadActivity, SequenceEnrollment, Deal, CrmTask } from '@/types';
@@ -446,8 +447,63 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
                 <ExternalLink size={10} />
               </a>
             )}
+
+            {(lead.auditPdfName || lead.auditStatus === 'completed') && (
+              <a
+                href={
+                  lead.auditPdfName
+                    ? `/api/audit/download/${encodeURIComponent(lead.auditPdfName)}`
+                    : `/api/audit/lead/${lead.id}/pdf`
+                }
+                target="_blank"
+                rel="noreferrer"
+                className="px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title={`Open Technical Audit PDF${lead.auditScore ? ` (Score: ${lead.auditScore}/100)` : ''}`}
+              >
+                <FileText size={12} className="text-rose-600" />
+                <span>Audit PDF {lead.auditScore ? `(${lead.auditScore}/100)` : ''}</span>
+                <ExternalLink size={10} />
+              </a>
+            )}
           </div>
         </div>
+
+        {/* Technical Audit Insight Banner if available */}
+        {(lead.auditPdfName || lead.auditScore || (lead.auditKeyTakeaways && lead.auditKeyTakeaways.length > 0)) && (
+          <div className="mx-5 mt-3 p-3 rounded-xl bg-gradient-to-r from-rose-50/80 via-white to-amber-50/60 border border-rose-200/80 text-xs shadow-2xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="font-bold text-slate-800">Technical Audit Report</span>
+                {lead.auditScore && (
+                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+                    Score: {lead.auditScore}/100
+                  </span>
+                )}
+              </div>
+              <a
+                href={
+                  lead.auditPdfName
+                    ? `/api/audit/download/${encodeURIComponent(lead.auditPdfName)}`
+                    : `/api/audit/lead/${lead.id}/pdf`
+                }
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[11px] shadow-2xs transition"
+              >
+                <span>View PDF</span>
+                <ExternalLink size={10} />
+              </a>
+            </div>
+            {lead.auditKeyTakeaways && lead.auditKeyTakeaways.length > 0 && (
+              <ul className="mt-2 space-y-1 text-slate-600 pl-4 list-disc text-[11px]">
+                {lead.auditKeyTakeaways.slice(0, 3).map((point, i) => (
+                  <li key={i}>{point}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Feedback Alert */}
         {successFeedback && (

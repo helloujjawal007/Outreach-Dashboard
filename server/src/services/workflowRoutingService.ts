@@ -180,7 +180,19 @@ export class WorkflowRoutingService {
     const website = tokens.website_url || '';
     const auditTakeaways = tokens.audit_key_takeaways || 'Core Web Vitals bottlenecks and mobile rendering latency';
     const auditPdfName = tokens.audit_pdf_name || (website ? `${website.replace(/[^a-z0-9]/gi, '_')}_audit_report.pdf` : 'technical_audit_report.pdf');
-    const indLoc = tokens.industry_location || (tokens.category && tokens.city ? `${tokens.category} in ${tokens.city}` : tokens.category || tokens.city || 'your local market');
+    const rawCity = (tokens.city || '').trim();
+    const cleanCity =
+      rawCity && !/^\(?not identified\)?$/i.test(rawCity) && !/^n\/?a$/i.test(rawCity) && !/^none$/i.test(rawCity) && !/^unknown$/i.test(rawCity)
+        ? rawCity
+        : '';
+
+    const rawCat = (tokens.category || '').trim();
+    const cleanCategory =
+      rawCat && !/^uncategorized$/i.test(rawCat) && !/^\(?not identified\)?$/i.test(rawCat) && !/^general business$/i.test(rawCat) && !/^n\/?a$/i.test(rawCat) && !/^none$/i.test(rawCat)
+        ? rawCat
+        : 'local services';
+
+    const indLoc = tokens.industry_location || (cleanCategory !== 'local services' && cleanCity ? `${cleanCategory} in ${cleanCity}` : cleanCity ? `in ${cleanCity}` : 'your local market');
     const gmbNotes = tokens.gmb_notes || 'with strong customer feedback';
 
     let result = content
@@ -192,8 +204,8 @@ export class WorkflowRoutingService {
       .replace(/\{\{audit_pdf_name\}\}/gi, auditPdfName)
       .replace(/\{\{industry_location\}\}/gi, indLoc)
       .replace(/\{\{gmb_notes\}\}/gi, gmbNotes)
-      .replace(/\{\{category\}\}/gi, tokens.category || 'local services')
-      .replace(/\{\{city\}\}/gi, tokens.city || 'your area');
+      .replace(/\{\{category\}\}/gi, cleanCategory)
+      .replace(/\{\{city\}\}/gi, cleanCity || 'your area');
 
     // Fail-safe pass: Replace ANY leftover {{...}} with appropriate clean text
     result = result.replace(/\{\{([a-zA-Z0-9_ -]+)\}\}/g, (_match, tokenKey) => {

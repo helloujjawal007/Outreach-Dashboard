@@ -45,6 +45,43 @@ export class HumanCopywriterService {
   }
 
   /**
+   * Cleans city / location strings to avoid robotic placeholders like "(Not identified)", "n/a", etc.
+   */
+  public cleanLocation(loc?: string): string {
+    if (!loc) return '';
+    const l = loc.trim();
+    if (
+      /^\(?not identified\)?$/i.test(l) ||
+      /^n\/?a$/i.test(l) ||
+      /^none$/i.test(l) ||
+      /^unknown$/i.test(l) ||
+      /^null$/i.test(l)
+    ) {
+      return '';
+    }
+    return l;
+  }
+
+  /**
+   * Cleans category strings to avoid "Uncategorized", "General Business", etc.
+   */
+  public cleanCategory(cat?: string): string {
+    if (!cat) return 'local services';
+    const c = cat.trim();
+    if (
+      /^uncategorized$/i.test(c) ||
+      /^\(?not identified\)?$/i.test(c) ||
+      /^general business$/i.test(c) ||
+      /^n\/?a$/i.test(c) ||
+      /^none$/i.test(c) ||
+      /^null$/i.test(c)
+    ) {
+      return 'local services';
+    }
+    return c;
+  }
+
+  /**
    * Builds a natural salutation (never robotic like "Hello The Fitness World team")
    */
   public buildSalutation(businessName: string, contactName?: string): string {
@@ -87,29 +124,32 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Generates genuine, human-written copy free of hype, AI clichés, and automated disclaimers
+   * Generates genuine, human-written copy in pure, natural English free of hype, robotic tokens, and AI clichés
    */
   public getEmailCopy(lead: LeadContext, stage: Stage): HumanCopyResult {
     const business = this.cleanBusinessName(lead.businessName || 'your business');
     const salutation = this.buildSalutation(lead.businessName, lead.primaryContactName);
-    const categoryPhrase = lead.category ? `${lead.category.toLowerCase()} businesses` : 'local businesses';
-    const cityPhrase = lead.city ? ` in ${lead.city}` : '';
+
+    const cleanCity = this.cleanLocation(lead.city);
+    const cleanCat = this.cleanCategory(lead.category);
+    const categoryPhrase = cleanCat !== 'local services' ? `${cleanCat.toLowerCase()} companies` : 'local businesses';
+    const cityPhrase = cleanCity ? ` in ${cleanCity}` : '';
+    const cityText = cleanCity ? ` in ${cleanCity}` : ' in your local market';
 
     const rawWeb = (lead.website || '').trim();
     const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawWeb);
-    const hasWebsite = Boolean(rawWeb && !isMapsUrl && rawWeb.toLowerCase() !== 'n/a' && rawWeb.toLowerCase() !== 'none');
+    const hasWebsite = Boolean(
+      rawWeb && !isMapsUrl && rawWeb.toLowerCase() !== 'n/a' && rawWeb.toLowerCase() !== 'none'
+    );
 
-    // CASE A: NO PDF / NO ACTIVE WEBSITE -> HUMAN BUSINESS SUMMARY + PITCH SEO & WEBSITE DEVELOPMENT
-    if (!hasWebsite || !lead.auditPdfPath && !lead.auditPdfName) {
-      const cleanCategory = lead.category || 'local services';
-      const cityText = lead.city ? ` in ${lead.city}` : '';
-
+    // CASE A: NO PDF / NO ACTIVE WEBSITE -> NATURAL BUSINESS NOTE + PITCH HIGH-CONVERTING WEBSITE & SEO
+    if (!hasWebsite || (!lead.auditPdfPath && !lead.auditPdfName)) {
       if (stage === 'initial') {
         return {
           subject: this.pick([
             `Quick note regarding ${business}`,
             `${business} – Google search & website inquiry`,
-            `Question about ${business}${cityText}`,
+            `Question regarding ${business}${cityPhrase}`,
           ]),
           body: this.compose([
             `Hi ${salutation},`,
@@ -118,12 +158,9 @@ export class HumanCopywriterService {
             ``,
             `You have built a solid local reputation serving customers${cityText}, but I noticed that ${business} currently doesn't have an active, modern website or dedicated landing page linked to your Google Business Profile.`,
             ``,
-            `When people search for ${cleanCategory} on their phones, over 70% look for immediate service details, pricing, and a direct inquiry form. Without a dedicated website, many of those potential customers end up calling nearby competitors who do.`,
+            `When people search on their phones, over 70% look for immediate service details, pricing, and a simple way to get in touch. Without a dedicated website, many of those potential customers end up calling nearby competitors instead.`,
             ``,
-            `At Cloud Consultancy, we specialize in helping businesses like yours establish a strong digital presence:`,
-            `• Custom Website Development: Fast-loading, mobile-first design tailored for ${cleanCategory} with direct call and WhatsApp inquiry buttons.`,
-            `• Search Engine Optimization (SEO): Local Google search and Maps ranking to ensure ${business} appears at the top when local clients search for your services.`,
-            `• Lead Conversion Automations: Streamlined inquiry forms so new leads reach you instantly.`,
+            `At Cloud Consultancy, we help local businesses set up clean, fast-loading mobile websites and optimize their Google search ranking so they consistently generate more direct inquiries.`,
             ``,
             `I put together a quick mockup concept and local search roadmap for ${business} showing what this would look like. Would you be open to taking a quick look?`,
           ]),
@@ -141,11 +178,11 @@ export class HumanCopywriterService {
             ``,
             `Following up briefly on my earlier note regarding ${business}.`,
             ``,
-            `Did you have a chance to see my note about setting up a high-converting website and local Google SEO campaign for your business?`,
+            `Did you have a chance to see my note about setting up a high-converting website and local Google search presence for your business?`,
             ``,
-            `We have seen businesses in ${cleanCategory} increase their inbound inquiries substantially just by having a fast mobile site and high Google Maps ranking.`,
+            `We have seen local businesses increase their inbound inquiries substantially just by having a fast mobile site and high Google Maps ranking.`,
             ``,
-            `Happy to share a couple of initial layout ideas if you'd find that helpful.`,
+            `I would be happy to share a couple of initial layout ideas if you find that helpful.`,
           ]),
           stage: 'followup_1',
           stageLabel: '2nd Email (Day 3 Follow-up)',
@@ -186,11 +223,11 @@ export class HumanCopywriterService {
       };
     }
 
-    // CASE B: LEAD HAS ATTACHED PDF -> HUMAN-WRITTEN SUMMARY OF AUDIT REPORT
+    // CASE B: LEAD HAS ATTACHED PDF -> HUMAN-WRITTEN TECHNICAL OBSERVATIONS & AUDIT REPORT
     const domain = rawWeb.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
     const pdfName = lead.auditPdfName || `${domain.replace(/[^a-z0-9]/gi, '_')}_Technical_Audit.pdf`;
     const scoreVal = lead.auditScore ? Number(lead.auditScore) : undefined;
-    const scoreSummary = scoreVal ? `Score: ${scoreVal}/100` : 'below Google Core Web Vitals benchmark';
+    const scoreSummary = scoreVal ? `scoring ${scoreVal}/100 on Core Web Vitals` : 'below Google mobile speed benchmarks';
     const keyTakeaways =
       lead.auditKeyTakeaways ||
       (lead.auditIssues && lead.auditIssues.length > 0
@@ -211,10 +248,11 @@ export class HumanCopywriterService {
           ``,
           `I was reviewing ${domain} earlier today and ran a diagnostic on your mobile speed and Google search positioning. I put together a 1-page Technical Audit Report and attached it here (${pdfName}) for your web team.`,
           ``,
-          `Here is a quick human summary of what came up in the attached PDF:`,
-          `• Overall Performance: ${scoreSummary}`,
-          `• Primary Bottlenecks: ${keyTakeaways}`,
-          `• Search & Conversion Impact: When mobile visitors experience loading delays, bounce rates spike significantly, and Google actively prioritizes faster-loading competitors in local search results.`,
+          `In short, the primary areas holding the site back are:`,
+          `• Mobile load speed and core vitals (${scoreSummary})`,
+          `• ${keyTakeaways}`,
+          ``,
+          `When mobile visitors experience loading delays, bounce rates climb quickly and Google actively prioritizes faster competitors in local search results.`,
           ``,
           `The attached document outlines the exact line-item findings and the step-by-step recommendations we usually implement to resolve them.`,
           ``,

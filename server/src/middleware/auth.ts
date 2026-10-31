@@ -85,6 +85,11 @@ export function extractToken(req: Request): string | null {
     }
   }
 
+  // 4. Query param token: ?token=<token>
+  if (req.query && typeof req.query.token === 'string' && req.query.token.trim()) {
+    return req.query.token.trim();
+  }
+
   return null;
 }
 

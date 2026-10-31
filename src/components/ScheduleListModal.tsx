@@ -181,6 +181,15 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
     }
   }, [open, defaultListId, store.lists]);
 
+  // Auto-refresh Scheduled Dispatches Queue when modal is open on the dispatches tab
+  useEffect(() => {
+    if (!open || activeTab !== 'dispatches') return;
+    const interval = setInterval(() => {
+      store.fetchDispatches();
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [open, activeTab, store]);
+
   // Selected target list entity
   const targetList = useMemo(() => {
     if (!selectedListId || selectedListId === 'all') return null;
@@ -830,7 +839,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                         </span>
                       </div>
                       <p className="text-slate-700 leading-relaxed">
-                        All {eligibleLeadsCount} emails will route via <strong>{selectedInboxes[0]?.email}</strong>. Jab 2 ya jyada inboxes connect honge, yeh automatically load split kar lega (2 inboxes par 50/50, 3 par 33% each).
+                        All {eligibleLeadsCount} emails will route via <strong>{selectedInboxes[0]?.email}</strong>. When two or more inboxes are connected, the sending load is automatically distributed evenly (50/50 for 2 inboxes, 33% each for 3).
                       </p>
                     </div>
                   ) : (

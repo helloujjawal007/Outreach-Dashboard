@@ -30,6 +30,7 @@ import {
   Bot,
   MessageSquare,
   FileText,
+  Download,
   RotateCcw,
   Check,
 } from 'lucide-react';
@@ -1419,18 +1420,55 @@ export function InboundRepliesModal({
                                   {msg.text}
                                 </p>
 
-                                {/* SEO Audit Attachment pill if mentioned */}
-                                {msg.text?.toLowerCase().includes('technical_audit_report.pdf') && (
-                                  <div className="mt-2 flex items-center gap-2 rounded-lg bg-white/80 border border-slate-200/90 p-2 text-xs font-semibold text-slate-800 shadow-2xs">
-                                    <FileText size={16} className="text-rose-600 shrink-0" />
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate font-bold">Technical_Audit_Report.pdf</p>
-                                      <p className="text-[10px] text-slate-500 font-normal">
-                                        SEO Diagnostic &amp; Core Web Vitals Pitch
-                                      </p>
+                                {/* SEO Audit Attachment pill / download card if attached or mentioned */}
+                                {(() => {
+                                  // 1. Check metadata attachments
+                                  const rawAttachments = (msg as any).metadata?.attachments;
+                                  const attachments = Array.isArray(rawAttachments) ? rawAttachments : [];
+
+                                  // 2. Check if text mentions a PDF filename (e.g. Technical_Audit_*.pdf or anything.pdf)
+                                  const pdfMatch = msg.text?.match(/([a-zA-Z0-9_\-.]+\.pdf)/i);
+                                  const pdfNameFromText = pdfMatch ? pdfMatch[1] : null;
+
+                                  const displayAttachments = attachments.length > 0
+                                    ? attachments
+                                    : pdfNameFromText
+                                    ? [{ filename: pdfNameFromText }]
+                                    : [];
+
+                                  if (displayAttachments.length === 0) return null;
+
+                                  return (
+                                    <div className="mt-2 space-y-1.5">
+                                      {displayAttachments.map((att: any, idx: number) => {
+                                        const fname = att.filename || 'Technical_Audit_Report.pdf';
+                                        const downloadUrl = `/api/audit/download/${encodeURIComponent(fname)}`;
+                                        return (
+                                          <a
+                                            key={idx}
+                                            href={downloadUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 rounded-lg bg-white/95 border border-slate-200/90 p-2 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 transition-colors group cursor-pointer"
+                                          >
+                                            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-50 text-rose-600 border border-rose-100 group-hover:scale-105 transition-transform">
+                                              <FileText size={16} />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="truncate font-bold text-slate-800 text-[11px] group-hover:text-blue-600 transition-colors">
+                                                {fname}
+                                              </p>
+                                              <p className="text-[10px] text-slate-500 font-normal">
+                                                Technical Audit PDF • Click to view / download
+                                              </p>
+                                            </div>
+                                            <Download size={14} className="text-slate-400 group-hover:text-blue-600 transition-colors mr-1" />
+                                          </a>
+                                        );
+                                      })}
                                     </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
 
                                 {/* Bubble Footer: Timestamp & delivery checkmarks */}
                                 <div className="mt-1.5 flex items-center justify-between gap-3 pt-1 text-[10px] text-slate-500">

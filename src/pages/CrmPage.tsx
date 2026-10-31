@@ -46,6 +46,8 @@ import {
   Flame,
   DollarSign,
   Briefcase,
+  FileText,
+  Download,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -5121,6 +5123,54 @@ export function CrmPage({
                           )}
 
                           <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+
+                          {/* PDF & Document Attachments */}
+                          {(() => {
+                            const attachments = Array.isArray(msg.metadata?.attachments)
+                              ? msg.metadata.attachments
+                              : [];
+                            const pdfMatch = msg.text?.match(/([a-zA-Z0-9_\-.]+\.pdf)/i);
+                            const pdfNameFromText = pdfMatch ? pdfMatch[1] : null;
+
+                            const displayAttachments = attachments.length > 0
+                              ? attachments
+                              : pdfNameFromText
+                              ? [{ filename: pdfNameFromText }]
+                              : [];
+
+                            if (displayAttachments.length === 0) return null;
+
+                            return (
+                              <div className="mt-2 space-y-1.5">
+                                {displayAttachments.map((att: any, idx: number) => {
+                                  const fname = att.filename || 'Technical_Audit_Report.pdf';
+                                  const downloadUrl = `/api/audit/download/${encodeURIComponent(fname)}`;
+                                  return (
+                                    <a
+                                      key={idx}
+                                      href={downloadUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-2 rounded-lg bg-white/95 border border-slate-200/90 p-2 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 transition-colors group cursor-pointer"
+                                    >
+                                      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-50 text-rose-600 border border-rose-100 group-hover:scale-105 transition-transform">
+                                        <FileText size={16} />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate font-bold text-slate-800 text-[11px] group-hover:text-brand-600 transition-colors">
+                                          {fname}
+                                        </p>
+                                        <p className="text-[10px] text-slate-500 font-normal">
+                                          Attached Technical Audit Report • Click to view PDF
+                                        </p>
+                                      </div>
+                                      <Download size={14} className="text-slate-400 group-hover:text-brand-600 transition-colors mr-1" />
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
 
                           {/* Inbound Status & Explicit Mark as Read / Mark as Unread Action */}
                           {isInbound && (

@@ -77,6 +77,11 @@ export interface Lead {
   inboundIntentConfidence?: number;
   aiSuggestedReply?: string;
   aiReplyStatus?: string;
+  auditPdfName?: string;
+  auditPdfPath?: string;
+  auditScore?: number;
+  auditStatus?: string;
+  auditKeyTakeaways?: string;
   metadata?: Record<string, any>;
 }
 

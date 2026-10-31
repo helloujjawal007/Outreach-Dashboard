@@ -8,6 +8,101 @@ import { query } from '../config/db';
 export const auditRouter = Router();
 
 /**
+ * GET /api/audit/download/:filename
+ * Serves / downloads the generated technical audit PDF file directly
+ */
+auditRouter.get('/download/:filename', (req: Request, res: Response) => {
+  try {
+    const filenameParam = typeof req.params.filename === 'string' ? req.params.filename : (req.params.filename?.[0] || '');
+    const rawFilename = path.basename(decodeURIComponent(filenameParam));
+    const auditsDir = path.join(process.cwd(), 'server', 'data', 'audits');
+    const pdfPath = path.join(auditsDir, rawFilename);
+
+    if (fs.existsSync(pdfPath)) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${rawFilename}"`);
+      return res.sendFile(pdfPath);
+    }
+
+    // Fuzzy matching if exact filename not found (e.g. without extension or underscore variation)
+    if (fs.existsSync(auditsDir)) {
+      const files = fs.readdirSync(auditsDir);
+      const cleanTarget = rawFilename.replace(/\.pdf$/i, '').toLowerCase();
+      const matched = files.find(
+        (f) => f.toLowerCase() === rawFilename.toLowerCase() || f.toLowerCase().includes(cleanTarget)
+      );
+      if (matched) {
+        const matchedPath = path.join(auditsDir, matched);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${matched}"`);
+        return res.sendFile(matchedPath);
+      }
+    }
+
+    return res.status(404).json({ success: false, error: `Audit PDF "${rawFilename}" not found on disk.` });
+  } catch (err: any) {
+    console.error('[auditRouter.download] Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve audit PDF.' });
+  }
+});
+
+/**
+ * GET /api/audit/lead/:leadId/pdf
+ * Streams or downloads the technical audit PDF associated with a specific lead
+ */
+auditRouter.get('/lead/:leadId/pdf', async (req: Request, res: Response) => {
+  try {
+    const leadId = typeof req.params.leadId === 'string' ? req.params.leadId : req.params.leadId?.[0];
+    const leadRes = await query<{
+      audit_pdf_path: string | null;
+      audit_pdf_name: string | null;
+      business_name: string;
+      website: string | null;
+    }>(
+      `SELECT audit_pdf_path, audit_pdf_name, business_name, website FROM leads WHERE id = $1`,
+      [leadId]
+    );
+
+    if (leadRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const row = leadRes.rows[0];
+    let pdfPath = row.audit_pdf_path;
+    let pdfName = row.audit_pdf_name || 'Technical_Audit_Report.pdf';
+
+    const auditsDir = path.join(process.cwd(), 'server', 'data', 'audits');
+
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      if (pdfName && fs.existsSync(path.join(auditsDir, path.basename(pdfName)))) {
+        pdfPath = path.join(auditsDir, path.basename(pdfName));
+      } else if (row.website) {
+        const domain = row.website.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
+        const candidate = `Technical_Audit_${domain.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+        if (fs.existsSync(path.join(auditsDir, candidate))) {
+          pdfPath = path.join(auditsDir, candidate);
+          pdfName = candidate;
+        }
+      }
+    }
+
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      return res.status(404).json({
+        success: false,
+        error: `No audit report PDF found on file for "${row.business_name}".`,
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${path.basename(pdfName)}"`);
+    return res.sendFile(pdfPath);
+  } catch (err: any) {
+    console.error('[auditRouter.leadPdf] Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve lead audit PDF.' });
+  }
+});
+
+/**
  * POST /api/audit/run
  * Runs a live audit on a URL or on a specific lead's website
  */

@@ -283,6 +283,15 @@ export class AutonomousDripEngine {
       return { dispatchedCount: 0, skippedCount: 0, results: [] };
     }
 
+    // Gate: If 5-slot sender engine is active, prevent autonomous drip engine from competing
+    const slotCheck = await query<{ is_active: boolean }>(
+      `SELECT is_active FROM slot_sender_settings WHERE id = 'default'`
+    ).catch(() => ({ rows: [] }));
+    if (slotCheck.rows.length > 0 && slotCheck.rows[0].is_active) {
+      // 5-slot engine is active: autonomous drip yields to 5-slot deterministic grid to prevent duplicate sending
+      return { dispatchedCount: 0, skippedCount: 0, results: [] };
+    }
+
     this.isProcessing = true;
     this.lastRunAt = new Date();
 

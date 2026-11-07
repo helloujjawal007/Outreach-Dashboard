@@ -269,6 +269,118 @@ export async function runMigrations() {
           updated_at TIMESTAMPTZ DEFAULT NOW()
       );
 
+      -- 5-Slot Staggered Sender & Audit-First Pipeline columns
+      ALTER TABLE leads
+        ADD COLUMN IF NOT EXISTS slot_id VARCHAR(5) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS audit_findings JSONB DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS audit_retry_count INT DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS audit_requested_at TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS audit_ready_at TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS slot_assigned_at TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS last_sent_message_id TEXT DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS last_sent_stage VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS claimed_stage VARCHAR(50) DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS send_retry_count INT DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS transient_retry_count INT DEFAULT 0;
+
+      CREATE INDEX IF NOT EXISTS idx_leads_slot_id ON leads(slot_id);
+      CREATE INDEX IF NOT EXISTS idx_leads_audit_status ON leads(audit_status);
+
+      -- Failure Log table
+      CREATE TABLE IF NOT EXISTS failure_log (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+          company VARCHAR(255) NOT NULL DEFAULT '',
+          website VARCHAR(255) DEFAULT '',
+          email VARCHAR(255) DEFAULT '',
+          slot_id VARCHAR(10) DEFAULT '',
+          stage VARCHAR(50) DEFAULT 'initial',
+          type VARCHAR(50) NOT NULL,
+          error_message TEXT DEFAULT '',
+          attempts INT NOT NULL DEFAULT 1,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          resolved BOOLEAN NOT NULL DEFAULT false,
+          resolved_at TIMESTAMPTZ DEFAULT NULL
+      );
+      ALTER TABLE failure_log ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ DEFAULT NULL;
+      CREATE INDEX IF NOT EXISTS idx_failure_log_type ON failure_log(type);
+      CREATE INDEX IF NOT EXISTS idx_failure_log_slot ON failure_log(slot_id);
+      CREATE INDEX IF NOT EXISTS idx_failure_log_resolved ON failure_log(resolved);
+      CREATE INDEX IF NOT EXISTS idx_failure_log_created_at ON failure_log(created_at DESC);
+
+      -- 5-Slot Sender Settings
+      CREATE TABLE IF NOT EXISTS slot_sender_settings (
+          id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+          slot_cycle_min INT NOT NULL DEFAULT 10,
+          slot_offset_min INT NOT NULL DEFAULT 2,
+          anchor_timestamp TIMESTAMPTZ NOT NULL DEFAULT '2026-01-01 00:00:00+00',
+          td_endpoint_url TEXT DEFAULT '',
+          td_shared_secret TEXT DEFAULT 'td-secret-key-2026',
+          max_audit_retries INT NOT NULL DEFAULT 3,
+          daily_send_limit INT NOT NULL DEFAULT 150,
+          send_window_start_hour INT NOT NULL DEFAULT 8,
+          send_window_end_hour INT NOT NULL DEFAULT 19,
+          weekdays_only BOOLEAN NOT NULL DEFAULT true,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE slot_sender_settings
+        ADD COLUMN IF NOT EXISTS daily_send_limit INT NOT NULL DEFAULT 150,
+        ADD COLUMN IF NOT EXISTS send_window_start_hour INT NOT NULL DEFAULT 8,
+        ADD COLUMN IF NOT EXISTS send_window_end_hour INT NOT NULL DEFAULT 19,
+        ADD COLUMN IF NOT EXISTS weekdays_only BOOLEAN NOT NULL DEFAULT true,
+        ADD COLUMN IF NOT EXISTS circuit_breaker_tripped BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS consecutive_auth_failures INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS send_window_timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
+        ADD COLUMN IF NOT EXISTS global_min_gap_sec INT NOT NULL DEFAULT 120;
+
+      ALTER TABLE slot_sender_settings 
+        ALTER COLUMN slot_cycle_min TYPE NUMERIC USING slot_cycle_min::numeric,
+        ALTER COLUMN slot_offset_min TYPE NUMERIC USING slot_offset_min::numeric;
+
+      INSERT INTO slot_sender_settings (id, slot_cycle_min, slot_offset_min, anchor_timestamp, td_endpoint_url, td_shared_secret, max_audit_retries, daily_send_limit, send_window_start_hour, send_window_end_hour, weekdays_only, is_active)
+      VALUES ('default', 10, 2, '2026-01-01 00:00:00+00', '', 'td-secret-key-2026', 3, 150, 8, 19, true, true)
+      ON CONFLICT (id) DO NOTHING;
+
+      -- Ensure cloudconsultancy.ad@gmail.com is configured as the active primary inbox for all 5 slots
+      INSERT INTO connected_inboxes (
+        name, email, sender_name, provider, smtp_host, smtp_port, smtp_secure,
+        smtp_user, smtp_pass, daily_limit, sent_today, health_score, status, is_default, last_error, updated_at
+      ) VALUES (
+        'Primary (cloudconsultancy.ad@gmail.com)',
+        'cloudconsultancy.ad@gmail.com',
+        'Cloud Consultancy',
+        'smtp',
+        'smtp.gmail.com',
+        465,
+        true,
+        'cloudconsultancy.ad@gmail.com',
+        'jyiihithhtglfjdd',
+        150,
+        0,
+        100,
+        'active',
+        true,
+        NULL,
+        NOW()
+      )
+      ON CONFLICT (email) DO UPDATE SET
+        name = 'Primary (cloudconsultancy.ad@gmail.com)',
+        sender_name = 'Cloud Consultancy',
+        smtp_host = 'smtp.gmail.com',
+        smtp_port = 465,
+        smtp_secure = true,
+        smtp_user = 'cloudconsultancy.ad@gmail.com',
+        status = 'active',
+        is_default = true,
+        last_error = NULL,
+        updated_at = NOW();
+
+      -- Pause or purge non-primary inboxes so all 5 virtual slots route through cloudconsultancy.ad@gmail.com
+      UPDATE connected_inboxes SET is_default = false, status = 'paused' WHERE email != 'cloudconsultancy.ad@gmail.com';
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_leads_deleted_at ON leads(deleted_at);
       CREATE INDEX IF NOT EXISTS idx_leads_batch_id ON leads(batch_id);

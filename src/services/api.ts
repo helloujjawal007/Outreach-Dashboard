@@ -52,6 +52,10 @@ import type {
   AiModelProfile,
   AiFunctionalityResult,
   AiDiagnosticReport,
+  SlotSenderSettings,
+  SlotsOverviewResponse,
+  FailureRecord,
+  FailureLogsResponse,
 } from '@/types';
 
 const API_BASE = '/api';
@@ -2162,6 +2166,86 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ leadId, delayDays }),
     });
+  },
+
+  // 5-Slot Sender API
+  async getSlotsStatus(): Promise<SlotsOverviewResponse> {
+    return request<SlotsOverviewResponse>('/slots/status');
+  },
+
+  async updateSlotsSettings(settings: Partial<SlotSenderSettings>): Promise<{ success: boolean; settings: SlotSenderSettings }> {
+    return request<{ success: boolean; settings: SlotSenderSettings }>('/slots/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  async triggerSlotTick(): Promise<{ success: boolean; activeSlot: string | null; dispatched: boolean; reason?: string }> {
+    return request<{ success: boolean; activeSlot: string | null; dispatched: boolean; reason?: string }>('/slots/trigger-tick', {
+      method: 'POST',
+    });
+  },
+
+  async assignLeadToSlot(leadId: string): Promise<{ success: boolean; leadId: string; slotId: string }> {
+    return request<{ success: boolean; leadId: string; slotId: string }>('/slots/assign-lead', {
+      method: 'POST',
+      body: JSON.stringify({ leadId }),
+    });
+  },
+
+  // Failures Log API
+  async getFailures(params?: {
+    type?: string;
+    slotId?: string;
+    resolved?: boolean;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<FailureLogsResponse> {
+    const sp = new URLSearchParams();
+    if (params?.type && params.type !== 'ALL') sp.set('type', params.type);
+    if (params?.slotId && params.slotId !== 'ALL') sp.set('slotId', params.slotId);
+    if (params?.resolved !== undefined) sp.set('resolved', String(params.resolved));
+    if (params?.startDate) sp.set('startDate', params.startDate);
+    if (params?.endDate) sp.set('endDate', params.endDate);
+    if (params?.search) sp.set('search', params.search);
+    if (params?.limit) sp.set('limit', String(params.limit));
+    if (params?.offset) sp.set('offset', String(params.offset));
+    const qs = sp.toString() ? `?${sp.toString()}` : '';
+    return request<FailureLogsResponse>(`/failures${qs}`);
+  },
+
+  async resolveFailure(id: string): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>(`/failures/${id}/resolve`, {
+      method: 'POST',
+    });
+  },
+
+  async retryFailure(id: string): Promise<{ success: boolean; message: string; leadId: string }> {
+    return request<{ success: boolean; message: string; leadId: string }>(`/failures/${id}/retry`, {
+      method: 'POST',
+    });
+  },
+
+  getFailuresExportUrl(params?: {
+    type?: string;
+    slotId?: string;
+    resolved?: boolean;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }): string {
+    const sp = new URLSearchParams();
+    if (params?.type && params.type !== 'ALL') sp.set('type', params.type);
+    if (params?.slotId && params.slotId !== 'ALL') sp.set('slotId', params.slotId);
+    if (params?.resolved !== undefined) sp.set('resolved', String(params.resolved));
+    if (params?.startDate) sp.set('startDate', params.startDate);
+    if (params?.endDate) sp.set('endDate', params.endDate);
+    if (params?.search) sp.set('search', params.search);
+    const qs = sp.toString() ? `?${sp.toString()}` : '';
+    return `/api/failures/export${qs}`;
   },
 };
 

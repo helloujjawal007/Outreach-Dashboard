@@ -28,7 +28,7 @@ import {
 import type { CrmSubFilter } from '@/types';
 import { APP_VERSION, APP_UPDATED_AT, APP_HINT } from '@/version';
 
-export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot';
+export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot' | 'failures';
 
 export interface CountryCountItem {
   country: string;
@@ -579,6 +579,28 @@ export function Sidebar({
               {counts.queue}
             </span>
           )}
+        </button>
+
+        {/* 7b. Failures & Diagnostics Log */}
+        <button
+          onClick={() => onNavigate('failures')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'failures'
+              ? 'bg-rose-50 text-rose-900 font-bold ring-1 ring-rose-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Failure Log: TD audit timeouts, missing PDFs, SMTP bounces & 5-slot sender status"
+        >
+          <div className="flex items-center gap-3">
+            <AlertTriangle
+              size={18}
+              className={current === 'failures' ? 'text-rose-600' : 'text-slate-400 group-hover:text-rose-600'}
+            />
+            <span className="font-semibold">Failures &amp; Slots</span>
+          </div>
+          <span className="rounded-full bg-slate-100 group-hover:bg-rose-100 px-1.5 py-0.2 text-[9px] font-mono font-bold text-slate-600 group-hover:text-rose-700">
+            Audit
+          </span>
         </button>
 
         {/* 8. AI Strategy Copilot */}

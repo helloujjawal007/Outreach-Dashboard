@@ -62,11 +62,11 @@ function cleanPortValue(rawPort: string, defaultPort: number): number {
   return match ? parseInt(match[0], 10) : defaultPort;
 }
 
-const rawUser = getEnvVar('SMTP_USER', 'SMTP_USERNAME', 'SMTP Username', 'SMTP User', 'smtp_user', 'SMTP_EMAIL') || 'sales@cloudconsultancy.in';
+const rawUser = getEnvVar('SMTP_USER', 'SMTP_USERNAME', 'SMTP Username', 'SMTP User', 'smtp_user', 'SMTP_EMAIL') || 'cloudconsultancy.ad@gmail.com';
 const rawPass = getEnvVar('SMTP_PASS', 'SMTP_PASSWORD', 'SMTP Password', 'SMTP Pass', 'smtp_pass');
 const rawHost = getEnvVar('SMTP_HOST', 'SMTP Host', 'smtp_host', 'SMTP_SERVER', 'SMTP Server');
 const rawPort = getEnvVar('SMTP_PORT', 'SMTP Port', 'smtp_port');
-const rawFrom = getEnvVar('SMTP_FROM', 'SMTP From', 'smtp_from') || '"Cloud Consultancy" <sales@cloudconsultancy.in>';
+const rawFrom = getEnvVar('SMTP_FROM', 'SMTP From', 'smtp_from') || '"Cloud Consultancy" <cloudconsultancy.ad@gmail.com>';
 const rawImapHost = getEnvVar('IMAP_HOST', 'IMAP Host', 'IMAP Host (Optional)', 'imap_host');
 const rawImapPort = getEnvVar('IMAP_PORT', 'IMAP Port', 'IMAP Port (Optional)', 'imap_port');
 

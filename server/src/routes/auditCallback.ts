@@ -1,0 +1,391 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { query } from '../config/db';
+import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
+import { suppressionService } from '../services/suppressionService';
+import { isValidPdfBuffer, validateAuditAsset } from '../utils/auditPolicy';
+
+export const auditCallbackRouter = Router();
+
+// In-memory sliding window rate limiter: max 120 callbacks per 60s per IP
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (entry.count >= 120) {
+    return false;
+  }
+  entry.count++;
+  return true;
+}
+
+/**
+ * Timing-safe string equality comparison to prevent side-channel timing attacks
+ */
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    const padded = Buffer.alloc(bufA.length, 0);
+    crypto.timingSafeEqual(bufA, padded);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Cleanup routine for audit PDFs older than 28 days
+ */
+export function cleanupOldAuditPdfs(auditsDir: string, maxAgeDays = 28) {
+  try {
+    if (!fs.existsSync(auditsDir)) return;
+    const files = fs.readdirSync(auditsDir);
+    const now = Date.now();
+    const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+
+    for (const file of files) {
+      if (file.endsWith('.pdf')) {
+        const filePath = path.join(auditsDir, file);
+        const stats = fs.statSync(filePath);
+        if (now - stats.mtimeMs > maxAgeMs) {
+          fs.unlinkSync(filePath);
+          console.log(`[AuditCallback] Cleaned up expired audit PDF (>28 days): ${file}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AuditCallback] PDF retention cleanup warning:', err?.message);
+  }
+}
+
+/**
+ * Header-Only Authentication Middleware
+ * Checks x-audit-secret header BEFORE any body parsing happens.
+ * Rejects query parameter (?secret=) and body parameter secrets.
+ */
+export async function auditCallbackAuthMiddleware(req: Request, res: Response, next: NextFunction) {
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+  if (!checkRateLimit(clientIp)) {
+    return res.status(429).json({
+      success: false,
+      error: 'Too many callback requests. Rate limit exceeded (120 req/min).',
+    });
+  }
+
+  const settings = await fiveSlotSenderService.getSettings();
+  const expectedSecret = settings.td_shared_secret || process.env.TD_SHARED_SECRET || 'td-secret-key-2026';
+
+  // Strict header-only authentication: x-audit-secret header only!
+  const providedSecret = req.headers['x-audit-secret'] as string | undefined;
+
+  if (!providedSecret || !expectedSecret || !timingSafeEqualStr(providedSecret.trim(), expectedSecret.trim())) {
+    console.warn(`[AuditCallback] ❌ Unauthorized callback attempt from ${clientIp}. Missing or invalid x-audit-secret header.`);
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: Missing or invalid x-audit-secret header. Secret must be provided exclusively in the x-audit-secret header.',
+      code: 'UNAUTHORIZED_CALLBACK',
+    });
+  }
+
+  next();
+}
+
+/**
+ * POST /api/audit-callback
+ * Body payload limit strictly capped at 10 MB.
+ */
+auditCallbackRouter.post('/', async (req: Request, res: Response) => {
+  try {
+    const {
+      leadId: rawLeadId,
+      status: incomingStatus,
+      takeaways: rawTakeaways,
+      findings: rawFindings,
+      score: rawScore,
+      pdf: rawPdf,
+      pdfBase64: rawPdfBase64,
+      pdfPath: incomingPdfPath,
+      pdfName: incomingPdfName,
+      error: auditError,
+    } = req.body;
+
+    const leadId = typeof rawLeadId === 'string' ? rawLeadId.replace(/[^a-zA-Z0-9_-]/g, '') : '';
+    if (!leadId) {
+      return res.status(400).json({ success: false, error: 'Valid leadId is required' });
+    }
+
+    const leadCheck = await query<{
+      id: string;
+      business_name: string;
+      website: string;
+      status: string;
+      consent_status: string;
+      email: string;
+      phone: string;
+      manual_review_reason: string | null;
+      slot_id: string | null;
+      outreach_stage: string | null;
+      audit_ready_at: string | null;
+      audit_requested_at: string | null;
+    }>(
+      `SELECT id, business_name, website, status, consent_status, email, phone, manual_review_reason, slot_id, outreach_stage, audit_ready_at, audit_requested_at FROM leads WHERE id = $1`,
+      [leadId]
+    );
+
+    if (leadCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: `Lead ${leadId} not found` });
+    }
+
+    const lead = leadCheck.rows[0];
+
+    // Item 10: Out-of-order callback protection
+    // Out-of-order callbacks must not replace a newer audit with an older one (compare timestamp / jobId)
+    const incomingTimestamp = req.body.completedAt || req.body.timestamp || req.body.createdAt;
+    if (lead.audit_ready_at && incomingTimestamp) {
+      const existingReadyMs = new Date(lead.audit_ready_at).getTime();
+      const incomingMs = new Date(incomingTimestamp).getTime();
+      if (incomingMs < existingReadyMs) {
+        console.warn(`[AuditCallback] ⚠️ Out-of-order callback rejected for lead ${leadId}: timestamp ${incomingTimestamp} is older than ready audit at ${lead.audit_ready_at}.`);
+        return res.status(409).json({
+          success: false,
+          error: 'Out-of-order audit callback ignored: existing audit is newer',
+          leadId,
+          audit_ready_at: lead.audit_ready_at,
+        });
+      }
+    }
+
+    // Item 9: Max attachment size check (10 MB maximum)
+    if (rawPdfBase64) {
+      const estimatedBytes = (rawPdfBase64.length * 3) / 4;
+      if (estimatedBytes > 10 * 1024 * 1024) {
+        return res.status(400).json({
+          success: false,
+          error: 'PDF payload exceeds maximum attachment size limit of 10 MB',
+          leadId,
+        });
+      }
+    }
+
+    // If TD reports an explicit audit failure (crawl error, 404, DNS error)
+    if (incomingStatus === 'failed' || auditError) {
+      console.warn(`[AuditCallback] TD reported audit failure for "${lead.business_name}" (${leadId}): ${auditError}`);
+      await query(
+        `UPDATE leads SET audit_status = 'failed', manual_review_reason = $1, updated_at = NOW() WHERE id = $2`,
+        [`Technical Audit Pro error: ${auditError || 'Unknown audit failure'}`, leadId]
+      );
+      const { failureLogService } = await import('../services/failureLogService');
+      await failureLogService.logFailure({
+        leadId,
+        company: lead.business_name,
+        website: lead.website,
+        email: lead.email,
+        slotId: (lead.slot_id as any) || 'A',
+        stage: lead.outreach_stage || 'initial',
+        type: 'AUDIT_FAILED',
+        errorMessage: auditError || 'Technical Audit execution failed in TD',
+      });
+      return res.json({ success: true, message: 'Audit marked as failed for lead', leadId, auditStatus: 'failed' });
+    }
+
+    // 1. Findings extraction
+    let extractedFindings: string[] = [];
+    if (Array.isArray(rawFindings)) {
+      extractedFindings = rawFindings.filter((f) => typeof f === 'string' && f.trim().length > 0);
+    } else if (rawTakeaways && typeof rawTakeaways === 'object' && Array.isArray((rawTakeaways as any).findings)) {
+      extractedFindings = (rawTakeaways as any).findings.filter((f: any) => typeof f === 'string' && f.trim().length > 0);
+    } else if (rawTakeaways && typeof rawTakeaways === 'object' && Array.isArray((rawTakeaways as any).issues)) {
+      extractedFindings = (rawTakeaways as any).issues.filter((f: any) => typeof f === 'string' && f.trim().length > 0);
+    } else if (typeof rawTakeaways === 'string') {
+      extractedFindings = rawTakeaways
+        .split(/;|\n|•/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 5);
+    }
+
+    // 2. Score extraction
+    let finalScore = 75;
+    if (typeof rawScore === 'number') {
+      finalScore = rawScore;
+    } else if (rawTakeaways && typeof rawTakeaways === 'object') {
+      const nestedScore = (rawTakeaways as any).score ?? (rawTakeaways as any).performanceScore ?? (rawTakeaways as any).performance_score;
+      if (typeof nestedScore === 'number') {
+        finalScore = nestedScore;
+      }
+    }
+
+    let finalTakeaways = '';
+    if (typeof rawTakeaways === 'string') {
+      finalTakeaways = rawTakeaways;
+    } else if (rawTakeaways && typeof rawTakeaways === 'object' && typeof (rawTakeaways as any).summary === 'string') {
+      finalTakeaways = (rawTakeaways as any).summary;
+    }
+
+    // 3. Ensure audit directory & clean retention
+    const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
+    if (!fs.existsSync(auditsDir)) {
+      fs.mkdirSync(auditsDir, { recursive: true });
+    }
+    cleanupOldAuditPdfs(auditsDir, 28);
+
+    // 4. PDF Storage & Magic Byte Validation
+    let finalPdfPath = incomingPdfPath && typeof incomingPdfPath === 'string' ? incomingPdfPath : null;
+    let finalPdfName = incomingPdfName && typeof incomingPdfName === 'string' ? incomingPdfName : null;
+
+    const base64Data = rawPdfBase64 || rawPdf;
+    if (base64Data && typeof base64Data === 'string') {
+      const cleanBase64 = base64Data.replace(/^data:application\/pdf;base64,/i, '').trim();
+      const pdfBuffer = Buffer.from(cleanBase64, 'base64');
+
+      // Strict PDF validation: size & %PDF- header check
+      if (!isValidPdfBuffer(pdfBuffer)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid PDF payload: Buffer must be at least 500 bytes and start with magic header %PDF-',
+        });
+      }
+
+      // B17: File names derived using DB UUID and crypto hash of leadId, NOT by stripping characters
+      const leadHash = crypto.createHash('sha256').update(leadId).digest('hex').slice(0, 16);
+      const filename = `Technical_Audit_${lead.id}_${leadHash}.pdf`;
+      const targetPath = path.resolve(auditsDir, filename);
+
+      // Verify targetPath is strictly inside auditsDir (path traversal defense)
+      if (!targetPath.startsWith(auditsDir + path.sep)) {
+        return res.status(400).json({ success: false, error: 'Path traversal attempt blocked' });
+      }
+
+      finalPdfPath = targetPath;
+      finalPdfName = filename;
+      fs.writeFileSync(finalPdfPath, pdfBuffer);
+      console.log(`[AuditCallback] Stored valid audit PDF on disk: ${finalPdfPath} (${pdfBuffer.length} bytes)`);
+    }
+
+    // 5. Unified Audit Asset Validation
+    const validation = validateAuditAsset(extractedFindings, finalPdfPath, finalScore);
+    if (validation.noOpportunity) {
+      await query(
+        `UPDATE leads SET
+          audit_status = 'ready',
+          audit_findings = '[]'::jsonb,
+          audit_score = $1,
+          status = 'completed',
+          manual_review_reason = 'Clean site: 0 technical flaws detected (no opportunity for audit outreach)',
+          audit_ready_at = NOW(),
+          updated_at = NOW()
+         WHERE id = $2`,
+        [finalScore, leadId]
+      );
+      return res.status(200).json({
+        success: true,
+        message: 'Clean site recorded: 0 technical flaws detected. No opportunity for outreach.',
+        leadId,
+        noOpportunity: true,
+      });
+    }
+
+    if (!validation.ready) {
+      return res.status(400).json({
+        success: false,
+        error: `Audit asset rejected: ${validation.reason}`,
+      });
+    }
+
+    // 6. Database Update
+    await query(
+      `UPDATE leads SET
+        audit_status = 'ready',
+        audit_findings = $1,
+        audit_key_takeaways = $2,
+        audit_score = $3,
+        audit_pdf_name = $4,
+        audit_pdf_path = $5,
+        audit_ready_at = NOW(),
+        updated_at = NOW()
+       WHERE id = $6`,
+      [
+        JSON.stringify(validation.findings),
+        finalTakeaways || validation.findings.slice(0, 3).join('; '),
+        validation.score,
+        finalPdfName || (finalPdfPath ? path.basename(finalPdfPath) : null),
+        finalPdfPath,
+        leadId,
+      ]
+    );
+
+    // 7. Un-Strand Late Callbacks SAFELY:
+    // Only un-strand if the lead was quarantined strictly for AUDIT_TIMEOUT, AUDIT_FAILED, or PDF_MISSING.
+    // NEVER un-strand leads that are bounced, complained, unsubscribed, or suppressed!
+    const isSuppressedLead =
+      ['bounced', 'opted_out', 'unsubscribed', 'complaint', 'spam'].includes(lead.consent_status) ||
+      (await suppressionService.isSuppressed({ email: lead.email, phone: lead.phone })).suppressed;
+
+    if (lead.status === 'manual_review' && !isSuppressedLead) {
+      const openAuditFailures = await query<{ id: string }>(
+        `SELECT id FROM failure_log 
+         WHERE lead_id = $1 AND resolved = false AND type IN ('AUDIT_TIMEOUT', 'AUDIT_FAILED', 'PDF_MISSING')
+         LIMIT 1`,
+        [leadId]
+      );
+      const isAuditQuarantine =
+        openAuditFailures.rows.length > 0 ||
+        /audit|timeout|pdf missing|not ready/i.test(lead.manual_review_reason || '');
+
+      // Ensure no unresolved SEND_FAILED or bounce caused permanent isolation
+      const hasSendFailure = await query<{ id: string }>(
+        `SELECT id FROM failure_log WHERE lead_id = $1 AND type = 'SEND_FAILED' AND resolved = false LIMIT 1`,
+        [leadId]
+      );
+
+      if (isAuditQuarantine && hasSendFailure.rows.length === 0) {
+        await query(
+          `UPDATE leads 
+           SET status = 'active', 
+               manual_review_reason = NULL,
+               updated_at = NOW() 
+           WHERE id = $1`,
+          [leadId]
+        );
+        console.log(`[AuditCallback] 🔄 Late callback arrived! Safely un-stranded "${lead.business_name}" (${leadId}) to active queue.`);
+      } else {
+        console.log(`[AuditCallback] 🛡️ Preserved manual_review status for "${lead.business_name}" (${leadId}): has send failure or non-audit quarantine.`);
+      }
+    } else if (isSuppressedLead) {
+      console.log(`[AuditCallback] 🛡️ Preserved quarantine for "${lead.business_name}" (${leadId}): recipient is suppressed/opted-out.`);
+    }
+
+    // Resolve any open audit-related failure logs for this lead
+    await query(
+      `UPDATE failure_log 
+       SET resolved = true, 
+           resolved_at = NOW() 
+       WHERE lead_id = $1 AND resolved = false AND type IN ('AUDIT_TIMEOUT', 'PDF_MISSING', 'AUDIT_FAILED')`,
+      [leadId]
+    );
+
+    console.log(
+      `[AuditCallback] ✅ Audit callback stored for "${lead.business_name}" (${leadId}): ${validation.findings.length} findings, score: ${validation.score}, PDF: "${finalPdfName}" (Status: ready)`
+    );
+
+    res.json({
+      success: true,
+      message: 'Audit takeaways and PDF report successfully stored for lead',
+      leadId,
+      auditStatus: 'ready',
+      score: validation.score,
+      findingsCount: validation.findings.length,
+      pdfStored: Boolean(finalPdfPath && fs.existsSync(finalPdfPath)),
+    });
+  } catch (err: any) {
+    console.error('[AuditCallback] Processing exception:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to process audit callback' });
+  }
+});

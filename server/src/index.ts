@@ -29,10 +29,14 @@ import { tasksRouter } from './routes/tasks';
 import { suppressionRouter } from './routes/suppression';
 import { sequencesRouter } from './routes/sequences';
 import { unsubscribeRouter } from './routes/unsubscribe';
+import { auditCallbackRouter, auditCallbackAuthMiddleware } from './routes/auditCallback';
+import { failuresRouter } from './routes/failures';
+import { slotsRouter } from './routes/slots';
 import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { autonomousDripEngine } from './services/autonomousDripEngine';
+import { fiveSlotSenderService } from './services/fiveSlotSenderService';
 // Prevent unhandled errors or socket drops from crashing the Express API server
 process.on('uncaughtException', (err) => {
   console.error('[Server UncaughtException Handled]', err?.message || err);
@@ -174,8 +178,19 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Dedicated Audit Callback Endpoint:
+// 1. Checks x-audit-secret header BEFORE reading/parsing body
+// 2. Body limit strictly capped at 10 MB (reduced from 50MB)
+app.use(
+  '/api/audit-callback',
+  auditCallbackAuthMiddleware,
+  express.json({ limit: '10mb' }),
+  auditCallbackRouter
+);
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Request logging in development
 if (env.NODE_ENV !== 'production') {
@@ -228,6 +243,8 @@ app.use('/api/activities', activitiesRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/suppression', suppressionRouter);
 app.use('/api/sequences', sequencesRouter);
+app.use('/api/failures', failuresRouter);
+app.use('/api/slots', slotsRouter);
 
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {
@@ -329,6 +346,13 @@ async function startServer() {
     autonomousDripEngine.startScheduler(60000);
   } catch (err) {
     console.warn('[Cadence Warning] Autonomous drip engine notice:', err);
+  }
+
+  // 5. 5-Slot Staggered Sender: Deterministic Grid Scheduler (every 10s tick)
+  try {
+    fiveSlotSenderService.startScheduler(10000);
+  } catch (err) {
+    console.warn('[5-Slot Sender Warning] Failed to start 5-slot scheduler:', err);
   }
 
   const server = app.listen(env.PORT, '0.0.0.0', () => {

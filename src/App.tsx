@@ -7,6 +7,7 @@ import { CampaignBuilderPage } from '@/pages/CampaignBuilderPage';
 import { CrmPage } from '@/pages/CrmPage';
 import { SendingHealthPage } from '@/pages/SendingHealthPage';
 import { AiCopilotPage } from '@/pages/AiCopilotPage';
+import { FailuresPage } from '@/pages/FailuresPage';
 import { InboundEmailPopup } from '@/components/InboundEmailPopup';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
@@ -19,7 +20,7 @@ import type { CrmSubFilter } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search } from 'lucide-react';
 
-const VALID_PAGES: PageId[] = ['crm', 'builder', 'copilot', 'import', 'scraper', 'health'];
+const VALID_PAGES: PageId[] = ['crm', 'builder', 'copilot', 'import', 'scraper', 'health', 'failures'];
 
 function getInitialPage(): PageId {
   if (typeof window === 'undefined') return 'crm';
@@ -225,6 +226,7 @@ function App() {
     scraper: 'Google Business Profile (GMB) Lead Scraper',
     health: 'Infrastructure Deliverability & Health',
     copilot: 'AI Executive Copilot & Strategy Center',
+    failures: 'Outreach Failures & 5-Slot Sender Log',
   };
 
   if (isAuthenticated === null) {
@@ -386,6 +388,7 @@ function App() {
                 />
               )}
               {page === 'health' && <SendingHealthPage store={store} />}
+              {page === 'failures' && <FailuresPage />}
             </div>
           )}
         </main>

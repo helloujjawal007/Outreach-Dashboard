@@ -49,6 +49,15 @@ queueRouter.post('/', async (req: Request, res: Response) => {
       [leadId || null, clientId || null, campaignId || null, channel || 'email', messagePreview || '']
     );
 
+    if (leadId) {
+      try {
+        const { fiveSlotSenderService } = await import('../services/fiveSlotSenderService');
+        await fiveSlotSenderService.assignLeadToSlot(leadId);
+      } catch (slotErr: any) {
+        console.warn(`[queueRouter.post] Slot assignment note for lead ${leadId}:`, slotErr?.message);
+      }
+    }
+
     res.json({ success: true, item: result.rows[0] });
   } catch (error) {
     console.error('[queueRouter.post]', error);

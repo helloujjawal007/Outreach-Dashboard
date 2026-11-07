@@ -68,7 +68,7 @@ export class HumanizerService {
    * Signature block. Always strictly "Cloud Consultancy"
    */
   private buildSignoff(): string {
-    return `Best regards,\n${this.agencyName}\nsales@cloudconsultancy.in`;
+    return `Best regards,\n${this.agencyName}\ncloudconsultancy.ad@gmail.com`;
   }
 
   private compose(bodyLines: string[]): string {

@@ -8,6 +8,7 @@ export interface LeadContext {
   website?: string | null;
   auditScore?: number;
   auditIssues?: string[];
+  auditFindings?: string[];
   auditKeyTakeaways?: string;
   auditPdfName?: string;
   auditPdfPath?: string;
@@ -27,7 +28,7 @@ type Stage = HumanCopyResult['stage'];
 
 export class HumanCopywriterService {
   public readonly agencyName = 'Cloud Consultancy';
-  public readonly senderEmail = 'sales@cloudconsultancy.in';
+  public readonly senderEmail = 'cloudconsultancy.ad@gmail.com';
   public readonly auditToolUrl = 'https://technical-audit-dashboard.vercel.app/';
 
   /**
@@ -113,7 +114,7 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Signature block strictly using Cloud Consultancy & sales@cloudconsultancy.in
+   * Signature block strictly using Cloud Consultancy & cloudconsultancy.ad@gmail.com
    */
   private buildSignoff(): string {
     return `Best regards,\n${this.agencyName}\n${this.senderEmail}`;
@@ -228,11 +229,32 @@ export class HumanCopywriterService {
     const pdfName = lead.auditPdfName || `${domain.replace(/[^a-z0-9]/gi, '_')}_Technical_Audit.pdf`;
     const scoreVal = lead.auditScore ? Number(lead.auditScore) : undefined;
     const scoreSummary = scoreVal ? `scoring ${scoreVal}/100 on Core Web Vitals` : 'below Google mobile speed benchmarks';
-    const keyTakeaways =
-      lead.auditKeyTakeaways ||
-      (lead.auditIssues && lead.auditIssues.length > 0
-        ? lead.auditIssues.slice(0, 2).join(' and ')
-        : 'mobile load performance bottlenecks, render-blocking scripts, and missing structured schema');
+
+    // Extract 3-5 real concrete audit findings from TD
+    let rawFindings: string[] = [];
+    if (lead.auditFindings && Array.isArray(lead.auditFindings) && lead.auditFindings.length > 0) {
+      rawFindings = lead.auditFindings.map((s) => String(s).trim()).filter(Boolean);
+    } else if (lead.auditIssues && Array.isArray(lead.auditIssues) && lead.auditIssues.length > 0) {
+      rawFindings = lead.auditIssues.map((s) => String(s).trim()).filter(Boolean);
+    } else if (lead.auditKeyTakeaways && lead.auditKeyTakeaways.trim()) {
+      rawFindings = lead.auditKeyTakeaways.split(';').map((s) => s.trim()).filter(Boolean);
+    }
+
+    // Never send empty audit template
+    if (rawFindings.length === 0) {
+      throw new Error(`Audit findings missing for lead ${lead.id} (${lead.businessName}). Never send empty audit templates.`);
+    }
+
+    const bulletList = rawFindings.slice(0, 5).map((f) => (f.startsWith('•') ? f : `• ${f}`));
+    const findingsBullets = bulletList.join('\n');
+
+    const findingsIntro = rawFindings.length === 1
+      ? 'Here is the key diagnostic observation identified on the site:'
+      : 'Here are the top diagnostic findings identified on the site:';
+
+    const fu1FindingsIntro = rawFindings.length === 1
+      ? 'As a quick reminder, here was the primary technical observation noted on the site:'
+      : 'As a quick reminder, here were the primary items noted on the site:';
 
     if (stage === 'initial') {
       const subjects = [
@@ -246,25 +268,24 @@ export class HumanCopywriterService {
         body: this.compose([
           `Hi ${salutation},`,
           ``,
-          `I was reviewing ${domain} earlier today and ran a diagnostic on your mobile speed and Google search positioning. I put together a 1-page Technical Audit Report and attached it here (${pdfName}) for your web team.`,
+          `I was reviewing ${domain} earlier today and ran a technical diagnostic on your mobile speed, Core Web Vitals, and local Google search positioning. I put together a 1-page Technical Audit Report and attached it here (${pdfName}) for your web team.`,
           ``,
-          `In short, the primary areas holding the site back are:`,
-          `• Mobile load speed and core vitals (${scoreSummary})`,
-          `• ${keyTakeaways}`,
+          findingsIntro,
+          findingsBullets,
           ``,
-          `When mobile visitors experience loading delays, bounce rates climb quickly and Google actively prioritizes faster competitors in local search results.`,
+          `When mobile visitors experience loading delays or missing metadata, bounce rates climb quickly and Google actively prioritizes faster nearby competitors in search rankings.`,
           ``,
           `The attached document outlines the exact line-item findings and the step-by-step recommendations we usually implement to resolve them.`,
           ``,
           `Happy to answer any questions or share how we usually resolve these if useful for your team.`,
         ]),
         stage: 'initial',
-        stageLabel: '1st Email (PDF Summary & Report Enclosed)',
+        stageLabel: '1st Email (Audit Findings & PDF Enclosed)',
         delayFromStartDays: 0,
       };
     }
 
-    // 2. Follow-up 1 (Day 3)
+    // 2. Follow-up 1 (Day 2.5)
     if (stage === 'followup_1') {
       const subjects = [
         `Following up: ${domain} technical audit summary`,
@@ -279,15 +300,20 @@ export class HumanCopywriterService {
           ``,
           `Following up briefly on the technical audit notes I sent over regarding ${domain}.`,
           ``,
-          `Did your web team have a chance to look over the summary in the attached PDF (${pdfName})? Happy to answer any questions or walk through the specific fixes if useful.`,
+          fu1FindingsIntro,
+          rawFindings.slice(0, 3).map((f) => (f.startsWith('•') ? f : `• ${f}`)).join('\n'),
+          ``,
+          `I've re-attached the audit summary (${pdfName}) for quick reference. Did your web team have a chance to look over these points?`,
+          ``,
+          `Happy to answer any questions or walk through the specific fixes if useful.`,
         ]),
         stage: 'followup_1',
-        stageLabel: '2nd Email (Day 3 Follow-up)',
-        delayFromStartDays: 3,
+        stageLabel: '2nd Email (Day 2.5 Follow-up with Findings & PDF)',
+        delayFromStartDays: 2.5,
       };
     }
 
-    // 3. Follow-up 2 (Day 6)
+    // 3. Follow-up 2 (Day 5.5)
     if (stage === 'followup_2') {
       const subjects = [
         `Observation regarding ${business} web speed`,
@@ -302,11 +328,11 @@ export class HumanCopywriterService {
           ``,
           `Checking in once more regarding ${business}'s website performance and Google ranking.`,
           ``,
-          `If resolving the mobile speed issues and technical SEO items highlighted in the audit PDF is on your radar this month, let me know and I can share a straightforward implementation plan. If the timing isn't right, no worries at all.`,
+          `If resolving the technical items highlighted in the audit (mobile speed, meta descriptions, and core vitals) is on your radar this quarter, let me know and I can share a straightforward implementation plan. If the timing isn't right, no worries at all.`,
         ]),
         stage: 'followup_2',
-        stageLabel: '3rd Email (Day 6 Follow-up)',
-        delayFromStartDays: 6,
+        stageLabel: '3rd Email (Day 5.5 Follow-up)',
+        delayFromStartDays: 5.5,
       };
     }
 

@@ -436,7 +436,7 @@ export class MultiModelOrchestrator {
         const channel = payload.channel || 'email';
         return {
           subject: `Quick idea for ${biz}`,
-          body: `Hi there,\n\nI was looking into ${biz} in ${loc} and noticed great potential to strengthen your Google Maps 3-Pack presence and convert more local visitors.\n\nWe put together a complimentary 2-minute diagnostic review with zero obligations. Would you be open to taking a look this week?\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
+          body: `Hi there,\n\nI was looking into ${biz} in ${loc} and noticed great potential to strengthen your Google Maps 3-Pack presence and convert more local visitors.\n\nWe put together a complimentary 2-minute diagnostic review with zero obligations. Would you be open to taking a look this week?\n\nBest regards,\nCloud Consultancy\ncloudconsultancy.ad@gmail.com`,
           channel,
           stage,
           modelName: model.name,

@@ -173,8 +173,8 @@ export class SuppressionService {
         );
 
         for (const lead of leadRes.rows) {
-          const consentStatus = reason.includes('bounce') ? 'bounced' : 'opted_out';
-          const leadStatus = reason.includes('bounce') ? 'bounced' : 'inactive';
+          const consentStatus = 'opted_out';
+          const leadStatus = reason.includes('bounce') ? 'manual_review' : 'inactive';
 
           // Update lead status
           await query(

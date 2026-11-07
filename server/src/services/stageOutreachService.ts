@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanCopywriterService } from './humanCopywriterService';
@@ -28,6 +29,7 @@ export interface StageDispatchResult {
     skipped?: boolean;
     reason?: string;
     liveDelivery?: string;
+    messageId?: string;
   };
   websiteFormSubmission?: {
     success: boolean;
@@ -79,8 +81,10 @@ export class StageOutreachService {
       audit_pdf_name?: string;
       audit_pdf_path?: string;
       gmb_notes?: string;
+      audit_findings?: any;
+      audit_score?: number;
     }>(
-      `SELECT id, business_name, category, email, outreach_stage, consent_status, status, manual_review_reason, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes FROM leads WHERE id = $1`,
+      `SELECT id, business_name, category, email, outreach_stage, consent_status, status, manual_review_reason, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes, audit_findings, audit_score FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -142,21 +146,50 @@ export class StageOutreachService {
         ? 'Shoot Follow-up 2 (Day 5.5 Value Nudge)'
         : 'Shoot Follow-up 3 (Day 10 Permission Close)';
 
-    const generated = humanCopywriterService.getEmailCopy(
-      {
-        id: lead.id,
-        businessName: lead.business_name,
-        category: lead.category,
-        website: lead.website,
-        primaryContactName: lead.primary_contact_name,
-        city: lead.location,
-        auditKeyTakeaways: lead.audit_key_takeaways,
-        auditPdfName: lead.audit_pdf_name,
-        auditPdfPath: lead.audit_pdf_path,
-        gmbNotes: lead.gmb_notes,
-      },
-      resolvedStage === 'completed' ? 'followup_3' : resolvedStage
-    );
+    let parsedFindings: string[] | undefined = undefined;
+    if (lead.audit_findings) {
+      if (Array.isArray(lead.audit_findings)) {
+        parsedFindings = lead.audit_findings;
+      } else if (typeof lead.audit_findings === 'string') {
+        try {
+          parsedFindings = JSON.parse(lead.audit_findings);
+        } catch {}
+      }
+    }
+
+    let generated: { subject: string; body: string };
+    try {
+      generated = humanCopywriterService.getEmailCopy(
+        {
+          id: lead.id,
+          businessName: lead.business_name,
+          category: lead.category,
+          website: lead.website,
+          primaryContactName: lead.primary_contact_name,
+          city: lead.location,
+          auditKeyTakeaways: lead.audit_key_takeaways,
+          auditPdfName: lead.audit_pdf_name,
+          auditPdfPath: lead.audit_pdf_path,
+          gmbNotes: lead.gmb_notes,
+          auditScore: lead.audit_score ? Number(lead.audit_score) : undefined,
+          auditFindings: parsedFindings,
+        },
+        resolvedStage === 'completed' ? 'followup_3' : resolvedStage
+      );
+    } catch (copyErr: any) {
+      console.warn(`[StageOutreachService] Copy generation error for lead ${lead.id}:`, copyErr?.message);
+      return {
+        stage: resolvedStage,
+        stageLabel: 'Audit Findings Pending',
+        nextStepLabel: 'Audit Required Before Dispatch',
+        sentCount: effectiveTouchCount,
+        outboundCount: effectiveTouchCount,
+        subject: `[Audit Required] ${lead.business_name}`,
+        body: `Audit findings are currently pending. Technical diagnostic must be completed before email dispatch.`,
+        isBlocked: true,
+        blockReason: copyErr?.message || 'Audit not ready: 3-5 real audit findings required.',
+      };
+    }
 
     return {
       stage: resolvedStage,
@@ -193,8 +226,11 @@ export class StageOutreachService {
       audit_pdf_path?: string;
       audit_pdf_name?: string;
       audit_key_takeaways?: string;
+      audit_findings?: any;
+      audit_score?: number;
+      slot_id?: string;
       manual_review_reason?: string;
-    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, status, manual_review_reason, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways FROM leads WHERE id = $1`, [leadId]);
+    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, status, manual_review_reason, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways, audit_findings, audit_score, slot_id FROM leads WHERE id = $1`, [leadId]);
 
     if (leadRes.rows.length === 0) {
       return {
@@ -231,7 +267,11 @@ export class StageOutreachService {
       }
 
       const claimRes = await query<{ id: string }>(
-        `UPDATE leads SET outreach_stage = 'sending', updated_at = NOW() 
+        `UPDATE leads 
+         SET outreach_stage = 'sending', 
+             claimed_stage = $2, 
+             claimed_at = NOW(), 
+             updated_at = NOW() 
          WHERE id = $1 AND (outreach_stage = $2 OR ($2 = 'initial' AND outreach_stage IS NULL)) 
          RETURNING id`,
         [leadId, activeStage]
@@ -419,6 +459,21 @@ export class StageOutreachService {
 
     const stageInfo = await this.getLeadStage(leadId);
 
+    if (stageInfo.isBlocked) {
+      return {
+        leadId,
+        businessName: lead.business_name,
+        email: lead.email,
+        phone: lead.phone,
+        stage: stageInfo.stage,
+        stageLabel: stageInfo.stageLabel,
+        subject: stageInfo.subject,
+        success: false,
+        skipped: true,
+        reason: stageInfo.blockReason || 'Outreach dispatch blocked for this lead',
+      };
+    }
+
     if (stageInfo.stage === 'completed') {
       return {
         leadId,
@@ -444,14 +499,23 @@ export class StageOutreachService {
       try {
         let attachments: Array<{ filename: string; path?: string }> | undefined = undefined;
         if (lead.audit_pdf_path) {
-          const pdfCheck = workflowRoutingService.validateAuditPdf(lead.audit_pdf_path, lead.website);
-          if (pdfCheck.isValid) {
-            attachments = [{
-              filename: lead.audit_pdf_name || pdfCheck.filename || 'Technical_Audit_Report.pdf',
-              path: lead.audit_pdf_path,
-            }];
-          } else {
-            console.warn(`[StageOutreachService] Attachment check failed for lead ${lead.id}: ${pdfCheck.reason}`);
+          try {
+            const stats = fs.statSync(lead.audit_pdf_path);
+            if (stats.size > 10 * 1024 * 1024) {
+              console.warn(`[StageOutreachService] Attachment exceeds max allowed size (10 MB): ${stats.size} bytes`);
+            } else {
+              const pdfCheck = workflowRoutingService.validateAuditPdf(lead.audit_pdf_path, lead.website);
+              if (pdfCheck.isValid) {
+                attachments = [{
+                  filename: lead.audit_pdf_name || pdfCheck.filename || 'Technical_Audit_Report.pdf',
+                  path: lead.audit_pdf_path,
+                }];
+              } else {
+                console.warn(`[StageOutreachService] Attachment check failed for lead ${lead.id}: ${pdfCheck.reason}`);
+              }
+            }
+          } catch (fileErr: any) {
+            console.warn(`[StageOutreachService] Attachment check error for lead ${lead.id}:`, fileErr?.message);
           }
         }
 
@@ -477,6 +541,9 @@ export class StageOutreachService {
           body: stageInfo.body,
           leadId: lead.id,
           attachments,
+          slotId: lead.slot_id,
+          businessName: lead.business_name,
+          stage: stageInfo.stage,
         });
 
         if (sendRes.success) {
@@ -485,6 +552,7 @@ export class StageOutreachService {
           emailResult = {
             success: true,
             liveDelivery: sendRes.liveDelivery,
+            messageId: sendRes.messageId,
           };
         } else {
           emailResult = {
@@ -612,10 +680,17 @@ export class StageOutreachService {
         `UPDATE leads 
          SET first_contacted_at = COALESCE(first_contacted_at, NOW()),
              last_contacted_at = NOW(), 
-             outreach_stage = $1, 
+             last_sent_at = NOW(),
+             last_sent_stage = $1,
+             last_sent_message_id = COALESCE($2, last_sent_message_id),
+             claimed_stage = NULL,
+             claimed_at = NULL,
+             send_retry_count = 0,
+             transient_retry_count = 0,
+             outreach_stage = $3, 
              updated_at = NOW() 
-         WHERE id = $2`,
-        [nextStageName, leadId]
+         WHERE id = $4`,
+        [stageInfo.stage, emailResult?.messageId || null, nextStageName, leadId]
       );
 
       // Advance structured sequence enrollment step

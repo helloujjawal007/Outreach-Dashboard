@@ -8,6 +8,7 @@ import { inboxRotationService, type ConnectedInboxRecord, type InboxPoolSummary 
 import { emailSentSyncService } from '../services/emailSentSyncService';
 import { workflowRoutingService } from '../services/workflowRoutingService';
 import { leadIsolationService } from '../services/leadIsolationService';
+import { classifySmtpError, type SmtpErrorType } from '../utils/smtpClassifier';
 
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
@@ -85,8 +86,40 @@ export function buildHumanoidHtml(bodyText: string): string {
   `.trim();
 }
 
+export interface MockSendRecord {
+  slot: string;
+  leadId: string;
+  businessName: string;
+  recipientEmail: string;
+  mailbox: string;
+  smtpAcceptTime: string;
+  messageId: string;
+  subject: string;
+  stage: string;
+  body?: string;
+  attachments?: Array<{ filename: string; path?: string }>;
+}
+
 export class EmailAdapter {
   private subdomain: string = 'mail.cloudconsultancy.in';
+  private isMockMode: boolean = process.env.MOCK_SMTP === 'true';
+  private mockSentLog: MockSendRecord[] = [];
+
+  setMockMode(enabled: boolean): void {
+    this.isMockMode = enabled;
+  }
+
+  isMock(): boolean {
+    return this.isMockMode || process.env.MOCK_SMTP === 'true';
+  }
+
+  getMockSentLog(): MockSendRecord[] {
+    return [...this.mockSentLog];
+  }
+
+  clearMockSentLog(): void {
+    this.mockSentLog = [];
+  }
   
   // Warm-up ramp tiers: [stage, maxPerDay, label]
   private readonly WARMUP_STAGES = [
@@ -153,7 +186,7 @@ export class EmailAdapter {
         {
           type: 'TXT',
           name: `_dmarc.${this.subdomain}`,
-          value: 'v=DMARC1; p=none; rua=mailto:sales@cloudconsultancy.in',
+          value: 'v=DMARC1; p=none; rua=mailto:cloudconsultancy.ad@gmail.com',
           status: 'valid',
           description: 'Domain-based Message Authentication, Reporting & Conformance (DMARC)',
         },
@@ -187,12 +220,16 @@ export class EmailAdapter {
     clientId?: string;
     inboxId?: string;
     attachments?: EmailAttachment[];
+    slotId?: string;
+    businessName?: string;
+    stage?: string;
   }): Promise<{
     success: boolean;
     throttled: boolean;
     messageId?: string;
     reason?: string;
     liveDelivery?: string;
+    errorClassification?: SmtpErrorType;
     inboxUsed?: { id: string; email: string; name: string };
   }> {
     // 0a. Check if lead is in 'Need to Check' (manual_review)
@@ -216,7 +253,10 @@ export class EmailAdapter {
 
     // 0b. Rigorous Pre-Send Email Validation: check validity before dispatching
     const cleanTo = (params.to || '').trim().toLowerCase();
-    const validation = await emailValidatorService.verifyEmail(cleanTo);
+    const isMock = this.isMock() || process.env.MOCK_SMTP === 'true';
+    const validation = isMock
+      ? { isValid: cleanTo.includes('@') && cleanTo.includes('.'), reason: undefined }
+      : await emailValidatorService.verifyEmail(cleanTo);
 
     if (!validation.isValid) {
       const failureReason = validation.reason || 'Invalid or non-deliverable email address';
@@ -366,8 +406,48 @@ export class EmailAdapter {
     // Structured Humanoid HTML version with escaped entities
     const htmlBody = buildHumanoidHtml(finalBodyText);
 
-    // 2. Dispatch via Multi-Inbox Rotation Pool
-    if (activeInbox) {
+    // 2. Dispatch via Mock Transport or Multi-Inbox Rotation Pool
+    if (this.isMock() || process.env.MOCK_SMTP === 'true') {
+      try {
+        const mockTransporter = nodemailer.createTransport({ jsonTransport: true });
+        fromAddress = activeInbox ? `"${activeInbox.sender_name}" <${activeInbox.email}>` : `"Cloud Consultancy" <cloudconsultancy.ad@gmail.com>`;
+        cleanReplyTo = activeInbox ? activeInbox.email : 'cloudconsultancy.ad@gmail.com';
+
+        const sendInfo = await mockTransporter.sendMail({
+          from: fromAddress,
+          to: params.to,
+          replyTo: cleanReplyTo,
+          subject: finalSubject,
+          text: plainText,
+          html: htmlBody,
+          attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
+        });
+
+        const acceptTime = new Date().toISOString();
+        const generatedMsgId = sendInfo.messageId || `<mock-${Date.now()}-${Math.random().toString(36).substring(2, 9)}@cloudconsultancy.ad>`;
+
+        const record: MockSendRecord = {
+          slot: params.slotId || 'A',
+          leadId: params.leadId || '',
+          businessName: params.businessName || '',
+          recipientEmail: params.to,
+          mailbox: activeInbox ? activeInbox.email : 'cloudconsultancy.ad@gmail.com',
+          smtpAcceptTime: acceptTime,
+          messageId: generatedMsgId,
+          subject: finalSubject,
+          stage: params.stage || 'initial',
+          body: params.body,
+          attachments: params.attachments,
+        };
+
+        this.mockSentLog.push(record);
+        liveDelivery = 'sent_live';
+        console.log(`[EmailAdapter] 🧪 [MOCK SMTP JSON Transport] Dispatched to ${params.to} (Slot: ${record.slot}, Message-ID: ${record.messageId}) at ${acceptTime}`);
+      } catch (mockErr: any) {
+        liveDelivery = 'smtp_failed';
+        liveError = mockErr?.message || 'Mock SMTP error';
+      }
+    } else if (activeInbox) {
       try {
         const transporter = inboxRotationService.getTransporter(activeInbox);
         fromAddress = `"${activeInbox.sender_name}" <${activeInbox.email}>`;
@@ -430,7 +510,7 @@ export class EmailAdapter {
               }) as any
         );
 
-        const cleanFrom = (env.SMTP_FROM || env.SMTP_USER || 'sales@cloudconsultancy.in').trim();
+        const cleanFrom = (env.SMTP_FROM || env.SMTP_USER || 'cloudconsultancy.ad@gmail.com').trim();
         fromAddress = cleanFrom.includes('<') ? cleanFrom : `"Cloud Consultancy" <${cleanFrom}>`;
         cleanReplyTo = cleanFrom;
 
@@ -542,9 +622,19 @@ export class EmailAdapter {
       );
 
       const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
+      const classification = liveError ? classifySmtpError(liveError) : null;
 
       if (params.leadId && isSuccess) {
-        await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [params.leadId]);
+        await query(
+          `UPDATE leads 
+           SET last_contacted_at = NOW(), 
+               last_sent_at = NOW(), 
+               last_sent_message_id = $1, 
+               transient_retry_count = 0,
+               updated_at = NOW() 
+           WHERE id = $2`,
+          [msgRes.rows[0].id, params.leadId]
+        );
       }
 
       return {
@@ -552,6 +642,7 @@ export class EmailAdapter {
         throttled: false,
         messageId: msgRes.rows[0].id,
         liveDelivery,
+        errorClassification: classification?.type,
         inboxUsed: activeInbox ? { id: activeInbox.id, email: activeInbox.email, name: activeInbox.name } : undefined,
         reason: liveDelivery === 'sent_live'
           ? (activeInbox
@@ -564,10 +655,12 @@ export class EmailAdapter {
     }
 
     const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
+    const classification = liveError ? classifySmtpError(liveError) : null;
     return {
       success: isSuccess,
       throttled: false,
       liveDelivery,
+      errorClassification: classification?.type,
       inboxUsed: activeInbox ? { id: activeInbox.id, email: activeInbox.email, name: activeInbox.name } : undefined,
       reason: liveDelivery === 'smtp_failed' ? `SMTP delivery failed: ${liveError}` : undefined,
     };

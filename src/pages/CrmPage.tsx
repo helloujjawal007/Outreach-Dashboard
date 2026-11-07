@@ -67,6 +67,7 @@ import { getCountryFlag } from '@/utils/countryFlag';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import { ClientAuditModal } from '@/components/ClientAuditModal';
 import { LeadActivityDrawer } from '@/components/LeadActivityDrawer';
+import { SlotsPanel } from '@/components/SlotsPanel';
 
 function getCompanyInitials(name: string): string {
   if (!name) return 'CO';
@@ -123,7 +124,7 @@ export function CrmPage({
   onChannelFilterChange,
 }: Props) {
   type SortField = 'businessName' | 'createdAt' | 'status' | 'stage' | 'score' | 'lastContactedAt' | 'dealValue' | 'category';
-  const [crmViewMode, setCrmViewMode] = useState<'table' | 'channels'>('table');
+  const [crmViewMode, setCrmViewMode] = useState<'table' | 'channels' | 'slots'>('table');
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -2345,10 +2346,27 @@ export function CrmPage({
             <Zap size={14} className="text-amber-500 fill-amber-500" />
             <span>⚡ Multi-Channel Dispatch Hub</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setCrmViewMode('slots')}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
+              crmViewMode === 'slots'
+                ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+            }`}
+          >
+            <Clock size={14} className="text-indigo-500" />
+            <span>⏱️ 5-Slot Sender</span>
+          </button>
         </div>
       </div>
 
-      {crmViewMode === 'channels' ? (
+      {crmViewMode === 'slots' ? (
+        <div className="p-4">
+          <SlotsPanel />
+        </div>
+      ) : crmViewMode === 'channels' ? (
         <ChannelOutreachHub
           leads={store.leads.filter((l) => !l.deletedAt)}
           lists={store.lists}

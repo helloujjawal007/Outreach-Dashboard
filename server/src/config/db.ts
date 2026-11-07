@@ -67,3 +67,61 @@ export async function testConnection(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Production Safety Assertion:
+ * Refuses execution if connection string points to Supabase, Neon, AWS or if NODE_ENV=production.
+ */
+export function assertNotProduction(contextName = 'Test Harness'): void {
+  const url = (process.env.DATABASE_URL || '').toLowerCase();
+  if (
+    process.env.NODE_ENV === 'production' ||
+    url.includes('supabase.com') ||
+    url.includes('render.com') ||
+    url.includes('neon.tech') ||
+    url.includes('aws')
+  ) {
+    throw new Error(
+      `[CRITICAL SAFETY ERROR] ${contextName} refused to run against production database (${url}). Tests must execute against local/isolated database only!`
+    );
+  }
+}
+
+export interface ProductionSnapshot {
+  realLeadsCount: number;
+  stagesCount: Record<string, number>;
+  failureLogsCount: number;
+}
+
+/**
+ * Captures snapshot counts of real CRM leads, stages, and failure logs
+ * to assert before/after immutability during test runs.
+ */
+export async function captureProductionSnapshot(): Promise<ProductionSnapshot> {
+  const leadsRes = await query<{ count: string }>(
+    `SELECT COUNT(*) FROM leads 
+     WHERE (notes IS NULL OR (notes NOT LIKE '%test%' AND notes NOT LIKE '%B23%' AND notes NOT LIKE '%B1%')) 
+       AND email NOT LIKE '%@example%' AND email NOT LIKE '%@test.%'`
+  );
+  const stagesRes = await query<{ outreach_stage: string; count: string }>(
+    `SELECT COALESCE(outreach_stage, 'none') as outreach_stage, COUNT(*) FROM leads 
+     WHERE (notes IS NULL OR (notes NOT LIKE '%test%' AND notes NOT LIKE '%B23%' AND notes NOT LIKE '%B1%')) 
+       AND email NOT LIKE '%@example%' AND email NOT LIKE '%@test.%'
+     GROUP BY outreach_stage`
+  );
+  const failuresRes = await query<{ count: string }>(
+    `SELECT COUNT(*) FROM failure_log 
+     WHERE email NOT LIKE '%@example%' AND email NOT LIKE '%@test.%'`
+  );
+
+  const stagesCount: Record<string, number> = {};
+  for (const row of stagesRes.rows) {
+    stagesCount[row.outreach_stage] = parseInt(row.count, 10);
+  }
+
+  return {
+    realLeadsCount: parseInt(leadsRes.rows[0]?.count || '0', 10),
+    stagesCount,
+    failureLogsCount: parseInt(failuresRes.rows[0]?.count || '0', 10),
+  };
+}

@@ -7,7 +7,9 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE OR REPLACE FUNCTION set_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    IF NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at THEN
+        NEW.updated_at = NOW();
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

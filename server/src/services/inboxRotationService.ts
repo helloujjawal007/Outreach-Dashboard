@@ -71,11 +71,11 @@ export class InboxRotationService {
       ORDER BY is_default DESC, created_at ASC;
     `);
 
-    // If no valid inboxes are connected, auto-provision sales@cloudconsultancy.in
+    // If no valid inboxes are connected, auto-provision cloudconsultancy.ad@gmail.com
     if (res.rows.length === 0) {
       const defaultEmail = (env.SMTP_USER && !env.SMTP_USER.includes('onlinedigitalsolution'))
         ? env.SMTP_USER
-        : 'sales@cloudconsultancy.in';
+        : 'cloudconsultancy.ad@gmail.com';
       const cleanPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
       const inserted = await query<ConnectedInboxRecord>(`
         INSERT INTO connected_inboxes (

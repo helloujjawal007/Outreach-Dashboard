@@ -399,7 +399,7 @@ conversationsRouter.post('/inbound', async (req: Request, res: Response) => {
     }
 
     // 3. Record incoming message
-    const inboxEmail = channel === 'email' ? 'sales@cloudconsultancy.in' : '';
+    const inboxEmail = channel === 'email' ? 'cloudconsultancy.ad@gmail.com' : '';
     const msgRes = await query<{ id: string }>(
       `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_email, is_read)
        VALUES ($1, $2, 'inbound', $3, 'delivered', NOW(), $4, false)
@@ -1078,7 +1078,7 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
             const { websiteFormService } = await import('../services/websiteFormService');
             await websiteFormService.submitContactForm(lead.id, {
               senderName: 'Cloud Consultancy',
-              senderEmail: 'sales@cloudconsultancy.in',
+              senderEmail: 'cloudconsultancy.ad@gmail.com',
               subject: subjectText,
               message: bodyText,
             });

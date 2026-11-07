@@ -959,3 +959,77 @@ export interface AiDiagnosticReport {
   modelsHealth: AiModelProfile[];
 }
 
+// 5-Slot Sender & Failure Log Types
+export type SlotId = 'A' | 'B' | 'C' | 'D' | 'E';
+
+export interface SlotSenderSettings {
+  slot_cycle_min: number;
+  slot_offset_min: number;
+  anchor_timestamp: string;
+  td_endpoint_url: string;
+  td_shared_secret: string;
+  max_audit_retries: number;
+  is_active: boolean;
+}
+
+export interface SlotStatus {
+  slotId: SlotId;
+  assignedMailbox: {
+    email: string;
+    name: string;
+    provider: string;
+  };
+  queuedCount: number;
+  readyToSendCount: number;
+  waitingAuditCount: number;
+  nextSendTime: string;
+  lastSendTime: string | null;
+  status: 'active' | 'waiting' | 'idle';
+}
+
+export interface SlotsOverviewResponse {
+  success: boolean;
+  slots: SlotStatus[];
+  settings: SlotSenderSettings;
+  activeSlotNow: SlotId | null;
+  circuitBreaker?: {
+    tripped: boolean;
+    failures: number;
+    alert: string | null;
+  };
+}
+
+export type FailureType =
+  | 'SEND_FAILED'
+  | 'AUDIT_FAILED'
+  | 'AUDIT_TIMEOUT'
+  | 'PDF_MISSING'
+  | 'REPORT_DELIVERY_FAILED';
+
+export interface FailureRecord {
+  id: string;
+  lead_id: string | null;
+  company: string;
+  website: string;
+  email: string;
+  slot_id: SlotId | null;
+  stage: string;
+  type: FailureType;
+  error_message: string;
+  attempts: number;
+  created_at: string;
+  resolved: boolean;
+  resolved_at: string | null;
+}
+
+export interface FailureLogsResponse {
+  success: boolean;
+  records: FailureRecord[];
+  total: number;
+  stats: {
+    total: number;
+    unresolved: number;
+    byType: Record<string, number>;
+  };
+}
+

@@ -10,3 +10,5 @@ services:
         value: production
       - key: PORT
         value: 5001
+      - key: ADMIN_PASSWORD
+        value: ChangeMeToYourSecurePassword123!

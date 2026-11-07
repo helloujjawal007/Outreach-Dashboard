@@ -76,18 +76,44 @@ export class SuppressionService {
       LIMIT 1
     `;
 
-    const res = await query<{ reason: string; source: string; created_at: Date }>(sql, values);
-    if (res.rows.length > 0) {
-      const row = res.rows[0];
-      return {
-        suppressed: true,
-        reason: row.reason,
-        source: row.source,
-        suppressedAt: row.created_at,
-      };
+    try {
+      const res = await query<{ reason: string; source: string; created_at: Date }>(sql, values);
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          suppressed: true,
+          reason: row.reason,
+          source: row.source || 'system',
+          suppressedAt: row.created_at,
+        };
+      }
+      return { suppressed: false };
+    } catch (err: any) {
+      // Auto-heal missing source column or table
+      if (/column "source" does not exist/i.test(err?.message)) {
+        await query(`ALTER TABLE global_suppression_list ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'system'`).catch(() => {});
+        const fallbackRes = await query<{ reason: string; created_at: Date }>(
+          `SELECT reason, created_at FROM global_suppression_list WHERE ${conditions.join(' OR ')} ORDER BY created_at DESC LIMIT 1`,
+          values
+        ).catch(() => ({ rows: [] }));
+        if (fallbackRes.rows.length > 0) {
+          const row = fallbackRes.rows[0];
+          return {
+            suppressed: true,
+            reason: row.reason,
+            source: 'system',
+            suppressedAt: row.created_at,
+          };
+        }
+        return { suppressed: false };
+      }
+      if (/relation "global_suppression_list" does not exist/i.test(err?.message)) {
+        const { addSuppressionAndSequences } = await import('../db/add_suppression_and_sequences');
+        await addSuppressionAndSequences().catch(() => {});
+        return { suppressed: false };
+      }
+      throw err;
     }
-
-    return { suppressed: false };
   }
 
   /**
@@ -237,58 +263,73 @@ export class SuppressionService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRes = await query<{ count: string }>(
-      `SELECT COUNT(*) FROM global_suppression_list ${whereClause}`,
-      values
-    );
-    const total = parseInt(countRes.rows[0]?.count || '0', 10);
+    try {
+      const countRes = await query<{ count: string }>(
+        `SELECT COUNT(*) FROM global_suppression_list ${whereClause}`,
+        values
+      );
+      const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
-    const listRes = await query<SuppressedRecord>(
-      `SELECT id, email, phone, domain, reason, source, created_at 
-       FROM global_suppression_list 
-       ${whereClause} 
-       ORDER BY created_at DESC 
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...values, limit, offset]
-    );
+      const listRes = await query<SuppressedRecord>(
+        `SELECT id, email, phone, domain, reason, COALESCE(source, 'system') as source, created_at 
+         FROM global_suppression_list 
+         ${whereClause} 
+         ORDER BY created_at DESC 
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...values, limit, offset]
+      );
 
-    return {
-      records: listRes.rows,
-      total,
-    };
+      return {
+        records: listRes.rows,
+        total,
+      };
+    } catch {
+      return { records: [], total: 0 };
+    }
   }
 
   /**
    * Summary stats for suppression dashboard
    */
   async getSuppressionStats(): Promise<SuppressionStats> {
-    const res = await query<{
-      total: string;
-      unsubscribed: string;
-      hard_bounce: string;
-      complaint: string;
-      manual: string;
-      invalid_mx: string;
-    }>(`
-      SELECT 
-        COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE reason ILIKE '%unsub%') AS unsubscribed,
-        COUNT(*) FILTER (WHERE reason ILIKE '%bounce%') AS hard_bounce,
-        COUNT(*) FILTER (WHERE reason ILIKE '%complaint%' OR reason ILIKE '%spam%') AS complaint,
-        COUNT(*) FILTER (WHERE source = 'manual_user') AS manual,
-        COUNT(*) FILTER (WHERE reason ILIKE '%mx%' OR reason ILIKE '%domain%') AS invalid_mx
-      FROM global_suppression_list
-    `);
+    try {
+      const res = await query<{
+        total: string;
+        unsubscribed: string;
+        hard_bounce: string;
+        complaint: string;
+        manual: string;
+        invalid_mx: string;
+      }>(`
+        SELECT 
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE reason ILIKE '%unsub%') AS unsubscribed,
+          COUNT(*) FILTER (WHERE reason ILIKE '%bounce%') AS hard_bounce,
+          COUNT(*) FILTER (WHERE reason ILIKE '%complaint%' OR reason ILIKE '%spam%') AS complaint,
+          COUNT(*) FILTER (WHERE COALESCE(source, '') = 'manual_user') AS manual,
+          COUNT(*) FILTER (WHERE reason ILIKE '%mx%' OR reason ILIKE '%domain%') AS invalid_mx
+        FROM global_suppression_list
+      `);
 
-    const row = res.rows[0];
-    return {
-      total: parseInt(row?.total || '0', 10),
-      unsubscribed: parseInt(row?.unsubscribed || '0', 10),
-      hardBounce: parseInt(row?.hard_bounce || '0', 10),
-      complaint: parseInt(row?.complaint || '0', 10),
-      manual: parseInt(row?.manual || '0', 10),
-      invalidMx: parseInt(row?.invalid_mx || '0', 10),
-    };
+      const row = res.rows[0];
+      return {
+        total: parseInt(row?.total || '0', 10),
+        unsubscribed: parseInt(row?.unsubscribed || '0', 10),
+        hardBounce: parseInt(row?.hard_bounce || '0', 10),
+        complaint: parseInt(row?.complaint || '0', 10),
+        manual: parseInt(row?.manual || '0', 10),
+        invalidMx: parseInt(row?.invalid_mx || '0', 10),
+      };
+    } catch {
+      return {
+        total: 0,
+        unsubscribed: 0,
+        hardBounce: 0,
+        complaint: 0,
+        manual: 0,
+        invalidMx: 0,
+      };
+    }
   }
 }
 

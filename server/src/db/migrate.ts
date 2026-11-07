@@ -121,6 +121,154 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS inbound_intent_confidence NUMERIC(4, 2),
         ADD COLUMN IF NOT EXISTS ai_suggested_reply TEXT;
 
+      -- Global suppression list table & guaranteed schema columns
+      CREATE TABLE IF NOT EXISTS global_suppression_list (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          email VARCHAR(255),
+          phone VARCHAR(50),
+          domain VARCHAR(255),
+          reason VARCHAR(255) NOT NULL DEFAULT 'unsubscribed',
+          source VARCHAR(50) DEFAULT 'system',
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE global_suppression_list 
+        ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'system',
+        ADD COLUMN IF NOT EXISTS domain VARCHAR(255),
+        ADD COLUMN IF NOT EXISTS reason VARCHAR(255) DEFAULT 'unsubscribed',
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+      CREATE INDEX IF NOT EXISTS idx_suppression_email ON global_suppression_list(LOWER(email));
+      CREATE INDEX IF NOT EXISTS idx_suppression_phone ON global_suppression_list(phone);
+      CREATE INDEX IF NOT EXISTS idx_suppression_domain ON global_suppression_list(LOWER(domain));
+
+      -- Sequence enrollments table
+      CREATE TABLE IF NOT EXISTS sequence_enrollments (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+          sequence_name VARCHAR(100) NOT NULL DEFAULT 'Cold Outreach 4-Step',
+          current_step INTEGER NOT NULL DEFAULT 1,
+          total_steps INTEGER NOT NULL DEFAULT 4,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          next_step_due_at TIMESTAMPTZ,
+          last_step_sent_at TIMESTAMPTZ,
+          enrolled_at TIMESTAMPTZ DEFAULT NOW(),
+          completed_at TIMESTAMPTZ,
+          metadata JSONB DEFAULT '{}'::jsonb
+      );
+      CREATE INDEX IF NOT EXISTS idx_sequence_enrollments_lead_id ON sequence_enrollments(lead_id);
+
+      -- Connected inboxes table
+      CREATE TABLE IF NOT EXISTS connected_inboxes (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name VARCHAR(255) NOT NULL,
+          email VARCHAR(255) NOT NULL UNIQUE,
+          sender_name VARCHAR(255) NOT NULL,
+          provider VARCHAR(50) NOT NULL DEFAULT 'smtp',
+          smtp_host VARCHAR(255) NOT NULL,
+          smtp_port INT NOT NULL DEFAULT 587,
+          smtp_secure BOOLEAN DEFAULT false,
+          smtp_user VARCHAR(255) NOT NULL,
+          smtp_pass VARCHAR(255) NOT NULL,
+          daily_limit INT NOT NULL DEFAULT 40,
+          sent_today INT NOT NULL DEFAULT 0,
+          last_reset_date DATE DEFAULT CURRENT_DATE,
+          health_score INT NOT NULL DEFAULT 100,
+          status VARCHAR(50) NOT NULL DEFAULT 'active',
+          is_default BOOLEAN NOT NULL DEFAULT false,
+          last_error TEXT,
+          last_sent_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Scheduled dispatches table & multi-channel columns
+      CREATE TABLE IF NOT EXISTS scheduled_dispatches (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+          list_id UUID REFERENCES lists(id) ON DELETE SET NULL,
+          channel VARCHAR(50) NOT NULL DEFAULT 'email',
+          recipient_email VARCHAR(255),
+          recipient_phone VARCHAR(50),
+          recipient_name VARCHAR(255),
+          business_name VARCHAR(255),
+          subject TEXT,
+          body TEXT NOT NULL,
+          scheduled_for TIMESTAMPTZ NOT NULL,
+          status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
+          stage VARCHAR(50) DEFAULT 'initial',
+          attempt_count INT DEFAULT 0,
+          max_attempts INT DEFAULT 3,
+          sent_at TIMESTAMPTZ,
+          error_message TEXT,
+          inbox_id UUID REFERENCES connected_inboxes(id) ON DELETE SET NULL,
+          inbox_email VARCHAR(255) DEFAULT '',
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_sched_disp_status_time ON scheduled_dispatches(status, scheduled_for);
+
+      -- Ensure all message columns
+      ALTER TABLE messages 
+        ADD COLUMN IF NOT EXISTS is_seen BOOLEAN DEFAULT false,
+        ADD COLUMN IF NOT EXISTS seen_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS is_replied BOOLEAN DEFAULT false,
+        ADD COLUMN IF NOT EXISTS replied_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false,
+        ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS inbox_id UUID REFERENCES connected_inboxes(id) ON DELETE SET NULL,
+        ADD COLUMN IF NOT EXISTS inbox_email VARCHAR(255) DEFAULT '';
+
+      -- Deals, activity_logs, and tasks
+      CREATE TABLE IF NOT EXISTS deals (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+          title VARCHAR(255) NOT NULL,
+          value NUMERIC(12, 2) DEFAULT 0,
+          stage VARCHAR(50) NOT NULL DEFAULT 'interested',
+          probability INTEGER DEFAULT 25,
+          lost_reason VARCHAR(255),
+          contact_name VARCHAR(255),
+          contact_email VARCHAR(255),
+          contact_phone VARCHAR(50),
+          expected_close_date TIMESTAMPTZ,
+          closed_at TIMESTAMPTZ,
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS activity_logs (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+          deal_id UUID REFERENCES deals(id) ON DELETE SET NULL,
+          actor_type VARCHAR(50) DEFAULT 'system',
+          activity_type VARCHAR(50) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          metadata JSONB DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_activity_logs_lead_id ON activity_logs(lead_id);
+
+      CREATE TABLE IF NOT EXISTS tasks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
+          deal_id UUID REFERENCES deals(id) ON DELETE SET NULL,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          status VARCHAR(50) DEFAULT 'pending',
+          due_date TIMESTAMPTZ,
+          priority VARCHAR(20) DEFAULT 'medium',
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- WhatsApp session keys
+      CREATE TABLE IF NOT EXISTS whatsapp_session_keys (
+          key_id VARCHAR(255) PRIMARY KEY,
+          key_data TEXT NOT NULL,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_leads_deleted_at ON leads(deleted_at);
       CREATE INDEX IF NOT EXISTS idx_leads_batch_id ON leads(batch_id);

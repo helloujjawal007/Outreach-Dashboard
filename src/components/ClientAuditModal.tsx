@@ -88,6 +88,10 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
 
   const handleSendNow = async () => {
     if (!lead || isSendingNow) return;
+    if (!lead.email && !lead.whatsapp && !lead.phone && !lead.website) {
+      setSendNowError('This lead has no contact channels (email, phone, or website) available.');
+      return;
+    }
     setIsSendingNow(true);
     setSendNowFeedback(null);
     setSendNowError(null);
@@ -95,8 +99,9 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
       const res = await api.autoSendNextStep(lead.id);
       if (res.success && res.result) {
         if (res.result.success) {
+          const channels = res.result.channelsDispatched?.join(', ') || (lead.email ? 'Email' : 'WhatsApp');
           setSendNowFeedback(
-            `✓ Sent Now! Technical Audit email & PDF attachment successfully dispatched to ${lead.email || lead.businessName}.`
+            `✓ Sent Now! Technical Audit successfully dispatched via ${channels} to ${lead.email || lead.businessName}.`
           );
           await store.refreshAll();
           setTimeout(() => setSendNowFeedback(null), 7000);

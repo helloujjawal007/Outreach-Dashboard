@@ -144,6 +144,7 @@ export interface AutoSendNextResult {
   skipped?: boolean;
   reason?: string;
   error?: string;
+  channelsDispatched?: string[];
 }
 
 export interface CustomList {

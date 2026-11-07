@@ -525,7 +525,7 @@ conversationsRouter.post('/auto-send-next', async (req: Request, res: Response) 
     res.status(400).json({ success: false, error: 'Either leadId or leadIds array must be provided' });
   } catch (error) {
     console.error('[conversationsRouter.autoSendNext]', error);
-    res.status(500).json({ success: false, error: 'Failed to auto-send next stage email' });
+    res.status(500).json({ success: false, error: (error as any)?.message || 'Failed to auto-send next stage email' });
   }
 });
 

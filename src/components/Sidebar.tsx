@@ -26,6 +26,7 @@ import {
   Search,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
+import { APP_VERSION, APP_UPDATED_AT, APP_HINT } from '@/version';
 
 export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot';
 
@@ -93,15 +94,27 @@ export function Sidebar({
       {/* Brand Header */}
       <div
         onClick={() => onNavigate('copilot')}
-        className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-200 cursor-pointer hover:bg-slate-50/70 transition-colors"
+        className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-200 cursor-pointer hover:bg-slate-50/70 transition-colors group"
         title="Return to AI Executive Copilot"
       >
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-sm shrink-0">
           <Zap size={20} strokeWidth={2.5} />
         </div>
-        <div>
-          <h1 className="text-sm font-bold text-ink-900 leading-tight">Cloud Consultancy</h1>
-          <p className="text-xs text-brand-600 font-semibold leading-tight">Omni-Channel Engine</p>
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold text-ink-900 leading-tight truncate">Cloud Consultancy</h1>
+          <p className="text-xs text-brand-600 font-semibold leading-tight truncate">Omni-Channel Engine</p>
+          <div
+            className="flex items-center gap-1.5 mt-1"
+            title={APP_HINT}
+          >
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[9.5px] font-bold border border-slate-200 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {APP_VERSION}
+            </span>
+            <span className="text-[10px] text-slate-400 font-medium hover:text-slate-600 transition-colors">
+              Updated {APP_UPDATED_AT}
+            </span>
+          </div>
         </div>
       </div>
 

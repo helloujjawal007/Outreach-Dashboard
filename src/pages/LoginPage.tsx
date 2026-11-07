@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, ArrowRight, ShieldCheck, AlertCircle, Sparkles, Key } from 'lucide-react';
 import { api } from '@/services/api';
+import { APP_VERSION, APP_UPDATED_AT } from '@/version';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -116,7 +117,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <Lock className="w-3.5 h-3.5 text-emerald-400" />
             <span>256-bit Encrypted Session</span>
           </div>
-          <span className="font-mono text-slate-600">v2.4 Production</span>
+          <span className="font-mono text-slate-500" title={`Updated ${APP_UPDATED_AT}`}>{APP_VERSION} • Updated {APP_UPDATED_AT}</span>
         </div>
       </div>
     </div>

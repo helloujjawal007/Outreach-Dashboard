@@ -402,7 +402,7 @@ export class StageOutreachService {
     const phoneDigits = rawPhone.replace(/\D/g, '');
     const hasPhone = phoneDigits.length >= 8;
 
-    if (!hasEmail && !hasWebsite && !hasPhone) {
+    if (!hasEmail && !hasPhone) {
       return {
         leadId,
         businessName: lead.business_name,
@@ -413,7 +413,7 @@ export class StageOutreachService {
         subject: '',
         success: false,
         skipped: true,
-        reason: 'No contact channels (email, phone, or website) available for lead',
+        reason: 'No Email or WhatsApp contact channels available for lead',
       };
     }
 
@@ -434,9 +434,8 @@ export class StageOutreachService {
       };
     }
 
-    const channelsDispatched: ('email' | 'website_form' | 'whatsapp')[] = [];
+    const channelsDispatched: ('email' | 'whatsapp')[] = [];
     let emailResult: StageDispatchResult['emailResult'] = undefined;
-    let websiteFormResult: StageDispatchResult['websiteFormSubmission'] = undefined;
     let whatsappResult: StageDispatchResult['whatsappResult'] = undefined;
     let anySuccess = false;
 
@@ -508,39 +507,7 @@ export class StageOutreachService {
       };
     }
 
-    // 2. Channel: WEBSITE CONTACT FORM DUAL-TRIGGER
-    if (hasWebsite) {
-      try {
-        const { websiteFormService } = await import('./websiteFormService');
-        const formSubmission = await websiteFormService.submitContactForm(leadId, {
-          senderName: 'Cloud Consultancy',
-          senderEmail: 'sales@cloudconsultancy.in',
-          senderPhone: '+1 306-205-1817',
-          subject: stageInfo.subject,
-          message: stageInfo.body,
-        });
-
-        websiteFormResult = formSubmission;
-        if (formSubmission.success || formSubmission.status === 'sent') {
-          anySuccess = true;
-          channelsDispatched.push('website_form');
-        }
-      } catch (formErr: any) {
-        websiteFormResult = {
-          success: false,
-          skipped: true,
-          reason: formErr?.message || 'Form submission skipped',
-        };
-      }
-    } else {
-      websiteFormResult = {
-        success: false,
-        skipped: true,
-        reason: 'No corporate website or form on file',
-      };
-    }
-
-    // 3. Channel: WHATSAPP DISPATCH & QUEUE
+    // 2. Channel: WHATSAPP DISPATCH & QUEUE
     if (hasPhone) {
       try {
         const waState = whatsappSessionService.getState();
@@ -695,7 +662,7 @@ export class StageOutreachService {
     );
 
     // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
-    const failureReason = emailResult?.reason || websiteFormResult?.reason || whatsappResult?.reason || 'All channel dispatches failed';
+    const failureReason = emailResult?.reason || whatsappResult?.reason || 'All channel dispatches failed';
     await leadIsolationService.isolateFailedLead(leadId, failureReason);
 
     return {

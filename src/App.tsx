@@ -150,27 +150,19 @@ function App() {
       .sort((a, b) => b.count - a.count || a.country.localeCompare(b.country));
   }, [store.leads]);
 
-  // Derive channels dynamically whose leads are listed in the database
+  // Derive channels dynamically (Email & WhatsApp only)
   const channelCounts = useMemo(() => {
     const active = store.leads.filter((l) => !l.deletedAt);
     const whatsapp = active.filter(
       (l) => (l.whatsapp && l.whatsapp.trim().length > 0) || (l.phone && l.phone.trim().length > 0)
     ).length;
     const whatsappMobile = active.filter((l) => l.whatsappEligible === true).length;
-    const websiteForm = active.filter(
-      (l) => Boolean(l.website || l.googleProfile?.website)
-    ).length;
     const email = active.filter((l) => Boolean(l.email && l.email.includes('@'))).length;
-    const instagram = active.filter((l) => Boolean(l.instagram && l.instagram.trim())).length;
-    const linkedin = active.filter((l) => Boolean(l.linkedin && l.linkedin.trim())).length;
 
     return [
+      { id: 'email', label: 'Email', icon: '✉️', count: email },
       { id: 'whatsapp', label: 'WhatsApp', icon: '💬', count: whatsapp },
       { id: 'whatsapp_mobile', label: 'WhatsApp Mobile', icon: '📱', count: whatsappMobile },
-      { id: 'website_form', label: 'Website Form', icon: '🌐', count: websiteForm },
-      { id: 'email', label: 'Email', icon: '✉️', count: email },
-      { id: 'instagram', label: 'Instagram', icon: '📸', count: instagram },
-      { id: 'linkedin', label: 'LinkedIn', icon: '💼', count: linkedin },
     ].filter((c) => c.count > 0);
   }, [store.leads]);
 

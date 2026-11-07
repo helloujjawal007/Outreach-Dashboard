@@ -33,21 +33,6 @@ import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { autonomousDripEngine } from './services/autonomousDripEngine';
-import { addExtremeAutomation } from './db/add_extreme_automation';
-import { addAutomatedCadenceAndChannelLists } from './db/add_automated_cadence_and_channel_lists';
-import { addChannelAutoAssignmentTrigger } from './db/add_channel_auto_assignment_trigger';
-import { addInboundEmailSyncTable } from './db/add_inbound_email_sync';
-import { addScheduledDispatchesTable } from './db/add_scheduled_dispatches';
-import { addMultiChannelScheduling } from './db/add_multichannel_scheduling';
-import { addSeenRepliedToMessages } from './db/add_seen_replied_to_messages';
-import { addInboxRotationAndTrigramIndexes } from './db/add_inbox_rotation_and_trigram_indexes';
-import { addLinkedInTables } from './db/add_linkedin_tables';
-import { addLinkedInPublishingColumns } from './db/add_linkedin_publishing_columns';
-import { addAiCommandHistoryTable } from './db/add_ai_command_history';
-import { addManualReviewStatus } from './db/add_manual_review_status';
-import { migrateLocationAndCleanWebsites } from './db/add_location_and_clean_websites';
-import { googleEnrichmentService } from './services/googleEnrichmentService';
-import { linkedinService } from './services/linkedinService';
 // Prevent unhandled errors or socket drops from crashing the Express API server
 process.on('uncaughtException', (err) => {
   console.error('[Server UncaughtException Handled]', err?.message || err);
@@ -325,97 +310,25 @@ async function startServer() {
   await run28DayRetentionCleanup();
   setInterval(run28DayRetentionCleanup, 24 * 60 * 60 * 1000);
 
-  // Initialize inbound email sync table & automated Gmail IMAP polling (every 30s)
-  try {
-    await addInboundEmailSyncTable();
-  } catch (err) {
-    console.error('[Migration Warning] Inbound email sync table error:', err);
-  }
+  // 1. Email Channel: Automated Gmail IMAP polling for inbound replies (every 30s)
   emailInboundService.startPolling(30000);
 
-  // Initialize scheduled dispatches table & multi-channel scheduling
-  try {
-    await addScheduledDispatchesTable();
-    await addMultiChannelScheduling();
-  } catch (err) {
-    console.error('[Migration Warning] Scheduled dispatches table error:', err);
-  }
-  emailSchedulerService.startScheduler(20000);
+  // 2. Email Channel: Automated Email Scheduler for timed follow-ups (every 30s)
+  emailSchedulerService.startScheduler(30000);
 
-  // Initialize seen & replied message tracking
-  try {
-    await addSeenRepliedToMessages();
-  } catch (err) {
-    console.error('[Migration Warning] Seen/replied messages migration error:', err);
-  }
-
-  // Initialize multi-inbox rotation & trigram indexing
-  try {
-    await addInboxRotationAndTrigramIndexes();
-  } catch (err) {
-    console.error('[Migration Warning] Inbox rotation table error:', err);
-  }
-
-  // Initialize LinkedIn tables & default account
-  try {
-    await addLinkedInTables();
-    await addLinkedInPublishingColumns();
-    linkedinService.startScheduler(30000);
-  } catch (err) {
-    console.error('[Migration Warning] LinkedIn tables error:', err);
-  }
-
-  // Initialize AI Command History table
-  try {
-    await addAiCommandHistoryTable();
-  } catch (err) {
-    console.error('[Migration Warning] AI Command History table error:', err);
-  }
-
-  // Initialize Manual Review Status & Columns
-  try {
-    await addManualReviewStatus();
-  } catch (err) {
-    console.error('[Migration Warning] Manual review migration error:', err);
-  }
-
-  try {
-    await migrateLocationAndCleanWebsites();
-  } catch (err) {
-    console.error('[Migration Warning] Location and website clean migration error:', err);
-  }
-
-  // Initialize WhatsApp persistent session storage in PostgreSQL
-  try {
-    const { addWhatsAppPostgresSessionTable } = await import('./db/add_whatsapp_postgres_session');
-    await addWhatsAppPostgresSessionTable();
-  } catch (err) {
-    console.error('[WhatsApp Migration Warning]', err);
-  }
-
-  // Check and auto-restore saved WhatsApp session if credentials exist
+  // 3. WhatsApp Channel: Auto-restore persistent WhatsApp session from PostgreSQL
   try {
     const { whatsappSessionService } = await import('./services/whatsappSessionService');
     await whatsappSessionService.autoRestoreSession();
   } catch (err) {
-    console.error('[WhatsApp Warning] Failed to auto-restore WhatsApp session:', err);
+    console.warn('[WhatsApp Warning] Failed to auto-restore WhatsApp session:', err);
   }
 
-  // Initialize 12-hour automated Google Business Profile (GMB) sync engine
+  // 4. Cadence: Follow-up cadence engine (every 60s, lightweight)
   try {
-    googleEnrichmentService.start12HourGmbSync();
+    autonomousDripEngine.startScheduler(60000);
   } catch (err) {
-    console.error('[GMB Sync Warning] Failed to initialize 12-hour GMB sync engine:', err);
-  }
-
-  // Initialize Extreme Automation & Autopilot Infrastructure
-  try {
-    await addExtremeAutomation();
-    await addAutomatedCadenceAndChannelLists();
-    await addChannelAutoAssignmentTrigger();
-    autonomousDripEngine.startScheduler(30000);
-  } catch (err) {
-    console.error('[Autopilot Warning] Failed to initialize Extreme Automation & Cadence:', err);
+    console.warn('[Cadence Warning] Autonomous drip engine notice:', err);
   }
 
   const server = app.listen(env.PORT, '0.0.0.0', () => {

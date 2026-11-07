@@ -682,11 +682,19 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
                         title={
                           lead.status === 'manual_review'
                             ? "Lead is in 'Need to Check' — retrieve back from Manual Checking before sending"
-                            : `Instantly send tailored audit email with attached PDF to ${lead.email || lead.businessName}`
+                            : !lead.email
+                            ? `Dispatch via WhatsApp to ${lead.phone || lead.businessName} (No email on file)`
+                            : `Instantly send tailored audit email with attached PDF to ${lead.email}`
                         }
                       >
                         {isSendingNow ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                        <span>{isSendingNow ? 'Sending Now...' : 'Send Now (Single Lead)'}</span>
+                        <span>
+                          {isSendingNow
+                            ? 'Sending Now...'
+                            : !lead.email
+                            ? 'Send WhatsApp (No Email)'
+                            : 'Send Email (with PDF)'}
+                        </span>
                       </button>
 
                       {/* Secondary: Add to Outreach Queue */}

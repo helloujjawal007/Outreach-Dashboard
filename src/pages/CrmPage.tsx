@@ -678,21 +678,13 @@ export function CrmPage({
       (l) => (l.whatsapp && l.whatsapp.trim().length > 0) || (l.phone && l.phone.trim().length > 0)
     ).length;
     const whatsappMobile = active.filter((l) => l.whatsappEligible === true).length;
-    const websiteForm = active.filter(
-      (l) => Boolean(l.website || l.googleProfile?.website)
-    ).length;
     const email = active.filter((l) => Boolean(l.email && l.email.includes('@'))).length;
-    const instagram = active.filter((l) => Boolean(l.instagram && l.instagram.trim())).length;
-    const linkedin = active.filter((l) => Boolean(l.linkedin && l.linkedin.trim())).length;
 
     return {
       all: active.length,
       whatsapp,
       whatsappMobile,
-      websiteForm,
       email,
-      instagram,
-      linkedin,
     };
   }, [store.leads]);
 
@@ -2529,12 +2521,9 @@ export function CrmPage({
             title="Filter by available contact channel"
           >
             <option value="all">⚡ All Channels ({channelCounts.all})</option>
+            <option value="email">✉️ Email ({channelCounts.email})</option>
             <option value="whatsapp">💬 WhatsApp ({channelCounts.whatsapp})</option>
             <option value="whatsapp_mobile">📱 WhatsApp (Mobile Ready) ({channelCounts.whatsappMobile})</option>
-            <option value="website_form">🌐 Website Form ({channelCounts.websiteForm})</option>
-            <option value="email">✉️ Email ({channelCounts.email})</option>
-            <option value="instagram">📸 Instagram ({channelCounts.instagram})</option>
-            <option value="linkedin">💼 LinkedIn ({channelCounts.linkedin})</option>
           </select>
 
           {/* Channel Sub-Filter for WhatsApp */}
@@ -2915,37 +2904,6 @@ export function CrmPage({
             </span>
           </button>
 
-          {/* Website Form */}
-          <button
-            onClick={() => {
-              if (channelFilter === 'website_form') {
-                setChannelFilter('all');
-                setChannelSubFilter('all');
-              } else {
-                setChannelFilter('website_form');
-                setChannelSubFilter('all');
-              }
-            }}
-            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
-              channelFilter === 'website_form'
-                ? 'bg-blue-600 text-white shadow-2xs ring-1 ring-blue-400 font-bold'
-                : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-blue-50/70 hover:border-blue-300'
-            }`}
-            title={`Filter leads with Website Form (${channelCounts.websiteForm} leads)`}
-          >
-            <span className="text-xs">🌐</span>
-            <span>Website Form</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                channelFilter === 'website_form'
-                  ? 'bg-white/20 text-white'
-                  : 'bg-slate-200 text-ink-700'
-              }`}
-            >
-              {channelCounts.websiteForm}
-            </span>
-          </button>
-
           {/* Email */}
           <button
             onClick={() => {
@@ -2976,72 +2934,6 @@ export function CrmPage({
               {channelCounts.email}
             </span>
           </button>
-
-          {/* Instagram */}
-          {channelCounts.instagram > 0 && (
-            <button
-              onClick={() => {
-                if (channelFilter === 'instagram') {
-                  setChannelFilter('all');
-                  setChannelSubFilter('all');
-                } else {
-                  setChannelFilter('instagram');
-                  setChannelSubFilter('all');
-                }
-              }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
-                channelFilter === 'instagram'
-                  ? 'bg-pink-600 text-white shadow-2xs ring-1 ring-pink-400 font-bold'
-                  : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-pink-50/70 hover:border-pink-300'
-              }`}
-              title={`Filter leads with Instagram (${channelCounts.instagram} leads)`}
-            >
-              <span className="text-xs">📸</span>
-              <span>Instagram</span>
-              <span
-                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  channelFilter === 'instagram'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-200 text-ink-700'
-                }`}
-              >
-                {channelCounts.instagram}
-              </span>
-            </button>
-          )}
-
-          {/* LinkedIn */}
-          {channelCounts.linkedin > 0 && (
-            <button
-              onClick={() => {
-                if (channelFilter === 'linkedin') {
-                  setChannelFilter('all');
-                  setChannelSubFilter('all');
-                } else {
-                  setChannelFilter('linkedin');
-                  setChannelSubFilter('all');
-                }
-              }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
-                channelFilter === 'linkedin'
-                  ? 'bg-sky-700 text-white shadow-2xs ring-1 ring-sky-500 font-bold'
-                  : 'bg-slate-50 text-ink-700 border border-slate-200 hover:bg-sky-50/70 hover:border-sky-300'
-              }`}
-              title={`Filter leads with LinkedIn (${channelCounts.linkedin} leads)`}
-            >
-              <span className="text-xs">💼</span>
-              <span>LinkedIn</span>
-              <span
-                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  channelFilter === 'linkedin'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-200 text-ink-700'
-                }`}
-              >
-                {channelCounts.linkedin}
-              </span>
-            </button>
-          )}
         </div>
 
         {/* WhatsApp Sub-Filter Pills */}

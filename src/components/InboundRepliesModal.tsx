@@ -345,8 +345,6 @@ export function InboundRepliesModal({
       all: baseDataset.length,
       whatsapp: baseDataset.filter((m) => m.channel === 'whatsapp').length,
       email: baseDataset.filter((m) => m.channel === 'email').length,
-      instagram: baseDataset.filter((m) => m.channel === 'instagram').length,
-      linkedin: baseDataset.filter((m) => m.channel === 'linkedin').length,
     };
   }, [baseDataset]);
 
@@ -1062,18 +1060,6 @@ export function InboundRepliesModal({
                   >
                     <Mail size={10} />
                     <span>Email</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setChannelFilter('linkedin')}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition cursor-pointer ${
-                      channelFilter === 'linkedin'
-                        ? 'bg-[#0a66c2] text-white border-[#0a66c2]'
-                        : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
-                    }`}
-                  >
-                    <Linkedin size={10} />
-                    <span>LinkedIn</span>
                   </button>
                 </div>
               </div>

@@ -22,7 +22,7 @@ export interface StageDispatchResult {
   liveDelivery?: string;
   skipped?: boolean;
   reason?: string;
-  channelsDispatched?: ('email' | 'website_form' | 'whatsapp')[];
+  channelsDispatched?: ('email' | 'whatsapp')[];
   emailResult?: {
     success: boolean;
     skipped?: boolean;
@@ -649,7 +649,6 @@ export class StageOutreachService {
         channelsDispatched,
         liveDelivery: emailResult?.liveDelivery,
         emailResult,
-        websiteFormSubmission: websiteFormResult,
         whatsappResult,
       };
     }
@@ -676,7 +675,6 @@ export class StageOutreachService {
       success: false,
       reason: `Delivery failed: ${failureReason}. Lead has been removed from all lists and moved to 'Need to Check'.`,
       emailResult,
-      websiteFormSubmission: websiteFormResult,
       whatsappResult,
     };
   }
@@ -692,8 +690,8 @@ export class StageOutreachService {
     failedCount: number;
     channelsSummary: {
       emailsSent: number;
-      formsSubmitted: number;
       whatsappDispatched: number;
+      formsSubmitted?: number;
     };
     breakdown: {
       initial: number;
@@ -706,7 +704,7 @@ export class StageOutreachService {
     let sentCount = 0;
     let skippedCount = 0;
     let failedCount = 0;
-    const channelsSummary = { emailsSent: 0, formsSubmitted: 0, whatsappDispatched: 0 };
+    const channelsSummary = { emailsSent: 0, whatsappDispatched: 0 };
     const breakdown = { initial: 0, followup_1: 0, followup_2: 0 };
 
     const CONCURRENCY_CHUNK = 5;
@@ -749,7 +747,6 @@ export class StageOutreachService {
             else if (res.stage === 'followup_2') breakdown.followup_2++;
 
             if (res.channelsDispatched?.includes('email')) channelsSummary.emailsSent++;
-            if (res.channelsDispatched?.includes('website_form')) channelsSummary.formsSubmitted++;
             if (res.channelsDispatched?.includes('whatsapp')) channelsSummary.whatsappDispatched++;
           } else if (res.skipped) {
             skippedCount++;

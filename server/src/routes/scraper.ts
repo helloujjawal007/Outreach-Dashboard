@@ -52,6 +52,7 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
         leadsPerLocation: parsedLeadsPerLocation,
       },
       count: leads.length,
+      excludedDuplicatesCount: gmbScraperService.lastExcludedDuplicatesCount || 0,
       leads,
     });
   } catch (error: any) {

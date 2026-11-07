@@ -75,6 +75,7 @@ export interface GmbImportResult {
 export class GmbScraperService {
   private portCounter = 9500;
   private dnsCache = new Map<string, { resolved: boolean; expires: number }>();
+  public lastExcludedDuplicatesCount = 0;
 
   /**
    * Resolves the Google Chrome or Chromium executable path across macOS, Linux (Render/Docker/Ubuntu), and Windows.
@@ -469,6 +470,37 @@ export class GmbScraperService {
     const existingPhones = new Set<string>();
     let lastCdpError: string | null = null;
 
+    this.lastExcludedDuplicatesCount = 0;
+    let excludedDbDuplicatesCount = 0;
+
+    // Load existing leads & clients from CRM database to automatically exclude known leads
+    const dbRes = await query<{ business_name: string; phone: string | null; email: string | null; website: string | null }>(
+      `SELECT business_name, phone, email, website FROM leads WHERE deleted_at IS NULL
+       UNION
+       SELECT business_name, phone, email, website FROM clients WHERE deleted_at IS NULL`
+    ).catch(() => ({ rows: [] }));
+
+    const dbNames = new Set<string>();
+    const dbPhones = new Set<string>();
+    const dbEmails = new Set<string>();
+    const dbDomains = new Set<string>();
+
+    for (const row of dbRes.rows) {
+      const cName = this.cleanBizName(row.business_name || '');
+      if (cName.length >= 3) dbNames.add(cName);
+      const p = (row.phone || '').replace(/\D/g, '');
+      if (p.length >= 7) dbPhones.add(p.slice(-10));
+      const em = (row.email || '').trim().toLowerCase();
+      if (em) dbEmails.add(em);
+      if (row.website) {
+        try {
+          const u = new URL(row.website.startsWith('http') ? row.website : `https://${row.website}`);
+          const host = u.hostname.replace(/^www\./, '').toLowerCase();
+          if (host.length > 3) dbDomains.add(host);
+        } catch {}
+      }
+    }
+
     // Attempt Chrome CDP search across all selected locations, categories and query variations
     for (const locQuery of locationQueries) {
       if (rawList.length >= effectiveLimit) break;
@@ -495,6 +527,27 @@ export class GmbScraperService {
             for (const r of batchResults) {
               const normName = this.cleanBizName(r.businessName);
               const pDigits = (r.phone || '').replace(/\D/g, '');
+              const pLast10 = pDigits.length >= 7 ? pDigits.slice(-10) : '';
+
+              // Check if lead already exists in CRM database
+              let isDbMatch = false;
+              if (normName && dbNames.has(normName)) isDbMatch = true;
+              else if (pLast10 && dbPhones.has(pLast10)) isDbMatch = true;
+              else if (r.website) {
+                try {
+                  const u = new URL(r.website.startsWith('http') ? r.website : `https://${r.website}`);
+                  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+                  if (host.length > 3 && dbDomains.has(host)) isDbMatch = true;
+                } catch {}
+              }
+
+              if (isDbMatch) {
+                excludedDbDuplicatesCount++;
+                this.lastExcludedDuplicatesCount = excludedDbDuplicatesCount;
+                console.log(`[GmbScraperService] Auto-excluded lead already in CRM database: "${r.businessName}" (${r.phone || r.website || 'in database'})`);
+                continue;
+              }
+
               if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
                 existingNames.add(normName);
                 if (pDigits) existingPhones.add(pDigits);
@@ -1226,59 +1279,7 @@ export class GmbScraperService {
           matchedReason = `Business name "${bName}" already exists in CRM${match?.lists ? ` [List: ${match.lists}]` : ''}`;
         }
 
-        const duplicateMetadata = {
-          source: 'gmb_scraper',
-          is_duplicate: true,
-          duplicate_reason: matchedReason,
-          google_profile: {
-            placeName: bName,
-            rating: item.rating || 4.8,
-            reviewsCount: item.reviewsCount || 0,
-            formattedAddress: item.address || '',
-            category: item.category || 'Local Business',
-            website: item.website || undefined,
-            phone: item.phone || undefined,
-            googleMapsUrl: item.googleMapsUrl || undefined,
-          },
-          discovered_socials: item.discoveredSocials || {},
-        };
-
-        const location = [item.city, item.state, item.country].filter(Boolean).join(', ') || item.address;
-
-        // Route duplicate lead directly to Duplicate Category (status = 'duplicate')
-        try {
-          await query(
-            `INSERT INTO leads (
-              business_name, category, phone, email, website, location, country,
-              whatsapp, instagram, facebook, linkedin,
-              status, consent_status, batch_id, notes, metadata, discovered_emails, discovered_socials, last_enriched_at
-            ) VALUES (
-              $1, $2, $3, $4, $5, $6, $7,
-              $8, $9, $10, $11,
-              'duplicate', 'none', $12, $13, $14, $15, $16, NOW()
-            )`,
-            [
-              bName,
-              item.category || 'Local Business',
-              phone || null,
-              email || null,
-              item.website || null,
-              location,
-              item.country || 'USA',
-              phone || null,
-              item.discoveredSocials?.instagram || null,
-              item.discoveredSocials?.facebook || null,
-              item.discoveredSocials?.linkedin || null,
-              batchId,
-              `Duplicate Lead: ${matchedReason}`,
-              JSON.stringify(duplicateMetadata),
-              email ? JSON.stringify([email]) : JSON.stringify([]),
-              JSON.stringify(item.discoveredSocials || {}),
-            ]
-          );
-        } catch (dupErr) {
-          console.warn('[GmbScraperService] Failed to insert duplicate record:', dupErr);
-        }
+        console.log(`[GmbScraperService] Skipped duplicate lead from import: "${bName}" (${matchedReason})`);
         continue;
       }
 

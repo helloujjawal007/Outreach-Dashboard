@@ -133,6 +133,7 @@ export class EmailSchedulerService {
       category: string;
       notes: string;
       status: string;
+      consent_status?: string;
       manual_review_reason?: string;
       website?: string;
       location?: string;

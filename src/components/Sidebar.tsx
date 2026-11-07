@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 
-export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot' | 'pipeline';
+export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot';
 
 export interface CountryCountItem {
   country: string;
@@ -494,29 +494,7 @@ export function Sidebar({
           )}
         </div>
 
-        {/* 4. Deals & Pipeline */}
-        <button
-          onClick={() => onNavigate('pipeline')}
-          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
-            current === 'pipeline'
-              ? 'bg-blue-50 text-blue-900 font-bold ring-1 ring-blue-300 shadow-2xs'
-              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
-          }`}
-          title="Sales Pipeline, Kanban Stages & Deal Value"
-        >
-          <div className="flex items-center gap-3">
-            <TrendingUp
-              size={18}
-              className={current === 'pipeline' ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-600'}
-            />
-            <span className="font-semibold">Deals &amp; Pipeline</span>
-          </div>
-          <span className="rounded-full bg-blue-100 px-1.5 py-0.2 text-[10px] font-bold text-blue-700 shadow-2xs">
-            Kanban
-          </span>
-        </button>
-
-        {/* 5. Messages & Inbound Inbox */}
+        {/* 4. Messages & Inbound Inbox */}
         <button
           onClick={() => {
             if (onOpenMessages) {

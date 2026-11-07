@@ -48,6 +48,9 @@ import {
   Briefcase,
   FileText,
   Download,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -56,7 +59,6 @@ import { Modal } from '@/components/Modal';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import { ChannelOutreachHub } from '@/components/ChannelOutreachHub';
-import { DealsPipelinePage } from '@/pages/DealsPipelinePage';
 import type { Store } from '@/store';
 import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter, ScraperProgressStatus } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
@@ -120,7 +122,30 @@ export function CrmPage({
   channelFilter: channelFilterProp,
   onChannelFilterChange,
 }: Props) {
-  const [crmViewMode, setCrmViewMode] = useState<'table' | 'pipeline' | 'channels'>('table');
+  type SortField = 'businessName' | 'createdAt' | 'status' | 'stage' | 'score' | 'lastContactedAt' | 'dealValue' | 'category';
+  const [crmViewMode, setCrmViewMode] = useState<'table' | 'channels'>('table');
+  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  const handleToggleSort = useCallback((field: SortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection(field === 'createdAt' || field === 'score' || field === 'dealValue' || field === 'lastContactedAt' ? 'desc' : 'asc');
+    }
+  }, [sortField]);
+
+  const renderSortIcon = useCallback((field: SortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown size={12} className="text-slate-300 group-hover:text-slate-500 shrink-0" />;
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp size={12} className="text-brand-600 shrink-0" />
+    ) : (
+      <ArrowDown size={12} className="text-brand-600 shrink-0" />
+    );
+  }, [sortField, sortDirection]);
   const [entityFilter, setEntityFilter] = useState<EntityTypeFilter>('all');
   const [internalCountryFilter, setInternalCountryFilter] = useState<string>('all');
   const countryFilter = countryFilterProp !== undefined ? countryFilterProp : internalCountryFilter;
@@ -1177,6 +1202,55 @@ export function CrmPage({
       return true;
     });
   }, [store.leads, store.trashLeads, store.inboundReplies, entityFilter, countryFilter, cityFilter, categoryFilter, stageFilter, statusFilter, consentFilter, selectedBatchFilter, selectedListFilter, channelFilter, channelSubFilter, search, matchesLeadChannel]);
+
+  const sortedLeads = useMemo(() => {
+    const list = [...filtered];
+    return list.sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      switch (sortField) {
+        case 'businessName':
+          valA = (a.businessName || '').toLowerCase();
+          valB = (b.businessName || '').toLowerCase();
+          break;
+        case 'category':
+          valA = (a.category || '').toLowerCase();
+          valB = (b.category || '').toLowerCase();
+          break;
+        case 'createdAt':
+          valA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          valB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          break;
+        case 'status':
+          valA = (a.status || '').toLowerCase();
+          valB = (b.status || '').toLowerCase();
+          break;
+        case 'stage':
+          valA = (a.outreachStage || a.stage || '').toLowerCase();
+          valB = (b.outreachStage || b.stage || '').toLowerCase();
+          break;
+        case 'score':
+          valA = Number(a.metadata?.lead_score || a.metadata?.leadScore || 0);
+          valB = Number(b.metadata?.lead_score || b.metadata?.leadScore || 0);
+          break;
+        case 'dealValue':
+          valA = Number(a.metadata?.deal_value || a.metadata?.dealValue || 0);
+          valB = Number(b.metadata?.deal_value || b.metadata?.dealValue || 0);
+          break;
+        case 'lastContactedAt':
+          valA = a.lastContactedAt ? new Date(a.lastContactedAt).getTime() : 0;
+          valB = b.lastContactedAt ? new Date(b.lastContactedAt).getTime() : 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filtered, sortField, sortDirection]);
 
   const leadConversations = useMemo(() => {
     if (!selectedLead) return [];
@@ -2243,7 +2317,7 @@ export function CrmPage({
         </div>
       </div>
 
-      {/* 3-WAY VIEW SWITCHER (Leads Table | Deals Pipeline Kanban | Multi-Channel Hub) */}
+      {/* VIEW SWITCHER (Leads Database Table | Multi-Channel Hub) */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 p-1 border border-slate-200 shadow-2xs">
           <button
@@ -2256,20 +2330,7 @@ export function CrmPage({
             }`}
           >
             <Users size={14} className="text-brand-600" />
-            <span>📋 Leads &amp; Contacts Table</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCrmViewMode('pipeline')}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
-              crmViewMode === 'pipeline'
-                ? 'bg-white text-slate-900 shadow-xs ring-1 ring-slate-200'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-            }`}
-          >
-            <TrendingUp size={14} className="text-emerald-600" />
-            <span>📊 Deals Pipeline (Kanban)</span>
+            <span>📋 Leads Database Table</span>
           </button>
 
           <button
@@ -2287,9 +2348,7 @@ export function CrmPage({
         </div>
       </div>
 
-      {crmViewMode === 'pipeline' ? (
-        <DealsPipelinePage hideHeader={true} />
-      ) : crmViewMode === 'channels' ? (
+      {crmViewMode === 'channels' ? (
         <ChannelOutreachHub
           leads={store.leads.filter((l) => !l.deletedAt)}
           lists={store.lists}
@@ -2653,6 +2712,34 @@ export function CrmPage({
               </span>
             )}
           </button>
+
+          {/* Quick Database Sort */}
+          <div className="flex items-center gap-1.5 ml-1 border-l border-slate-200 pl-2">
+            <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+              <ArrowUpDown size={12} className="text-brand-600" /> Sort:
+            </span>
+            <select
+              value={`${sortField}-${sortDirection}`}
+              onChange={(e) => {
+                const [f, d] = e.target.value.split('-') as [SortField, 'asc' | 'desc'];
+                setSortField(f);
+                setSortDirection(d);
+              }}
+              className="input py-1.5 text-xs w-auto font-medium"
+              title="Sort database records"
+            >
+              <option value="createdAt-desc">📅 Date Added (Newest)</option>
+              <option value="createdAt-asc">📅 Date Added (Oldest)</option>
+              <option value="businessName-asc">🏢 Company (A → Z)</option>
+              <option value="businessName-desc">🏢 Company (Z → A)</option>
+              <option value="score-desc">🔥 Score (Highest)</option>
+              <option value="score-asc">🔥 Score (Lowest)</option>
+              <option value="dealValue-desc">💰 Deal Value (Highest)</option>
+              <option value="dealValue-asc">💰 Deal Value (Lowest)</option>
+              <option value="stage-asc">📊 Stage</option>
+              <option value="lastContactedAt-desc">🕒 Last Contacted</option>
+            </select>
+          </div>
         </div>
 
         <div className="relative flex-1 min-w-48 max-w-xs ml-auto">
@@ -3442,13 +3529,67 @@ export function CrmPage({
                       className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
                     />
                   </th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Company &amp; Contact</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Industry &amp; Location</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Deal Value</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Score</th>
+                  <th
+                    onClick={() => handleToggleSort('businessName')}
+                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
+                    title="Click to sort by Company Name"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Company &amp; Contact</span>
+                      {renderSortIcon('businessName')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleToggleSort('category')}
+                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
+                    title="Click to sort by Industry"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Industry &amp; Location</span>
+                      {renderSortIcon('category')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleToggleSort('dealValue')}
+                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
+                    title="Click to sort by Deal Value"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Deal Value</span>
+                      {renderSortIcon('dealValue')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleToggleSort('score')}
+                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
+                    title="Click to sort by Lead Score"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Score</span>
+                      {renderSortIcon('score')}
+                    </div>
+                  </th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Channels</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Pipeline Stage</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Last Contacted</th>
+                  <th
+                    onClick={() => handleToggleSort('stage')}
+                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
+                    title="Click to sort by Pipeline Stage"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Pipeline Stage</span>
+                      {renderSortIcon('stage')}
+                    </div>
+                  </th>
+                  <th
+                    onClick={() => handleToggleSort('lastContactedAt')}
+                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
+                    title="Click to sort by Last Contacted Date"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Last Contacted</span>
+                      {renderSortIcon('lastContactedAt')}
+                    </div>
+                  </th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 text-right">Actions</th>
                 </tr>
               )}
@@ -3472,7 +3613,7 @@ export function CrmPage({
                   </td>
                 </tr>
               ) : entityFilter === 'trash' ? (
-                filtered.map((lead) => (
+                sortedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => handleOpenLead(lead)}
@@ -3549,7 +3690,7 @@ export function CrmPage({
                   </tr>
                 ))
               ) : entityFilter === 'duplicates' ? (
-                filtered.map((lead) => (
+                sortedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => handleOpenLead(lead)}
@@ -3628,7 +3769,7 @@ export function CrmPage({
                   </tr>
                 ))
               ) : entityFilter === 'manual_review' || entityFilter === 'invalid_list' ? (
-                filtered.map((lead) => (
+                sortedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => handleOpenLead(lead)}
@@ -3725,7 +3866,7 @@ export function CrmPage({
                   </tr>
                 ))
               ) : (
-                filtered.map((lead) => {
+                sortedLeads.map((lead) => {
                   const isInactive = lead.status === 'inactive' || lead.status === 'paused';
                   return (
                     <tr

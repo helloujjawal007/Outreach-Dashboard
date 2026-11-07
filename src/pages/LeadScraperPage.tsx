@@ -23,6 +23,7 @@ import {
   Edit3,
   Plus,
   Trash2,
+  ShieldCheck,
 } from 'lucide-react';
 import { PageHeader, type PageId } from '@/components/Sidebar';
 import { api } from '@/services/api';
@@ -107,6 +108,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [scrapedLeads, setScrapedLeads] = useState<ScrapedLead[]>([]);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [excludedDbDuplicates, setExcludedDbDuplicates] = useState<number>(0);
 
   // Filter & Import State
   const [filterType, setFilterType] = useState<'all' | 'with_email' | 'with_phone' | 'with_website'>('all');
@@ -564,6 +566,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
 
       if (res.success && res.leads) {
         setScrapedLeads(res.leads);
+        setExcludedDbDuplicates(res.excludedDuplicatesCount || 0);
         // Default select all discovered leads
         const allIdx = new Set(res.leads.map((_, i) => i));
         setSelectedIndices(allIdx);
@@ -1534,6 +1537,21 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       {/* Scraped Results Section */}
       {scrapedLeads.length > 0 && (
         <div className="space-y-4">
+          {/* CRM Database Deduplication Status Banner */}
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs font-semibold shadow-2xs">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-emerald-600 shrink-0" />
+              <span>
+                CRM Database Deduplication Active: {excludedDbDuplicates > 0
+                  ? `${excludedDbDuplicates} already existing lead(s) in your database were automatically checked and excluded.`
+                  : 'All search results cross-referenced with your CRM database — 0 duplicates found.'}
+              </span>
+            </div>
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-200/70 text-emerald-800">
+              Database Sync
+            </span>
+          </div>
+
           {/* Metrics & Filter Bar */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs">

@@ -4,6 +4,7 @@ export interface SuppressionCheckResult {
   suppressed: boolean;
   reason?: string;
   source?: string;
+  target?: string;
   suppressedAt?: Date;
 }
 
@@ -82,6 +83,7 @@ export class SuppressionService {
         const row = res.rows[0];
         return {
           suppressed: true,
+          target: email || phone || domain || undefined,
           reason: row.reason,
           source: row.source || 'system',
           suppressedAt: row.created_at,

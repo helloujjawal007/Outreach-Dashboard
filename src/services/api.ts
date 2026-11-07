@@ -1917,6 +1917,7 @@ export const api = {
   async searchGmbLeads(params: GmbSearchParams): Promise<{
     success: boolean;
     count: number;
+    excludedDuplicatesCount?: number;
     leads: ScrapedLead[];
     query: any;
   }> {

@@ -12,7 +12,6 @@ import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import { LoginPage } from '@/pages/LoginPage';
-import { DealsPipelinePage } from '@/pages/DealsPipelinePage';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SuppressionListModal } from '@/components/SuppressionListModal';
 import { api } from '@/services/api';
@@ -20,13 +19,15 @@ import type { CrmSubFilter } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search } from 'lucide-react';
 
-const VALID_PAGES: PageId[] = ['crm', 'pipeline', 'builder', 'copilot', 'import', 'scraper', 'health'];
+const VALID_PAGES: PageId[] = ['crm', 'builder', 'copilot', 'import', 'scraper', 'health'];
 
 function getInitialPage(): PageId {
   if (typeof window === 'undefined') return 'crm';
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase() as PageId;
+  if (hash === ('pipeline' as any)) return 'crm';
   if (VALID_PAGES.includes(hash)) return hash;
   const path = window.location.pathname.replace(/^\//, '').toLowerCase() as PageId;
+  if (path === ('pipeline' as any)) return 'crm';
   if (VALID_PAGES.includes(path)) return path;
   return 'crm';
 }
@@ -219,7 +220,6 @@ function App() {
         : crmSubFilter === 'trash'
         ? 'Contacts & Accounts • Trash Bin'
         : 'Contacts & Accounts CRM',
-    pipeline: 'Deals & Revenue Pipeline • Kanban Board',
     builder: 'Campaign Sequences & Multi-Channel Outreach',
     import: 'Lead & Contact Import',
     scraper: 'Google Business Profile (GMB) Lead Scraper',
@@ -367,11 +367,10 @@ function App() {
           {page === 'copilot' ? (
             <AiCopilotPage />
           ) : (
-            <div className={`mx-auto py-8 px-6 ${page === 'pipeline' ? 'max-w-[1750px] w-full' : 'max-w-7xl'}`}>
+            <div className="mx-auto py-8 px-6 max-w-7xl">
               {page === 'import' && <LeadImportPage store={store} onNavigate={setPage} />}
               {page === 'scraper' && <LeadScraperPage store={store} onNavigate={setPage} />}
               {page === 'builder' && <CampaignBuilderPage store={store} />}
-              {page === 'pipeline' && <DealsPipelinePage />}
               {page === 'crm' && (
                 <CrmPage
                   store={store}

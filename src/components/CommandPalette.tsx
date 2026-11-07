@@ -104,20 +104,9 @@ export function CommandPalette({
   const baseItems: CommandItem[] = useMemo(() => [
     // Navigation
     {
-      id: 'nav-pipeline',
-      title: 'Deals & Pipeline',
-      subtitle: 'View active sales pipeline & Kanban board',
-      icon: TrendingUp,
-      category: 'Navigation',
-      action: () => {
-        onNavigate('pipeline');
-        onClose();
-      },
-    },
-    {
       id: 'nav-crm',
-      title: 'CRM Contacts & Leads',
-      subtitle: 'Manage all scraped and imported outreach leads',
+      title: 'CRM Contacts & Leads Database',
+      subtitle: 'Manage, sort, and filter all outreach leads',
       icon: Users,
       category: 'Navigation',
       action: () => {
@@ -180,7 +169,7 @@ export function CommandPalette({
       action: () => {
         onClose();
         if (onOpenNewDeal) onOpenNewDeal();
-        else onNavigate('pipeline');
+        else onNavigate('crm');
       },
     },
     {
@@ -193,7 +182,7 @@ export function CommandPalette({
       action: () => {
         onClose();
         if (onOpenTasks) onOpenTasks();
-        else onNavigate('pipeline');
+        else onNavigate('crm');
       },
     },
     {
@@ -248,7 +237,7 @@ export function CommandPalette({
         category: 'Deals',
         badge: `$${Number(d.value).toLocaleString()}`,
         action: () => {
-          onNavigate('pipeline');
+          onNavigate('crm');
           onClose();
         },
       })),

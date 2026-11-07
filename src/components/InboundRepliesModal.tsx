@@ -7,6 +7,7 @@ import {
   Search,
   RefreshCw,
   ArrowRight,
+  ArrowLeft,
   Clock,
   Phone,
   Tag,
@@ -939,7 +940,7 @@ export function InboundRepliesModal({
         {layoutMode === 'messenger' && viewTab !== 'unmatched' ? (
           <div className="mt-3 flex flex-col md:flex-row h-[74vh] rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
             {/* ----------------- LEFT PANE: THREADS SIDEBAR ----------------- */}
-            <div className="w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-200 bg-slate-50/60 shrink-0">
+            <div className={`w-full md:w-80 lg:w-96 flex flex-col border-r border-slate-200 bg-slate-50/60 shrink-0 ${activeThread ? 'hidden md:flex' : 'flex'}`}>
               {/* Sidebar Header: Search & View Tabs */}
               <div className="p-3 border-b border-slate-200 space-y-2.5 bg-white">
                 {/* Search */}
@@ -1214,12 +1215,23 @@ export function InboundRepliesModal({
             </div>
 
             {/* ----------------- RIGHT PANE: CHAT MESSAGING APP WINDOW ----------------- */}
-            <div className="flex-1 flex flex-col min-w-0 bg-white">
+            <div className={`flex-1 flex flex-col min-w-0 bg-white ${!activeThread ? 'hidden md:flex' : 'flex'}`}>
               {activeThread ? (
                 <>
                   {/* Chat Top Header: Contact identity, channel deep links & profile action */}
                   <div className="border-b border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-3 shadow-2xs shrink-0">
                     <div className="flex items-center gap-3 min-w-0">
+                      {/* Mobile Back Button to return to thread list */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedThreadKey(null)}
+                        className="md:hidden flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold shrink-0 transition cursor-pointer"
+                        aria-label="Back to conversations list"
+                      >
+                        <ArrowLeft size={14} />
+                        <span>Back</span>
+                      </button>
+
                       <div
                         className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0 shadow-2xs ${
                           activeThread.channel === 'whatsapp'
@@ -1308,6 +1320,7 @@ export function InboundRepliesModal({
                           onClick={() => handleMoveLeadToTrash(activeThread.entityId, activeThread.businessName)}
                           className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-rose-700 bg-rose-50 border-rose-200 hover:bg-rose-100 shadow-2xs cursor-pointer"
                           title="Move lead to Trash"
+                          aria-label="Move lead to Trash"
                         >
                           <Trash2 size={12} className="text-rose-600" />
                         </button>

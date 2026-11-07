@@ -44,6 +44,51 @@ export function normalizeBusinessName(name: string): string {
     .trim();
 }
 
+export function sanitizeCsvFormula(value: string): string {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (/^[=+\-@\t\r]/.test(trimmed)) {
+    return `'${trimmed}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Splits raw CSV/TSV text into records while strictly preserving
+ * newlines that occur within quoted fields (RFC 4180 compliance).
+ */
+export function splitCsvRecords(text: string): string[] {
+  const records: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        current += '""';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+        current += char;
+      }
+    } else if ((char === '\n' || (char === '\r' && text[i + 1] === '\n')) && !inQuotes) {
+      if (char === '\r') i++;
+      if (current.trim()) {
+        records.push(current);
+      }
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  if (current.trim()) {
+    records.push(current);
+  }
+  return records;
+}
+
 /**
  * Parses pasted raw text or CSV content into lead rows.
  * Supports standard CSV and custom CRM exports with varied column headers.
@@ -52,7 +97,7 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
   const text = rawText.trim();
   if (!text) return [];
 
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  const lines = splitCsvRecords(text);
   if (lines.length === 0) return [];
 
   const firstLine = lines[0].toLowerCase();
@@ -90,7 +135,8 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
       return '';
     };
 
-    const businessName = get('businessname', 'companyname', 'company', 'name', 'business') || '';
+    const rawBizName = get('businessname', 'companyname', 'company', 'name', 'business') || '';
+    const businessName = sanitizeCsvFormula(rawBizName);
 
     // Category / Niche mapping (strictly excludes notes!)
     let category = get('category', 'industry', 'niche', 'vertical', 'services', 'service', 'trade', 'type') || '';

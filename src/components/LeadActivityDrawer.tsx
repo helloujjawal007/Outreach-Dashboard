@@ -495,12 +495,10 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
                 <ExternalLink size={10} />
               </a>
             </div>
-            {lead.auditKeyTakeaways && lead.auditKeyTakeaways.length > 0 && (
-              <ul className="mt-2 space-y-1 text-slate-600 pl-4 list-disc text-[11px]">
-                {lead.auditKeyTakeaways.slice(0, 3).map((point, i) => (
-                  <li key={i}>{point}</li>
-                ))}
-              </ul>
+            {lead.auditKeyTakeaways && (
+              <p className="mt-2 text-slate-600 text-[11px] leading-relaxed whitespace-pre-line">
+                {lead.auditKeyTakeaways}
+              </p>
             )}
           </div>
         )}

@@ -39,6 +39,52 @@ export interface EmailAttachment {
   contentType?: string;
 }
 
+export function escapeHtml(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function buildHumanoidHtml(bodyText: string): string {
+  const blocks = bodyText.trim().split(/\n\s*\n/);
+  const htmlElements = blocks.map((block) => {
+    const trimmed = block.trim();
+    // Detect signature block
+    if (/^best regards,?\n/i.test(trimmed)) {
+      const lines = trimmed.split('\n');
+      const greeting = escapeHtml(lines[0] || 'Best regards,');
+      const name = escapeHtml(lines[1] || 'Cloud Consultancy');
+      const contact = lines.slice(2).map(escapeHtml).join('<br/>');
+      return `<p style="margin: 20px 0 0 0; line-height: 1.5; color: #1e293b;">${greeting}<br/><strong>${name}</strong>${
+        contact ? `<br/><span style="color: #64748b; font-size: 14px;">${contact}</span>` : ''
+      }</p>`;
+    }
+
+    // Detect bullet list block
+    const lines = trimmed.split('\n');
+    const isBulletBlock = lines.length > 0 && lines.every((l) => /^\s*[•\-\*]\s+/.test(l));
+    if (isBulletBlock) {
+      const lis = lines
+        .map((l) => `<li style="margin-bottom: 6px;">${escapeHtml(l.replace(/^\s*[•\-\*]\s+/, ''))}</li>`)
+        .join('');
+      return `<ul style="margin: 0 0 16px 0; padding-left: 20px; line-height: 1.6; color: #1e293b;">${lis}</ul>`;
+    }
+
+    const escapedLines = trimmed.split('\n').map(escapeHtml).join('<br/>');
+    return `<p style="margin: 0 0 16px 0; line-height: 1.6; color: #1e293b;">${escapedLines}</p>`;
+  });
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1e293b; line-height: 1.6; max-width: 600px; padding: 4px 0;">
+      ${htmlElements.join('\n')}
+    </div>
+  `.trim();
+}
+
 export class EmailAdapter {
   private subdomain: string = 'mail.cloudconsultancy.in';
   
@@ -317,39 +363,8 @@ export class EmailAdapter {
     // Plain text version
     const plainText = finalBodyText;
 
-    // Structured Humanoid HTML version
-    const blocks = finalBodyText.trim().split(/\n\s*\n/);
-    const htmlElements = blocks.map((block) => {
-      const trimmed = block.trim();
-      // Detect signature block
-      if (/^best regards,?\n/i.test(trimmed)) {
-        const lines = trimmed.split('\n');
-        const greeting = lines[0] || 'Best regards,';
-        const name = lines[1] || 'Cloud Consultancy';
-        const contact = lines.slice(2).join('<br/>');
-        return `<p style="margin: 20px 0 0 0; line-height: 1.5; color: #1e293b;">${greeting}<br/><strong>${name}</strong>${
-          contact ? `<br/><span style="color: #64748b; font-size: 14px;">${contact}</span>` : ''
-        }</p>`;
-      }
-
-      // Detect bullet list block
-      const lines = trimmed.split('\n');
-      const isBulletBlock = lines.length > 0 && lines.every((l) => /^\s*[•\-\*]\s+/.test(l));
-      if (isBulletBlock) {
-        const lis = lines
-          .map((l) => `<li style="margin-bottom: 6px;">${l.replace(/^\s*[•\-\*]\s+/, '')}</li>`)
-          .join('');
-        return `<ul style="margin: 0 0 16px 0; padding-left: 20px; line-height: 1.6; color: #1e293b;">${lis}</ul>`;
-      }
-
-      return `<p style="margin: 0 0 16px 0; line-height: 1.6; color: #1e293b;">${trimmed.replace(/\n/g, '<br/>')}</p>`;
-    });
-
-    const htmlBody = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1e293b; line-height: 1.6; max-width: 600px; padding: 4px 0;">
-        ${htmlElements.join('\n')}
-      </div>
-    `.trim();
+    // Structured Humanoid HTML version with escaped entities
+    const htmlBody = buildHumanoidHtml(finalBodyText);
 
     // 2. Dispatch via Multi-Inbox Rotation Pool
     if (activeInbox) {

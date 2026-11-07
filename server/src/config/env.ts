@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: false });
 // Active SMTP configured
 
 function getEnvVar(...keys: string[]): string {
@@ -98,7 +98,14 @@ export const env = {
   IMAP_HOST: parsedImapHost,
   IMAP_PORT: parsedImapPort,
   // Security & Authentication
-  ADMIN_PASSWORD: getEnvVar('ADMIN_PASSWORD', 'DASHBOARD_PASSWORD') || 'admin123',
+  ADMIN_PASSWORD: (() => {
+    const pass = getEnvVar('ADMIN_PASSWORD', 'DASHBOARD_PASSWORD');
+    if (!pass || pass.length < 12) {
+      console.error('[FATAL CONFIG] ❌ Refusing to start: ADMIN_PASSWORD environment variable is missing or shorter than 12 characters.');
+      throw new Error('ADMIN_PASSWORD environment variable is missing or shorter than 12 characters.');
+    }
+    return pass;
+  })(),
   SESSION_SECRET: getEnvVar('SESSION_SECRET', 'JWT_SECRET') || 'ods-outreach-dashboard-secret-key-2026',
 };
 

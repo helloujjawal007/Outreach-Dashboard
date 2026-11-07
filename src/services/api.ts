@@ -84,6 +84,8 @@ export function setStoredToken(token: string | null): void {
   }
 }
 
+const eTagCache = new Map<string, { etag: string; data: any }>();
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getStoredToken();
   const headers: Record<string, string> = {
@@ -95,11 +97,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
+  const isGet = !options?.method || options.method.toUpperCase() === 'GET';
+  const cached = isGet ? eTagCache.get(path) : undefined;
+  if (cached?.etag) {
+    headers['If-None-Match'] = cached.etag;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     ...options,
     headers,
   });
+
+  if (res.status === 304 && cached) {
+    return cached.data as T;
+  }
 
   if (res.status === 401 && path !== '/auth/login' && path !== '/auth/me') {
     setStoredToken(null);
@@ -120,7 +132,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(errorMsg);
   }
 
-  return res.json() as Promise<T>;
+  const data = (await res.json()) as T;
+  const etag = res.headers.get('ETag');
+  if (isGet && etag) {
+    eTagCache.set(path, { etag, data });
+  }
+
+  return data;
 }
 
 // Backend shape interfaces

@@ -4,42 +4,94 @@ import path from 'path';
 import { clientAuditService } from '../services/clientAuditIntelligenceService';
 import { technicalAuditPdfService } from '../services/technicalAuditPdfService';
 import { query } from '../config/db';
+import {
+  generateScopedPdfToken,
+  verifyScopedPdfToken,
+  extractToken,
+  verifySessionToken,
+} from '../middleware/auth';
 
 export const auditRouter = Router();
 
 /**
+ * GET /api/audit/token/:filename
+ * Generates a short-lived (60s) signed URL token scoped specifically to one PDF file
+ */
+auditRouter.get('/token/:filename', (req: Request, res: Response) => {
+  const token = extractToken(req);
+  if (!token || !verifySessionToken(token)) {
+    return res.status(401).json({ success: false, error: 'Authentication required to generate view token.' });
+  }
+
+  const filenameParam = typeof req.params.filename === 'string' ? req.params.filename : (req.params.filename?.[0] || '');
+  const rawFilename = path.basename(decodeURIComponent(filenameParam));
+  const scoped = generateScopedPdfToken(rawFilename);
+
+  res.json({
+    success: true,
+    filename: rawFilename,
+    token: scoped.token,
+    expiresAt: scoped.expiresAt,
+    viewUrl: `/api/audit/download/${encodeURIComponent(rawFilename)}?token=${encodeURIComponent(scoped.token)}`,
+  });
+});
+
+/**
  * GET /api/audit/download/:filename
- * Serves / downloads the generated technical audit PDF file directly
+ * Serves / downloads the generated technical audit PDF file directly.
+ * Requires either an active session or a valid 60s signed token scoped to this exact file.
+ * Strictly exact filename matching only; no fuzzy substring search.
  */
 auditRouter.get('/download/:filename', (req: Request, res: Response) => {
   try {
     const filenameParam = typeof req.params.filename === 'string' ? req.params.filename : (req.params.filename?.[0] || '');
-    const rawFilename = path.basename(decodeURIComponent(filenameParam));
-    const auditsDir = path.join(process.cwd(), 'server', 'data', 'audits');
-    const pdfPath = path.join(auditsDir, rawFilename);
 
-    if (fs.existsSync(pdfPath)) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${rawFilename}"`);
-      return res.sendFile(pdfPath);
-    }
-
-    // Fuzzy matching if exact filename not found (e.g. without extension or underscore variation)
-    if (fs.existsSync(auditsDir)) {
-      const files = fs.readdirSync(auditsDir);
-      const cleanTarget = rawFilename.replace(/\.pdf$/i, '').toLowerCase();
-      const matched = files.find(
-        (f) => f.toLowerCase() === rawFilename.toLowerCase() || f.toLowerCase().includes(cleanTarget)
-      );
-      if (matched) {
-        const matchedPath = path.join(auditsDir, matched);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${matched}"`);
-        return res.sendFile(matchedPath);
+    // Fully decode potential multi-encoded traversal strings like %2e%2e%2f
+    let decoded = filenameParam;
+    try {
+      decoded = decodeURIComponent(decoded);
+      if (decoded.includes('%')) {
+        decoded = decodeURIComponent(decoded);
       }
+    } catch {
+      // Ignore decoding failure, path.basename will still isolate basename
     }
 
-    return res.status(404).json({ success: false, error: `Audit PDF "${rawFilename}" not found on disk.` });
+    const rawFilename = path.basename(decoded);
+    if (!rawFilename || rawFilename === '.' || rawFilename === '..' || !rawFilename.toLowerCase().endsWith('.pdf')) {
+      return res.status(404).json({ success: false, error: 'Invalid audit PDF filename requested.' });
+    }
+
+    const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
+    const pdfPath = path.resolve(auditsDir, rawFilename);
+
+    // Hard boundary assertion: ensure resolved path is strictly within auditsDir
+    if (!pdfPath.startsWith(auditsDir + path.sep)) {
+      return res.status(403).json({ success: false, error: 'Forbidden path traversal attempted.' });
+    }
+
+    // Auth check: Session cookie/header OR 60s scoped PDF token
+    const sessionToken = extractToken(req);
+    const hasSessionAuth = sessionToken ? verifySessionToken(sessionToken) : false;
+
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const hasScopedAuth = queryToken ? verifyScopedPdfToken(rawFilename, queryToken) : false;
+
+    if (!hasSessionAuth && !hasScopedAuth) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required. A valid session or 60s file-scoped token is required.',
+        code: 'UNAUTHORIZED',
+      });
+    }
+
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(404).json({ success: false, error: `Audit PDF "${rawFilename}" not found on disk.` });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${rawFilename}"`);
+    return res.sendFile(pdfPath);
   } catch (err: any) {
     console.error('[auditRouter.download] Error:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve audit PDF.' });

@@ -320,6 +320,7 @@ export class AutonomousDripEngine {
          WHERE deleted_at IS NULL
            AND status = 'active'
            AND consent_status = 'none'
+           AND (outreach_stage IS NULL OR outreach_stage != 'sending')
            AND (
              -- Followup 3 Due (10 days from first shoot or 108 hours after followup 2)
              (outreach_stage = 'followup_3' AND (

@@ -1,5 +1,17 @@
 import { Router, type Request, type Response } from 'express';
+import fs from 'fs';
+import path from 'path';
+import validator from 'validator';
 import { query } from '../config/db';
+
+export function sanitizeCsvFormula(value: string): string {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (/^[=+\-@\t\r]/.test(trimmed)) {
+    return `'${trimmed}`;
+  }
+  return trimmed;
+}
 import { whatsappValidator } from '../services/whatsappValidator';
 import { googleEnrichmentService } from '../services/googleEnrichmentService';
 import { leadScraperService, cleanSiteUrl } from '../services/leadScraperService';
@@ -143,11 +155,17 @@ leadsRouter.get('/', async (req: Request, res: Response) => {
       baseFilter += ` AND (l.business_name ILIKE $${filterParams.length} OR l.email ILIKE $${filterParams.length} OR l.category ILIKE $${filterParams.length} OR l.phone LIKE $${filterParams.length})`;
     }
 
-    let totalCount = 0;
-    if (pageNum && limitNum) {
-      const countSql = `SELECT COUNT(*) FROM leads l ${joinClause} ${baseFilter}`;
-      const countRes = await query(countSql, filterParams);
-      totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
+    // Conditional ETag calculation: hash of (total leads count + max updated timestamp + pagination)
+    const metaSql = `SELECT COUNT(*)::text as cnt, COALESCE(MAX(l.updated_at), NOW())::text as max_up FROM leads l ${joinClause} ${baseFilter}`;
+    const metaRes = await query<{ cnt: string; max_up: string }>(metaSql, filterParams);
+    const totalCount = parseInt(metaRes.rows[0]?.cnt || '0', 10);
+    const maxUp = metaRes.rows[0]?.max_up || '';
+    const etag = `W/"leads-${totalCount}-${Buffer.from(maxUp).toString('base64url').slice(-16)}-${pageNum || 'all'}-${limitNum || 'all'}"`;
+
+    res.setHeader('ETag', etag);
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
     }
 
     let sql = `
@@ -981,10 +999,16 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/leads/:id/permanent - Permanent purge (removes from leads & clients)
+// DELETE /api/leads/:id/permanent - Permanent purge (removes from leads & clients and removes physical PDF from disk)
 leadsRouter.delete('/:id/permanent', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    // Fetch PDF filename and path before purge
+    const pdfRes = await query<{ audit_pdf_name: string | null; audit_pdf_path: string | null }>(
+      `SELECT audit_pdf_name, audit_pdf_path FROM leads WHERE id = $1`,
+      [id]
+    );
 
     // Clean up dependent child records
     await query(`DELETE FROM scheduled_dispatches WHERE lead_id = $1 OR client_id = $1`, [id]);
@@ -1012,6 +1036,20 @@ leadsRouter.delete('/:id/permanent', async (req: Request, res: Response) => {
        RETURNING id`,
       [id]
     );
+
+    // Clean up physical PDF file from server/data/audits/
+    if (pdfRes.rows.length > 0) {
+      const { audit_pdf_name, audit_pdf_path } = pdfRes.rows[0];
+      const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
+      if (audit_pdf_path && fs.existsSync(audit_pdf_path)) {
+        try { fs.unlinkSync(audit_pdf_path); } catch (e) { console.warn('Could not unlink PDF:', e); }
+      } else if (audit_pdf_name) {
+        const fallback = path.join(auditsDir, path.basename(audit_pdf_name));
+        if (fs.existsSync(fallback)) {
+          try { fs.unlinkSync(fallback); } catch (e) { console.warn('Could not unlink PDF:', e); }
+        }
+      }
+    }
 
     res.json({ success: true, message: 'Record permanently purged' });
   } catch (error) {
@@ -1106,13 +1144,19 @@ leadsRouter.post('/:id/scrape-location', async (req: Request, res: Response) => 
 leadsRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { category, phone, email, instagram, facebook, whatsapp, notes, batchId, status, listId } = req.body;
-    const businessName = req.body.businessName || req.body.business_name;
+    const rawBizName = req.body.businessName || req.body.business_name;
 
-    if (!businessName || !businessName.trim()) {
+    if (!rawBizName || !rawBizName.trim()) {
       return res.status(400).json({ success: false, error: 'Business name is required' });
     }
+    const businessName = sanitizeCsvFormula(rawBizName);
+    const safeCategory = sanitizeCsvFormula(category || '');
+    const safeNotes = sanitizeCsvFormula(notes || '');
 
     const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+    if (trimmedEmail && !validator.isEmail(trimmedEmail)) {
+      return res.status(400).json({ success: false, error: 'Invalid email address' });
+    }
     const trimmedPhone = typeof phone === 'string' ? phone.trim() : '';
     const leadStatus = status && ['active', 'inactive', 'paused'].includes(status) ? status : 'active';
 
@@ -1666,13 +1710,14 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       const waDigits = whatsapp.replace(/\D/g, '');
       const waLast10 = waDigits.length >= 10 ? waDigits.slice(-10) : '';
 
-      const businessName = (item.businessName || item.business_name || '').trim();
-      const cBusinessName = cleanBizName(businessName);
+      const rawBizName = (item.businessName || item.business_name || '').trim();
+      const businessName = sanitizeCsvFormula(rawBizName);
+      const cBusinessName = cleanBizName(rawBizName);
 
-      const category = (item.category || 'Uncategorized').trim();
+      const category = sanitizeCsvFormula((item.category || 'Uncategorized').trim());
       const instagram = (item.instagram || '').trim();
       const facebook = (item.facebook || '').trim();
-      const notes = (item.notes || '').trim();
+      const notes = sanitizeCsvFormula((item.notes || '').trim());
 
       const hasContact = !!email || !!phone || !!instagram || !!facebook || !!whatsapp;
       if (!hasContact) {

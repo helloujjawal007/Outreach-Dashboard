@@ -28,6 +28,7 @@ import { activitiesRouter } from './routes/activities';
 import { tasksRouter } from './routes/tasks';
 import { suppressionRouter } from './routes/suppression';
 import { sequencesRouter } from './routes/sequences';
+import { unsubscribeRouter } from './routes/unsubscribe';
 import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
@@ -140,8 +141,54 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Allowed origins whitelist for CORS and CSRF protection
+const allowedOrigins = new Set<string>([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5001',
+  'http://127.0.0.1:5001',
+]);
+if (process.env.APP_URL) {
+  try {
+    allowedOrigins.add(new URL(process.env.APP_URL).origin);
+  } catch {}
+}
+if (process.env.RENDER_EXTERNAL_URL) {
+  try {
+    allowedOrigins.add(new URL(process.env.RENDER_EXTERNAL_URL).origin);
+  } catch {}
+}
+if (process.env.ALLOWED_ORIGINS) {
+  process.env.ALLOWED_ORIGINS.split(',').forEach((o) => {
+    const trimmed = o.trim();
+    if (trimmed) allowedOrigins.add(trimmed);
+  });
+}
+
+const isOriginAllowed = (origin?: string): boolean => {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+  try {
+    const url = new URL(origin);
+    if (url.hostname.endsWith('.onrender.com')) return true;
+  } catch {}
+  return false;
+};
+
 // Middleware
-app.use(cors({ origin: true, credentials: true }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Blocked by CORS policy'));
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -166,7 +213,11 @@ app.get('/api', (_req: Request, res: Response) => {
 // Public Authentication Routes (login, logout, session check)
 app.use('/api/auth', authRouter);
 
-// Global Authentication Gate (protects all /api routes except /api/health and /api/auth)
+// Public Unsubscribe Routes (whitelisted from authentication)
+app.use('/api/unsubscribe', unsubscribeRouter);
+app.use('/unsubscribe', unsubscribeRouter);
+
+// Global Authentication Gate (protects all /api routes except public endpoints)
 app.use('/api', requireAuth);
 
 // Mount Protected API Routes
@@ -367,7 +418,7 @@ async function startServer() {
     console.error('[Autopilot Warning] Failed to initialize Extreme Automation & Cadence:', err);
   }
 
-  const server = app.listen(env.PORT, () => {
+  const server = app.listen(env.PORT, '0.0.0.0', () => {
     console.log(`🚀 Express Backend running on http://localhost:${env.PORT}`);
     console.log(`📡 API Endpoints available at http://localhost:${env.PORT}/api`);
   });

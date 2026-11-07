@@ -1,11 +1,11 @@
 import { ollamaService } from './ollamaService';
 
 export interface InboundClassification {
-  intent: 'meeting_request' | 'interested' | 'question' | 'not_now' | 'not_interested' | 'opt_out';
+  intent: 'meeting_request' | 'interested' | 'question' | 'not_now' | 'not_interested' | 'opt_out' | 'out_of_office';
   confidence: number;
   sentiment: 'positive' | 'neutral' | 'negative';
   summary: string;
-  recommendedAction: 'convert_to_client' | 'send_calendar_link' | 'answer_question' | 'followup_later' | 'suppress';
+  recommendedAction: 'convert_to_client' | 'send_calendar_link' | 'answer_question' | 'followup_later' | 'suppress' | 'pause_followups';
   suggestedReplySubject: string;
   suggestedReplyBody: string;
 }
@@ -75,7 +75,7 @@ export class UnifiedAiService {
     const cleanBiz = this.cleanBusinessName(params.businessName);
     const salutation = this.buildSalutation(params.businessName, params.senderName);
 
-    // 1. Opt-out / Suppression detection
+    // 1. Opt-out / Hard Suppression detection
     const optOutKeywords = ['unsubscribe', 'stop', 'remove', 'opt out', 'opt-out', 'cancel', 'quit', 'dont message', "don't message", 'do not contact', 'leave me alone', 'take me off'];
     if (optOutKeywords.some((kw) => text.includes(kw))) {
       return {
@@ -89,7 +89,43 @@ export class UnifiedAiService {
       };
     }
 
-    // 2. Meeting / Call Request detection
+    // 2. Polite Decline / Not Interested detection (MUST be evaluated before 'interested' substring checks)
+    const declineKeywords = [
+      'not interested', 'no thank', 'no thanks', 'we already have', 'we have someone',
+      'not at this time', 'pass', 'all set', 'not looking', 'uninterested', "aren't interested",
+      'do not need', "don't need", 'no interest', 'please remove'
+    ];
+    if (declineKeywords.some((kw) => text.includes(kw))) {
+      return {
+        intent: 'not_interested',
+        confidence: 0.95,
+        sentiment: 'negative',
+        summary: 'Lead politely declined outreach services.',
+        recommendedAction: 'suppress',
+        suggestedReplySubject: `Re: ${params.subject || `Thank you from Cloud Consultancy`}`,
+        suggestedReplyBody: `Hi ${salutation},\n\nThanks for the quick reply and letting me know! If anything changes down the road or you ever need a second pair of eyes on your search presence or automations, please feel free to reach out anytime.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
+      };
+    }
+
+    // 3. Out-of-Office / Automatic Reply detection
+    const oooKeywords = [
+      'out of office', 'away from the office', 'vacation response', 'auto-reply',
+      'autoreply', 'automatic reply', 'out of the office', 'limited access to email',
+      'back in the office', 'will respond upon my return', 'on annual leave', 'maternity leave'
+    ];
+    if (oooKeywords.some((kw) => text.includes(kw))) {
+      return {
+        intent: 'out_of_office',
+        confidence: 0.95,
+        sentiment: 'neutral',
+        summary: 'Prospect sent an out-of-office automatic reply.',
+        recommendedAction: 'pause_followups',
+        suggestedReplySubject: `Re: ${params.subject || 'Outreach'}`,
+        suggestedReplyBody: '',
+      };
+    }
+
+    // 4. Meeting / Call Request detection
     const meetingKeywords = [
       'calendar', 'schedule', 'book a call', 'book a time', 'set up a call', 'set up a meeting',
       'available tomorrow', 'available this week', 'available monday', 'available tuesday', 'available wednesday',
@@ -108,13 +144,20 @@ export class UnifiedAiService {
       };
     }
 
-    // 3. Interested / Pricing / Quote inquiry detection
+    // 5. Interested / Pricing / Quote inquiry detection (guarded against negative interest)
+    const isNegativeInterest =
+      text.includes('not interested') ||
+      text.includes('uninterested') ||
+      text.includes("aren't interested") ||
+      text.includes("don't want") ||
+      text.includes('no interest');
+
     const interestKeywords = [
       'interested', 'sounds good', 'tell me more', 'how much', 'cost', 'pricing', 'quote',
       'portfolio', 'case studies', 'examples', 'send details', 'send more info', 'more information',
       'what do you charge', 'rates', 'what is the price', 'sure', 'yes', 'definitely', 'would like to see'
     ];
-    if (interestKeywords.some((kw) => text.includes(kw))) {
+    if (!isNegativeInterest && interestKeywords.some((kw) => text.includes(kw))) {
       return {
         intent: 'interested',
         confidence: 0.92,
@@ -126,7 +169,7 @@ export class UnifiedAiService {
       };
     }
 
-    // 4. Specific Question detection
+    // 6. Specific Question detection
     if (text.includes('?') || text.startsWith('how') || text.startsWith('what') || text.startsWith('where') || text.startsWith('who')) {
       return {
         intent: 'question',
@@ -139,7 +182,7 @@ export class UnifiedAiService {
       };
     }
 
-    // 5. Not right now / Busy detection
+    // 7. Not right now / Busy detection
     const notNowKeywords = ['busy right now', 'check back', 'in a few months', 'next quarter', 'not right now', 'maybe later', 'reconnect later'];
     if (notNowKeywords.some((kw) => text.includes(kw))) {
       return {
@@ -153,24 +196,10 @@ export class UnifiedAiService {
       };
     }
 
-    // 6. Polite Decline detection
-    const declineKeywords = ['not interested', 'we already have', 'we have someone', 'no thanks', 'not at this time', 'pass', 'all set'];
-    if (declineKeywords.some((kw) => text.includes(kw))) {
-      return {
-        intent: 'not_interested',
-        confidence: 0.90,
-        sentiment: 'negative',
-        summary: 'Lead politely declined outreach services.',
-        recommendedAction: 'suppress',
-        suggestedReplySubject: `Re: ${params.subject || `Thank you from Cloud Consultancy`}`,
-        suggestedReplyBody: `Hi ${salutation},\n\nThanks for the quick reply and letting me know! If anything changes down the road or you ever need a second pair of eyes on your search presence or automations, please feel free to reach out anytime.\n\nBest regards,\nCloud Consultancy\nsales@cloudconsultancy.in`,
-      };
-    }
-
-    // Fallback classification
+    // 8. Fallback classification (Neutral query)
     return {
-      intent: 'interested',
-      confidence: 0.70,
+      intent: 'question',
+      confidence: 0.60,
       sentiment: 'neutral',
       summary: 'Inbound response received from lead.',
       recommendedAction: 'answer_question',

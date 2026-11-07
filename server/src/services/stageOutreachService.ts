@@ -173,7 +173,7 @@ export class StageOutreachService {
    * Automatically dispatch the next appropriate stage touch to a single lead
    * Supports omni-channel execution: Email + Website Form + WhatsApp
    */
-  async sendNextStageToLead(leadId: string): Promise<StageDispatchResult> {
+  async sendNextStageToLead(leadId: string, preClaimedStage?: string): Promise<StageDispatchResult> {
     const leadRes = await query<{
       id: string;
       business_name: string;
@@ -211,6 +211,47 @@ export class StageOutreachService {
     }
 
     const lead = leadRes.rows[0];
+
+    // Atomic claim if not pre-claimed by caller
+    const activeStage = preClaimedStage || lead.outreach_stage || 'initial';
+    if (!preClaimedStage) {
+      if (lead.outreach_stage === 'sending') {
+        return {
+          leadId,
+          businessName: lead.business_name,
+          email: lead.email,
+          phone: lead.phone,
+          stage: 'completed',
+          stageLabel: 'Sending',
+          subject: '',
+          success: false,
+          skipped: true,
+          reason: 'Conflict: Dispatch already in progress for this lead.',
+        };
+      }
+
+      const claimRes = await query<{ id: string }>(
+        `UPDATE leads SET outreach_stage = 'sending', updated_at = NOW() 
+         WHERE id = $1 AND (outreach_stage = $2 OR ($2 = 'initial' AND outreach_stage IS NULL)) 
+         RETURNING id`,
+        [leadId, activeStage]
+      );
+
+      if (claimRes.rows.length === 0) {
+        return {
+          leadId,
+          businessName: lead.business_name,
+          email: lead.email,
+          phone: lead.phone,
+          stage: 'completed',
+          stageLabel: 'Conflict',
+          subject: '',
+          success: false,
+          skipped: true,
+          reason: 'Conflict: Dispatch already claimed by concurrent worker or stage changed.',
+        };
+      }
+    }
 
     // Safeguards
     if (lead.deleted_at) {
@@ -647,6 +688,12 @@ export class StageOutreachService {
     }
 
     // If none of the channels succeeded
+    // Revert outreach_stage claim if send was not successful
+    await query(
+      `UPDATE leads SET outreach_stage = $1, updated_at = NOW() WHERE id = $2 AND outreach_stage = 'sending'`,
+      [activeStage, leadId]
+    );
+
     // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
     const failureReason = emailResult?.reason || websiteFormResult?.reason || whatsappResult?.reason || 'All channel dispatches failed';
     await leadIsolationService.isolateFailedLead(leadId, failureReason);

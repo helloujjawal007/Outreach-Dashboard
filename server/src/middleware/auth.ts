@@ -1,14 +1,39 @@
 import type { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
+import path from 'node:path';
 import { env } from '../config/env';
 
-const TOKEN_EXPIRY_DAYS = 30;
+// Cut token lifetime from 30 days to 12 hours
+const TOKEN_EXPIRY_HOURS = 12;
+
+// Server-side revocation denylist (stores revoked token signatures)
+const revokedSignatures = new Set<string>();
 
 /**
- * Generate a cryptographically signed session token for admin access
+ * Revokes a session token so it cannot be used again
+ */
+export function revokeToken(token: string): void {
+  if (!token || typeof token !== 'string') return;
+  const parts = token.split('.');
+  if (parts.length === 2) {
+    revokedSignatures.add(parts[1]);
+  }
+}
+
+/**
+ * Checks if a token has been explicitly revoked
+ */
+export function isTokenRevoked(token: string): boolean {
+  if (!token || typeof token !== 'string') return true;
+  const parts = token.split('.');
+  return parts.length === 2 && revokedSignatures.has(parts[1]);
+}
+
+/**
+ * Generate a cryptographically signed session token for admin access (12h lifetime)
  */
 export function generateSessionToken(): { token: string; expiresAt: Date } {
-  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000);
   const payload = JSON.stringify({
     role: 'admin',
     exp: expiresAt.getTime(),
@@ -28,7 +53,7 @@ export function generateSessionToken(): { token: string; expiresAt: Date } {
 }
 
 /**
- * Verifies if the provided session token is valid and not expired
+ * Verifies if the provided session token is valid, not expired, and not revoked
  */
 export function verifySessionToken(token: string): boolean {
   if (!token || typeof token !== 'string') return false;
@@ -37,6 +62,12 @@ export function verifySessionToken(token: string): boolean {
   if (parts.length !== 2) return false;
 
   const [encodedPayload, signature] = parts;
+
+  // Check revocation denylist
+  if (revokedSignatures.has(signature)) {
+    return false;
+  }
+
   const expectedSignature = crypto
     .createHmac('sha256', env.SESSION_SECRET)
     .update(encodedPayload)
@@ -61,7 +92,40 @@ export function verifySessionToken(token: string): boolean {
 }
 
 /**
- * Extracts session token from headers (Authorization Bearer, x-admin-token) or Cookie
+ * Generates a short-lived (60s) HMAC token scoped strictly to a single PDF filename
+ */
+export function generateScopedPdfToken(filename: string): { token: string; expiresAt: number } {
+  const cleanFile = path.basename(filename);
+  const exp = Date.now() + 60 * 1000; // 60 seconds
+  const payload = Buffer.from(JSON.stringify({ file: cleanFile, exp })).toString('base64url');
+  const sig = crypto.createHmac('sha256', env.SESSION_SECRET).update(payload).digest('base64url');
+  return { token: `${payload}.${sig}`, expiresAt: exp };
+}
+
+/**
+ * Verifies a 60-second file-scoped PDF token
+ */
+export function verifyScopedPdfToken(filename: string, token: string): boolean {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+  const [payloadStr, sig] = parts;
+  const expectedSig = crypto.createHmac('sha256', env.SESSION_SECRET).update(payloadStr).digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return false;
+  try {
+    const data = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
+    if (!data.exp || Date.now() > data.exp) return false;
+    return data.file === path.basename(filename);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extracts session token strictly from Authorization header, x-admin-token, or Cookie.
+ * Query parameter ?token= is deliberately NOT accepted on general routes.
  */
 export function extractToken(req: Request): string | null {
   // 1. Authorization: Bearer <token>
@@ -85,11 +149,6 @@ export function extractToken(req: Request): string | null {
     }
   }
 
-  // 4. Query param token: ?token=<token>
-  if (req.query && typeof req.query.token === 'string' && req.query.token.trim()) {
-    return req.query.token.trim();
-  }
-
   return null;
 }
 
@@ -97,17 +156,39 @@ export function extractToken(req: Request): string | null {
  * Express middleware to protect all /api routes except public endpoints
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const path = req.path;
+  const fullPath = (req.originalUrl ? req.originalUrl.split('?')[0] : req.path) || req.path;
+  const reqPath = req.path;
 
   // Whitelisted public endpoints
   const isPublic =
-    path === '/api/health' ||
-    path.startsWith('/api/auth/') ||
-    path === '/health';
+    fullPath === '/api/health' ||
+    fullPath === '/health' ||
+    reqPath === '/health' ||
+    fullPath.startsWith('/api/auth/') ||
+    reqPath.startsWith('/auth/') ||
+    fullPath.startsWith('/api/unsubscribe') ||
+    reqPath.startsWith('/unsubscribe');
 
   if (isPublic) {
     next();
     return;
+  }
+
+  // Allow PDF download endpoint if it has a valid 60s file-scoped token
+  if (fullPath.startsWith('/api/audit/download/') || reqPath.startsWith('/audit/download/')) {
+    const rawParam = fullPath.startsWith('/api/audit/download/')
+      ? fullPath.substring('/api/audit/download/'.length)
+      : reqPath.substring('/audit/download/'.length);
+    try {
+      const filename = path.basename(decodeURIComponent(rawParam));
+      const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+      if (filename && queryToken && verifyScopedPdfToken(filename, queryToken)) {
+        next();
+        return;
+      }
+    } catch {
+      // Fall through to standard session auth
+    }
   }
 
   const token = extractToken(req);
@@ -118,6 +199,48 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       code: 'UNAUTHORIZED',
     });
     return;
+  }
+
+  // CSRF Protection for ambient cookie sessions on state-changing requests
+  const isCookieAuth = !req.headers.authorization && !req.headers['x-admin-token'] && !!req.headers.cookie;
+  const isStateChanging = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method.toUpperCase());
+  if (isCookieAuth && isStateChanging) {
+    const origin = (req.headers.origin || '').trim();
+    if (origin) {
+      const allowedOrigins = new Set<string>([
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://localhost:5001',
+        'http://127.0.0.1:5001',
+      ]);
+      if (process.env.APP_URL) {
+        try { allowedOrigins.add(new URL(process.env.APP_URL).origin); } catch {}
+      }
+      if (process.env.RENDER_EXTERNAL_URL) {
+        try { allowedOrigins.add(new URL(process.env.RENDER_EXTERNAL_URL).origin); } catch {}
+      }
+      if (process.env.ALLOWED_ORIGINS) {
+        process.env.ALLOWED_ORIGINS.split(',').forEach((o) => {
+          const t = o.trim();
+          if (t) allowedOrigins.add(t);
+        });
+      }
+      let isAllowed = allowedOrigins.has(origin);
+      if (!isAllowed) {
+        try {
+          const url = new URL(origin);
+          if (url.hostname.endsWith('.onrender.com')) isAllowed = true;
+        } catch {}
+      }
+      if (!isAllowed) {
+        res.status(403).json({
+          success: false,
+          error: 'Cross-origin state-changing request blocked by CSRF protection policy.',
+          code: 'FORBIDDEN_ORIGIN',
+        });
+        return;
+      }
+    }
   }
 
   next();

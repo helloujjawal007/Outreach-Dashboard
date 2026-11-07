@@ -4,6 +4,9 @@ import { outreachEngine } from '../services/outreachService';
 
 export const conversationsRouter = Router();
 
+// In-memory idempotency cache for outbound replies (TTL: 5 minutes)
+const idempotencyStore = new Map<string, { status: number; body: any; timestamp: number }>();
+
 // GET /api/conversations/by-lead/:leadId
 conversationsRouter.get('/by-lead/:leadId', async (req: Request, res: Response) => {
   try {
@@ -83,13 +86,100 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'text and channel are required' });
     }
 
-    // A) If recipient is a COLD LEAD: Must pass through Outreach Engine rules
+    // Optional Idempotency-Key support
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
+    if (idempotencyKey) {
+      const cached = idempotencyStore.get(idempotencyKey);
+      if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+        return res.status(cached.status).json(cached.body);
+      }
+    }
+
+    // A) If recipient is a COLD LEAD: Must pass through Outreach Engine rules with atomic claim
     if (leadId) {
-      const sendResult = await outreachEngine.routeOutreachMessage({
-        leadId,
-        channel,
-        text,
+      // 1. Check existing stage & attempt atomic claim:
+      // UPDATE leads SET outreach_stage='sending' WHERE id=$1 AND outreach_stage='initial' (or null) RETURNING *;
+      // If zero rows returned, reject with HTTP 409
+      const leadCheck = await query<{ outreach_stage: string | null; email: string | null; phone: string | null }>(
+        `SELECT outreach_stage, email, phone FROM leads WHERE id = $1 AND deleted_at IS NULL`,
+        [leadId]
+      );
+      if (leadCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Lead not found' });
+      }
+
+      const { suppressionService } = await import('../services/suppressionService');
+      const suppCheck = await suppressionService.isSuppressed({
+        email: leadCheck.rows[0].email,
+        phone: leadCheck.rows[0].phone,
       });
+      if (suppCheck.suppressed) {
+        return res.status(403).json({
+          success: false,
+          error: `Outreach blocked: Recipient (${suppCheck.target || leadCheck.rows[0].email}) is in global suppression list (${suppCheck.reason || 'unsubscribed'}).`,
+          code: 'SUPPRESSED',
+        });
+      }
+
+      const prevStage = leadCheck.rows[0].outreach_stage || 'initial';
+      if (prevStage === 'sending') {
+        return res.status(409).json({
+          success: false,
+          error: 'Dispatch already in progress for this lead.',
+          code: 'CONCURRENT_DISPATCH',
+        });
+      }
+
+      // Atomic claim
+      const claimRes = await query<{ id: string }>(
+        `UPDATE leads 
+         SET outreach_stage = 'sending', updated_at = NOW() 
+         WHERE id = $1 
+           AND (outreach_stage = $2 OR ($2 = 'initial' AND outreach_stage IS NULL))
+         RETURNING id`,
+        [leadId, prevStage]
+      );
+
+      if (claimRes.rows.length === 0) {
+        return res.status(409).json({
+          success: false,
+          error: 'Conflict: Dispatch already in progress or stage has changed for this lead.',
+          code: 'CONCURRENT_DISPATCH',
+        });
+      }
+
+      let sendResult;
+      try {
+        sendResult = await outreachEngine.routeOutreachMessage({
+          leadId,
+          channel,
+          text,
+        });
+
+        if (sendResult.allowed) {
+          // Advance outreach stage on success
+          const nextStage = prevStage === 'initial' ? 'followup_1' : prevStage === 'followup_1' ? 'followup_2' : prevStage === 'followup_2' ? 'followup_3' : 'completed';
+          await query(
+            `UPDATE leads 
+             SET outreach_stage = $1, last_contacted_at = NOW(), first_contacted_at = COALESCE(first_contacted_at, NOW()), updated_at = NOW() 
+             WHERE id = $2`,
+            [nextStage, leadId]
+          );
+        } else {
+          // Revert stage if send was not allowed or failed
+          await query(
+            `UPDATE leads SET outreach_stage = $1, updated_at = NOW() WHERE id = $2 AND outreach_stage = 'sending'`,
+            [prevStage, leadId]
+          );
+        }
+      } catch (sendErr) {
+        // Revert stage on unhandled exception
+        await query(
+          `UPDATE leads SET outreach_stage = $1, updated_at = NOW() WHERE id = $2 AND outreach_stage = 'sending'`,
+          [prevStage, leadId]
+        );
+        throw sendErr;
+      }
 
       if (sendResult.allowed) {
         // For draft queue channels (Instagram, Facebook, LinkedIn), record outbound message in thread
@@ -146,10 +236,20 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
         });
       }
 
-      return res.json({
+      const responsePayload = {
         success: sendResult.allowed,
         result: sendResult,
-      });
+      };
+
+      if (idempotencyKey) {
+        idempotencyStore.set(idempotencyKey, {
+          status: 200,
+          body: responsePayload,
+          timestamp: Date.now(),
+        });
+      }
+
+      return res.json(responsePayload);
     }
 
     // B) If recipient is a PAYING CLIENT: Direct conversation orchestrator message
@@ -358,8 +458,63 @@ conversationsRouter.post('/auto-send-next', async (req: Request, res: Response) 
     const { stageOutreachService } = await import('../services/stageOutreachService');
 
     if (leadId && typeof leadId === 'string') {
-      const result = await stageOutreachService.sendNextStageToLead(leadId);
-      return res.json({ success: true, result });
+      const leadCheck = await query<{ outreach_stage: string | null; email: string | null; phone: string | null }>(
+        `SELECT outreach_stage, email, phone FROM leads WHERE id = $1 AND deleted_at IS NULL`,
+        [leadId]
+      );
+      if (leadCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Lead not found' });
+      }
+
+      const { suppressionService } = await import('../services/suppressionService');
+      const suppCheck = await suppressionService.isSuppressed({
+        email: leadCheck.rows[0].email,
+        phone: leadCheck.rows[0].phone,
+      });
+      if (suppCheck.suppressed) {
+        return res.status(403).json({
+          success: false,
+          error: `Outreach blocked: Recipient (${suppCheck.target || leadCheck.rows[0].email}) is in global suppression list (${suppCheck.reason || 'unsubscribed'}).`,
+          code: 'SUPPRESSED',
+        });
+      }
+      const prevStage = leadCheck.rows[0].outreach_stage || 'initial';
+      if (prevStage === 'sending') {
+        return res.status(409).json({
+          success: false,
+          error: 'Dispatch already in progress for this lead.',
+          code: 'CONCURRENT_DISPATCH',
+        });
+      }
+      const claimRes = await query<{ id: string }>(
+        `UPDATE leads SET outreach_stage = 'sending', updated_at = NOW() 
+         WHERE id = $1 AND (outreach_stage = $2 OR ($2 = 'initial' AND outreach_stage IS NULL)) 
+         RETURNING id`,
+        [leadId, prevStage]
+      );
+      if (claimRes.rows.length === 0) {
+        return res.status(409).json({
+          success: false,
+          error: 'Dispatch conflict: Lead is already being dispatched by another process.',
+          code: 'CONCURRENT_DISPATCH',
+        });
+      }
+      try {
+        const result = await stageOutreachService.sendNextStageToLead(leadId, prevStage);
+        if (!result.success || result.skipped) {
+          await query(
+            `UPDATE leads SET outreach_stage = $1, updated_at = NOW() WHERE id = $2 AND outreach_stage = 'sending'`,
+            [prevStage, leadId]
+          );
+        }
+        return res.json({ success: true, result });
+      } catch (err) {
+        await query(
+          `UPDATE leads SET outreach_stage = $1, updated_at = NOW() WHERE id = $2 AND outreach_stage = 'sending'`,
+          [prevStage, leadId]
+        );
+        throw err;
+      }
     }
 
     if (Array.isArray(leadIds) && leadIds.length > 0) {

@@ -212,21 +212,17 @@ export class OutreachEngineService {
 
     // 1b. Global Address & Phone Suppression Register Check
     if (lead.email || lead.phone) {
-      const globalCheck = await query<{ count: string }>(
-        `SELECT COUNT(*) FROM leads
-         WHERE consent_status = 'opted_out'
-           AND (
-             (email <> '' AND LOWER(email) = LOWER($1)) OR
-             (phone <> '' AND phone = $2)
-           )`,
-        [lead.email || '', lead.phone || '']
-      );
-      if (parseInt(globalCheck.rows[0]?.count || '0', 10) > 0) {
+      const { suppressionService } = await import('./suppressionService');
+      const suppCheck = await suppressionService.isSuppressed({
+        email: lead.email,
+        phone: lead.phone,
+      });
+      if (suppCheck.suppressed) {
         return {
           allowed: false,
           channel,
           actionTaken: 'blocked_consent',
-          reason: 'Recipient email or phone is recorded on the global opt-out suppression register.',
+          reason: `Global Suppression: Recipient is in suppression list (${suppCheck.reason || 'unsubscribed'})`,
         };
       }
     }

@@ -37,6 +37,10 @@ schedulerRouter.post('/schedule-single', async (req: Request, res: Response) => 
       return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, linkedin, facebook, or instagram.' });
     }
 
+    if (scheduledFor && isNaN(new Date(scheduledFor).getTime())) {
+      return res.status(400).json({ success: false, error: 'Invalid date format for scheduledFor' });
+    }
+
     const result = await emailSchedulerService.scheduleSingleDispatch({
       leadId,
       channel,
@@ -51,9 +55,11 @@ schedulerRouter.post('/schedule-single', async (req: Request, res: Response) => 
     res.json(result);
   } catch (error) {
     console.error('[schedulerRouter.scheduleSingle]', error);
-    res.status(500).json({
+    const msg = error instanceof Error ? error.message : 'Failed to schedule dispatch';
+    const isClientError = msg.includes('Invalid date') || msg.includes('Outreach blocked') || msg.includes('not found');
+    res.status(isClientError ? 400 : 500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to schedule dispatch',
+      error: msg,
     });
   }
 });

@@ -2,12 +2,21 @@ import { Router, type Request, type Response } from 'express';
 import { query, testConnection } from '../config/db';
 import { ollamaService } from '../services/ollamaService';
 import { emailAdapter } from '../adapters/emailAdapter';
+import { extractToken, verifySessionToken } from '../middleware/auth';
 
 export const healthRouter = Router();
 
-// GET /api/health - Get deliverability health, spam signals, warmup limits, and system status
-healthRouter.get('/', async (_req: Request, res: Response) => {
+// GET /api/health - Public: { status: "ok" } | Authenticated: Full deliverability & infrastructure health
+healthRouter.get('/', async (req: Request, res: Response) => {
   try {
+    const token = extractToken(req);
+    const isAuthenticated = token ? verifySessionToken(token) : false;
+
+    // Public response: strictly minimal { status: "ok" } without exposing internal infrastructure
+    if (!isAuthenticated) {
+      return res.json({ status: 'ok' });
+    }
+
     const { fastCache } = await import('../config/cache');
     const cached = fastCache.get('system_health');
     if (cached) {

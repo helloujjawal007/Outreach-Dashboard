@@ -191,7 +191,7 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
     try {
       await api.createTask({
         title: newTaskTitle.trim(),
-        dueDate: newTaskDue,
+        due_date: newTaskDue,
         priority: newTaskPriority,
       });
       setNewTaskTitle('');
@@ -229,9 +229,14 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
     const fallbackLead: Lead = {
       id: deal.lead_id || deal.id,
       businessName: deal.business_name || deal.title || 'Untitled Business',
-      primaryContactName: deal.contact_name,
-      email: deal.contact_email,
-      phone: deal.contact_phone,
+      primaryContactName: deal.contact_name || undefined,
+      email: deal.contact_email || '',
+      phone: deal.contact_phone || '',
+      instagram: '',
+      facebook: '',
+      whatsapp: '',
+      entityType: 'lead',
+      lastContactedAt: null,
       category: 'Sales Deal',
       status: 'active',
       consentStatus: 'replied',
@@ -244,7 +249,6 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
         probability: deal.probability,
       },
       createdAt: deal.created_at || new Date().toISOString(),
-      updatedAt: deal.updated_at || new Date().toISOString(),
     };
 
     setSelectedLeadForDrawer(fallbackLead);
@@ -283,7 +287,7 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
     if (!newNoteText.trim() || !activeActivityLead) return;
 
     try {
-      await api.logLeadActivity({
+      await api.logActivity({
         leadId: activeActivityLead.leadId,
         activityType: 'note',
         title: 'Sales Consultation Note',
@@ -870,8 +874,8 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
           setIsLeadDrawerOpen(false);
           setSelectedLeadForDrawer(null);
         }}
-        onDealCreated={fetchPipeline}
-        onStageChanged={fetchPipeline}
+        onDealCreated={loadPipeline}
+        onStageChanged={loadPipeline}
       />
 
       {/* New Deal Modal */}

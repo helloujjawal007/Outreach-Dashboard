@@ -116,6 +116,9 @@ export class EmailSchedulerService {
     channel: string;
   }> {
     const channel = params.channel || 'email';
+    if (params.scheduledFor && isNaN(new Date(params.scheduledFor).getTime())) {
+      throw new Error('Invalid date format for scheduledFor');
+    }
     const scheduledDate = params.scheduledFor ? new Date(params.scheduledFor) : new Date();
 
     // Fetch lead details
@@ -145,6 +148,22 @@ export class EmailSchedulerService {
     }
 
     const lead = leadRes.rows[0];
+
+    // Safeguard: Check if lead opted out or is in global suppression list
+    if (lead.consent_status === 'opted_out') {
+      throw new Error(`Outreach blocked: Lead "${lead.business_name}" has opted out of messaging.`);
+    }
+
+    const { suppressionService } = await import('./suppressionService');
+    const suppCheck = await suppressionService.isSuppressed({
+      email: lead.email,
+      phone: lead.phone || lead.whatsapp,
+    });
+    if (suppCheck.suppressed) {
+      throw new Error(
+        `Outreach blocked: Recipient (${suppCheck.target || lead.email}) is in the global suppression list (${suppCheck.reason || 'unsubscribed'}).`
+      );
+    }
 
     // Safeguard: Check if lead is in 'Need to Check' (manual_review)
     // Requirement: "after that unless retrieved back no msg needs to sent to them."
@@ -333,6 +352,10 @@ export class EmailSchedulerService {
          AND deleted_at IS NULL
          AND status != 'manual_review'
          AND (consent_status IS NULL OR consent_status NOT IN ('opted_out', 'unsubscribed'))
+         AND NOT EXISTS (
+           SELECT 1 FROM global_suppression_list gsl
+           WHERE LOWER(gsl.email) = LOWER(leads.email) AND leads.email IS NOT NULL AND leads.email <> ''
+         )
        ORDER BY created_at ASC`,
       [leadIds]
     );

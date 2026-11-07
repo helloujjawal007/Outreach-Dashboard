@@ -195,7 +195,7 @@ export class AutonomousInboundAgent {
 
       // 6. Optional Autonomous Response Dispatch (if auto_send_replies enabled)
       if (settings.auto_send_replies && classification.confidence >= (settings.confidence_threshold || 0.85) && params.senderEmail) {
-        if (classification.intent !== 'opt_out') {
+        if (classification.intent !== 'opt_out' && classification.intent !== 'not_interested' && classification.intent !== 'out_of_office') {
           console.log(`[AutonomousInboundAgent] Auto-sending generated response to ${params.senderEmail}...`);
           try {
             const sendRes = await emailAdapter.sendEmail({

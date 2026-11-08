@@ -610,6 +610,29 @@ export class StageOutreachService {
             liveDelivery: sendRes.liveDelivery,
             messageId: sendRes.messageId,
           };
+
+          // If an audit was sent via email, delete the PDF from disk and clear from database.
+          // The audit exists in the sent email (and synced to Gmail Sent via IMAP).
+          // If required later, it can be redownloaded from the email or redownload endpoint.
+          if (lead.audit_pdf_path) {
+            try {
+              if (fs.existsSync(lead.audit_pdf_path)) {
+                fs.unlinkSync(lead.audit_pdf_path);
+                console.log(`[StageOutreachService] 🗑️ Audit PDF deleted from disk after successful send: ${lead.audit_pdf_path}`);
+              }
+            } catch (delErr: any) {
+              console.warn(`[StageOutreachService] Could not unlink sent audit PDF:`, delErr?.message);
+            }
+
+            await query(
+              `UPDATE leads 
+               SET audit_pdf_path = NULL, 
+                   audit_pdf_name = NULL, 
+                   updated_at = NOW() 
+               WHERE id = $1`,
+              [lead.id]
+            );
+          }
         } else {
           emailResult = {
             success: false,

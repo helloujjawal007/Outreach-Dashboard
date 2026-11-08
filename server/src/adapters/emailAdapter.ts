@@ -461,10 +461,6 @@ export class EmailAdapter {
           text: plainText,
           html: htmlBody,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
-          headers: {
-            'List-Unsubscribe': `<mailto:${activeInbox.email}?subject=unsubscribe>`,
-            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-          },
         });
 
         liveDelivery = 'sent_live';
@@ -522,10 +518,6 @@ export class EmailAdapter {
           text: plainText,
           html: htmlBody,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
-          headers: {
-            'List-Unsubscribe': `<mailto:${cleanReplyTo}?subject=unsubscribe>`,
-            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-          },
         });
         liveDelivery = 'sent_live';
 

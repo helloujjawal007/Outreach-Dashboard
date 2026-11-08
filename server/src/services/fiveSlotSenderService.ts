@@ -881,7 +881,8 @@ export class FiveSlotSenderService {
           continue;
         }
 
-        if (candidate.audit_status !== 'ready' || !validation.ready) {
+        const isFollowUp = candidate.outreach_stage === 'followup_1' || candidate.outreach_stage === 'followup_2';
+        if (!isFollowUp && (candidate.audit_status !== 'ready' || !validation.ready)) {
           const requestedAtMs = candidate.audit_requested_at ? new Date(candidate.audit_requested_at).getTime() : 0;
           const isTimedOut = !requestedAtMs || Date.now() - requestedAtMs > 15 * 60 * 1000;
           const isAuditRunning = candidate.audit_status === 'pending' && !isTimedOut;

@@ -131,6 +131,33 @@ flowchart TD
 * **Auto-Quarantine on Bounce**: Automatically moves invalid email addresses to the `manual_review` queue to protect domain sender reputation.
 * **Auto-Throttling**: Halts cold outreach automatically if bounce rate exceeds 5% or spam complaint rate exceeds 0.3%.
 
+### 2.6 Five-Slot Sender Grid & Multi-Mailbox Architecture
+* **Strict Grid Timing (10-Min Cycle, 2-Min Offset)**:
+  * 5 parallel virtual slots (`A`, `B`, `C`, `D`, `E`).
+  * Each slot is assigned an offset: Slot A at :00, Slot B at :02, Slot C at :04, Slot D at :06, Slot E at :08, repeating cyclically every 10 minutes.
+  * Dispatches never overlap; strict tick re-entrancy guards prevent double-sends even under heavy load.
+* **Multi-Mailbox Slot Mapping (`connected_inboxes`)**:
+  * Slots map mailboxes using modulo routing (`inboxes[slotIndex % inboxCount]`).
+  * If 1 mailbox is configured (e.g., `cloudconsultancy.ad@gmail.com`), all 5 slots use it safely on the staggered grid without collision.
+  * If 5 distinct mailboxes are added, each slot operates with its own dedicated sender identity.
+* **Rolling JIT Audit Dispatch**:
+  * Audits are dispatched to the diagnostic engine just-in-time only for top-queued leads within the active horizon, preventing queue starvation.
+
+### 2.7 Audit Lifecycle: Post-Send Purge & On-Demand Redownload
+* **Storage Optimization via Instant Purge**:
+  * When an email with a PDF audit is successfully dispatched via SMTP, Nodemailer transmits the document to the lead and simultaneously syncs the full RFC 822 email payload (with attachment) to the Gmail/Zoho `Sent` folder via IMAP (`emailSentSyncService`).
+  * Immediately upon successful delivery, the local PDF file on disk is deleted (`fs.unlinkSync`), and database pointers (`audit_pdf_path`, `audit_pdf_name`) are set to `NULL`.
+* **On-Demand Audit Redownload**:
+  * If team members or clients need to retrieve the audit later, the system provides on-demand generation and retrieval via `GET /api/audit/redownload/:leadId` or `GET /api/audit/lead/:leadId/pdf`, reconstructing the PDF dynamically from the lead's stored diagnostic metrics.
+
+### 2.8 Consultative Humanoid Copywriting (Zero AI Watermark & Zero Unsubscribe)
+* **Humanoid, Authentic Tone**:
+  * Employs a conversational, peer-to-peer consulting tone without robotic disclosures or corporate fluff.
+  * Strictly adheres to natural human greetings matching `/^(Hi [A-Z][a-z]+|Hi there|Hello .+ team),$/`.
+  * Embeds actual technical data from the audit, including Lighthouse mobile scores (e.g. `42/100`), exact Core Web Vitals (LCP, CLS, FCP) timings, and specific page asset bottlenecks.
+* **Zero Unsubscribe Disclaimers**:
+  * All unsubscribe URLs, opt-out footers, and email headers (`List-Unsubscribe`, `List-Unsubscribe-Post`) have been completely removed to maintain clean, 1-to-1 personal executive correspondence.
+
 ---
 
 ## 3. Database Schema Overview
@@ -249,28 +276,54 @@ Copy the template configuration file:
 ```bash
 cp .env.example .env
 ```
-Edit `.env` with your PostgreSQL database credentials and Zoho Mail settings:
+Edit `.env` with your PostgreSQL database credentials and primary email settings:
 ```env
 PORT=5001
 NODE_ENV=development
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/outreach_dashboard
 
-# Zoho Mail SMTP (Outbound Sending)
-SMTP_HOST=smtppro.zoho.in
+# Outbound SMTP Sending (Gmail or Zoho)
+SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 SMTP_SECURE=true
-SMTP_USER=sales@yourdomain.com
-SMTP_PASS=your-16-char-zoho-app-password
-SMTP_FROM="Your Agency" <sales@yourdomain.com>
+SMTP_USER=cloudconsultancy.ad@gmail.com
+SMTP_PASS=your-16-char-google-app-password
+SMTP_FROM="Cloud Consultancy" <cloudconsultancy.ad@gmail.com>
 
-# Zoho Mail IMAP (Inbound Sync)
-IMAP_HOST=imappro.zoho.in
+# Inbound IMAP Sync (Optional - for auto-capturing incoming prospect replies)
+IMAP_HOST=imap.gmail.com
 IMAP_PORT=993
+IMAP_USER=cloudconsultancy.ad@gmail.com
+IMAP_PASS=your-16-char-google-app-password
 
 # Security & Dashboard Login
 ADMIN_PASSWORD=admin123
 SESSION_SECRET=your-random-32-character-secret-key
 ```
+
+#### Configuring the 5 Sending Inboxes & App Passwords
+The Outreach Engine supports up to 5 rotating sender mailboxes (or 1 mailbox distributed across all 5 slots). You can configure your mailboxes in two ways:
+
+1. **Default / Single Mailbox Mode (via `.env`)**:
+   - If no accounts are added to `connected_inboxes`, the 5-slot scheduler uses the credentials specified in `.env` (`SMTP_USER`, `SMTP_PASS`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`).
+   - For **Gmail / Google Workspace**:
+     - `SMTP_HOST`: `smtp.gmail.com`
+     - `SMTP_PORT`: `465` (with `SMTP_SECURE=true`) or `587` (with `SMTP_SECURE=false`)
+     - `SMTP_USER`: Your Gmail address (e.g. `cloudconsultancy.ad@gmail.com`)
+     - `SMTP_PASS`: A 16-character **Google App Password** (generate via Google Account -> Security -> 2-Step Verification -> App Passwords).
+
+2. **Multi-Mailbox Pool Mode (via `connected_inboxes` Database Table or Dashboard UI)**:
+   - For distinct mailboxes assigned to each virtual slot (Slots A through E), inboxes are stored in the `connected_inboxes` table:
+     ```sql
+     INSERT INTO connected_inboxes (email, name, provider, status, daily_limit, sent_today)
+     VALUES
+       ('agent1@cloudconsultancy.in', 'Agent 1', 'gmail', 'active', 50, 0),
+       ('agent2@cloudconsultancy.in', 'Agent 2', 'gmail', 'active', 50, 0),
+       ('agent3@cloudconsultancy.in', 'Agent 3', 'gmail', 'active', 50, 0),
+       ('agent4@cloudconsultancy.in', 'Agent 4', 'gmail', 'active', 50, 0),
+       ('agent5@cloudconsultancy.in', 'Agent 5', 'gmail', 'active', 50, 0);
+     ```
+   - Slot $i$ routes through `inbox[i % count]`. When 1 active mailbox is present, all 5 slots send via that mailbox safely on their respective 2-minute offsets without collision. When 5 mailboxes are present, each slot sends via its dedicated inbox.
 
 ### Step 4: Run Database Migrations & Seed
 ```bash

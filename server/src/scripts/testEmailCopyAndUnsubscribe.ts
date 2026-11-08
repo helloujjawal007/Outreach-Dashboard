@@ -81,8 +81,8 @@ async function main() {
   if (copyWithCwv.body.includes('local Google search positioning')) {
     throw new Error('Item 8b FAILED: Body contains forbidden phrase "local Google search positioning"!');
   }
-  if (!copyWithCwv.body.includes('automated diagnostic system recently performed a routine technical check')) {
-    throw new Error('Item 8b FAILED: Body does not state automated technical check!');
+  if (!copyWithCwv.body.includes('I put together a quick technical and performance summary')) {
+    throw new Error('Item 8b FAILED: Body does not use natural humanoid intro!');
   }
   if (!copyWithCwv.body.includes('Lighthouse mobile test score: 42/100')) {
     throw new Error('Item 8b FAILED: Body did not word PSI number as "Lighthouse mobile test score"!');
@@ -93,7 +93,10 @@ async function main() {
   if (/\{\{[^}]+\}\}|\[[A-Z_]+\]/.test(copyWithCwv.body)) {
     throw new Error('Item 8c FAILED: Body contains unpopulated template placeholders!');
   }
-  console.log('✅ PASS: Email copy uses automated check wording, Lighthouse mobile test phrasing, and contains 0 placeholders.\n');
+  if (copyWithCwv.body.toLowerCase().includes('unsubscribe') || copyWithCwv.body.toLowerCase().includes('opt out')) {
+    throw new Error('FAILED: Email body contains unsubscribe link or opt out option (User explicitly requested NO unsubscribe option in sent emails)!');
+  }
+  console.log('✅ PASS: Email copy uses professional humanoid phrasing, incorporates audit/PDF details, and contains 0 placeholders and NO unsubscribe option.\n');
 
   // Verify Non-CWV copy does NOT mention Core Web Vitals
   const nonCwvFindings = [
@@ -118,11 +121,11 @@ async function main() {
   console.log('✅ PASS: CWV mentioned ONLY when measured by TD.\n');
 
   // -------------------------------------------------------------------------
-  // 3. ITEM 8D: Compliance Footer & One-Click Immediate Unsubscribe
+  // 3. ITEM 8D: Professional Signature & Backend Unsubscribe Handler Verification
   // -------------------------------------------------------------------------
-  console.log('[Item 8d] Testing Compliance Footer & Immediate Unsubscribe Suppression...');
-  if (!copyWithCwv.body.includes('Cloud Consultancy Outbound') || !copyWithCwv.body.includes('To unsubscribe or opt out')) {
-    throw new Error('Item 8d FAILED: Email body missing postal address or unsubscribe link in footer!');
+  console.log('[Item 8d] Testing Professional Signature & Backend Unsubscribe Handler...');
+  if (!copyWithCwv.body.includes('Cloud Consultancy') || copyWithCwv.body.includes('unsubscribe')) {
+    throw new Error('Item 8d FAILED: Email signature missing sender branding or contains forbidden unsubscribe option!');
   }
 
   // Create test lead to test unsubscribe

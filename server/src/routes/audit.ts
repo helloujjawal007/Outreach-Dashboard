@@ -139,6 +139,20 @@ auditRouter.get('/lead/:leadId/pdf', async (req: Request, res: Response) => {
     }
 
     if (!pdfPath || !fs.existsSync(pdfPath)) {
+      if (row.website) {
+        console.log(`[auditRouter.leadPdf] Audit PDF was purged from disk after send. On-demand redownload/regeneration for "${row.business_name}" (${row.website})...`);
+        try {
+          const report = await clientAuditService.auditWebsite(row.website);
+          const pdfGen = await technicalAuditPdfService.generateAuditPdf(report, row.business_name);
+          pdfPath = pdfGen.pdfPath;
+          pdfName = pdfGen.pdfName;
+        } catch (genErr: any) {
+          console.warn(`[auditRouter.leadPdf] On-demand regeneration failed:`, genErr?.message);
+        }
+      }
+    }
+
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
       return res.status(404).json({
         success: false,
         error: `No audit report PDF found on file for "${row.business_name}".`,
@@ -151,6 +165,54 @@ auditRouter.get('/lead/:leadId/pdf', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[auditRouter.leadPdf] Error:', err);
     return res.status(500).json({ success: false, error: 'Failed to retrieve lead audit PDF.' });
+  }
+});
+
+/**
+ * GET /api/audit/redownload/:leadId
+ * Dedicated endpoint to redownload an audit that was sent via email.
+ */
+auditRouter.get('/redownload/:leadId', async (req: Request, res: Response) => {
+  try {
+    const leadId = typeof req.params.leadId === 'string' ? req.params.leadId : req.params.leadId?.[0];
+    const leadRes = await query<{
+      audit_pdf_path: string | null;
+      audit_pdf_name: string | null;
+      business_name: string;
+      website: string | null;
+    }>(
+      `SELECT audit_pdf_path, audit_pdf_name, business_name, website FROM leads WHERE id = $1`,
+      [leadId]
+    );
+
+    if (leadRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+
+    const row = leadRes.rows[0];
+    let pdfPath = row.audit_pdf_path;
+    let pdfName = row.audit_pdf_name || `${row.business_name.replace(/[^a-z0-9]/gi, '_')}_Audit.pdf`;
+
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      if (row.website) {
+        console.log(`[auditRouter.redownload] Redownloading/regenerating sent audit for "${row.business_name}"...`);
+        const report = await clientAuditService.auditWebsite(row.website);
+        const pdfGen = await technicalAuditPdfService.generateAuditPdf(report, row.business_name);
+        pdfPath = pdfGen.pdfPath;
+        pdfName = pdfGen.pdfName;
+      }
+    }
+
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      return res.status(404).json({ success: false, error: 'Audit could not be redownloaded.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(pdfName)}"`);
+    return res.sendFile(pdfPath);
+  } catch (err: any) {
+    console.error('[auditRouter.redownload] Error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to redownload audit PDF.' });
   }
 });
 

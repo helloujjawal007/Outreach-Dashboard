@@ -139,15 +139,10 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Builds the honest sender signature & compliance footer (physical address + one-click unsubscribe link)
+   * Builds honest, professional humanoid signature without automated unsubscribe links.
    */
-  public buildFooter(leadId?: string, leadEmail?: string): string {
-    const appUrl = process.env.APP_URL || 'http://localhost:5001';
-    const unsubUrl = leadId
-      ? `${appUrl}/api/unsubscribe?leadId=${encodeURIComponent(leadId)}&email=${encodeURIComponent(leadEmail || '')}`
-      : `${appUrl}/api/unsubscribe`;
-
-    return `Best regards,\n${this.agencyName} Outbound Team\n${this.senderEmail}\n\n--\n${this.getPostalAddress()}\nTo unsubscribe or opt out of future technical checks: ${unsubUrl}`;
+  public buildFooter(_leadId?: string, _leadEmail?: string): string {
+    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}`;
   }
 
   private compose(bodyLines: string[], leadId?: string, leadEmail?: string): string {
@@ -183,17 +178,15 @@ export class HumanCopywriterService {
             `Question regarding ${business}${cityPhrase}`,
           ]),
           body: this.compose([
-            `Hi ${salutation},`,
+            this.buildGreeting(lead.businessName, lead.primaryContactName),
             ``,
-            `I was researching ${categoryPhrase}${cityPhrase} on Google earlier today and came across ${business}.`,
+            `I noticed that ${business} currently doesn't have an active, modern website or dedicated landing page linked to your local Google Business profile.`,
             ``,
-            `You have built a solid local reputation serving customers${cityText}, but I noticed that ${business} currently doesn't have an active, modern website or dedicated landing page linked to your Google Business Profile.`,
+            `When customers search for ${categoryPhrase}${cityPhrase} on their phones, most look for quick service details, pricing, and a simple way to get in touch. Without a mobile-friendly site, many end up contacting nearby competitors instead.`,
             ``,
-            `When people search on their phones, over 70% look for immediate service details, pricing, and a simple way to get in touch. Without a dedicated website, many of those potential customers end up calling nearby competitors instead.`,
+            `At Cloud Consultancy, we help local businesses set up clean, fast-loading mobile websites and optimize their Google search presence to consistently generate more direct inquiries.`,
             ``,
-            `At Cloud Consultancy, we help local businesses set up clean, fast-loading mobile websites and optimize their Google search ranking so they consistently generate more direct inquiries.`,
-            ``,
-            `I put together a quick mockup concept and local search roadmap for ${business} showing what this would look like. Would you be open to taking a quick look?`,
+            `I put together a quick mockup concept for ${business} showing what this would look like. Would you be open to taking a quick look?`,
           ]),
           stage: 'initial',
           stageLabel: '1st Email (Business Summary & Services Pitch)',
@@ -299,9 +292,9 @@ export class HumanCopywriterService {
 
     if (stage === 'initial') {
       const subjects = [
-        `Automated technical check summary: ${domain} (report attached)`,
-        `Technical diagnostic notes for ${domain}`,
-        `Routine technical check regarding ${domain}`,
+        `Technical audit notes for ${domain} (report attached)`,
+        `Website performance summary: ${domain}`,
+        `Quick diagnostic breakdown regarding ${domain}`,
       ];
 
       return {
@@ -309,16 +302,16 @@ export class HumanCopywriterService {
         body: this.compose([
           greeting,
           ``,
-          `Our automated diagnostic system recently performed a routine technical check on ${domain}${scoreClause}. We compiled the diagnostic observations into a 1-page summary report and attached it here (${pdfName}) for your web team.`,
+          `I put together a quick technical and performance summary for ${domain} (attached: ${pdfName})${scoreClause}.`,
           ``,
           findingsIntro,
           findingsBullets,
           ``,
           cwvSpeedContext,
           ``,
-          `The attached document outlines the exact line-item findings and the recommended fixes we typically implement.`,
+          `I included the specific page assets, metric breakdown, and practical fixes in the 1-page attached report so your team can look through them directly.`,
           ``,
-          `Happy to answer any questions or share how we usually resolve these if useful for your team.`,
+          `Happy to share how we usually resolve these or answer any questions if helpful.`,
         ], lead.id, lead.email || undefined),
         stage: 'initial',
         stageLabel: '1st Email (Audit Findings & PDF Enclosed)',
@@ -329,9 +322,9 @@ export class HumanCopywriterService {
     // 2. Follow-up 1 (Day 2.5)
     if (stage === 'followup_1') {
       const subjects = [
-        `Following up: ${domain} technical diagnostic summary`,
-        `Following up regarding ${business} (${domain})`,
-        `Quick check-in: ${domain} technical notes`,
+        `Following up: ${domain} technical summary`,
+        `Quick check-in regarding ${business} (${domain})`,
+        `Technical notes for ${domain}`,
       ];
 
       return {
@@ -339,14 +332,12 @@ export class HumanCopywriterService {
         body: this.compose([
           greeting,
           ``,
-          `Following up briefly on the automated technical check we sent over regarding ${domain}.`,
+          `Following up briefly on the technical breakdown I sent over for ${domain}.`,
           ``,
           fu1FindingsIntro,
           rawFindings.slice(0, 3).map((f) => (f.startsWith('•') ? f : `• ${f}`)).join('\n'),
           ``,
-          `I have re-attached the diagnostic summary (${pdfName}) for quick reference. Did your web team have a chance to review these points?`,
-          ``,
-          `Happy to answer any questions or walk through the specific fixes if useful.`,
+          `Did your team have a chance to take a look at the attached report (${pdfName})? Happy to walk through the fixes if that would be useful.`,
         ], lead.id, lead.email || undefined),
         stage: 'followup_1',
         stageLabel: '2nd Email (Day 2.5 Follow-up with Findings & PDF)',
@@ -357,9 +348,9 @@ export class HumanCopywriterService {
     // 3. Follow-up 2 (Day 5.5)
     if (stage === 'followup_2') {
       const subjects = [
-        `Final check-in: ${business} (${domain}) technical report`,
-        `Quick note: ${domain} technical observations`,
-        `${business} website technical notes`,
+        `Final check-in: ${business} (${domain})`,
+        `Closing the loop on ${domain} technical notes`,
+        `${business} website performance`,
       ];
 
       return {
@@ -367,11 +358,11 @@ export class HumanCopywriterService {
         body: this.compose([
           greeting,
           ``,
-          `Following up one final time regarding the automated technical check for ${domain} (${pdfName}).`,
+          `Following up one last time regarding ${domain}.`,
           ``,
-          `If resolving the technical items highlighted in the diagnostic report is on your roadmap this quarter, feel free to reply and I'll share our recommended implementation approach.`,
+          `If resolving these technical items or improving mobile load speed is on your radar this quarter, let me know and I'd be glad to share a straightforward walkthrough of our approach.`,
           ``,
-          `If the timing isn't right or you already have this handled, no worries at all. Wishing you and the team continued success.`,
+          `If you've got this handled or the timing isn't right, no problem at all. Wishing you and the ${business} team continued success.`,
         ], lead.id, lead.email || undefined),
         stage: 'followup_2',
         stageLabel: '3rd Email (Day 5.5 Follow-up)',

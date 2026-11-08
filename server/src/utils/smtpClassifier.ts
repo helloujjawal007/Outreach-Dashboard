@@ -3,6 +3,7 @@ export type SmtpErrorType =
   | 'soft_bounce'
   | 'daily_limit_pause'
   | 'mailbox_auth'
+  | 'recipient_policy_block'
   | 'transient'
   | 'unknown';
 
@@ -17,11 +18,12 @@ export interface SmtpClassificationResult {
 
 /**
  * Classifies SMTP and dispatch errors by Enhanced Status Codes and patterns:
- * 1. 5.4.5 Mailbox Daily Sending Quota (timed pause until next send day with auto-resume)
- * 2. 535 / 5.7.x / 554 Mailbox Authentication / Policy (circuit breaker pause, requires credential check / manual resume)
- * 3. 5.1.1 / 5.1.0 / 5.1.2 / 5.2.1 Hard Bounce (bad recipient / account disabled -> permanent isolation & suppression)
- * 4. 5.2.2 Soft Bounce (mailbox full -> non-fatal, soft retry with cap)
- * 5. 421 / 4xx / 4.x Greylisting & Network Timeouts (transient retry with cap of 3)
+ * 1. 5.4.5 Mailbox Daily Sending Quota (timed pause with rolling 24-hour auto-resume)
+ * 2. 535 / 5.7.8 Mailbox Authentication / Bad Credentials (circuit breaker pause, requires credential check / manual resume)
+ * 3. 550 5.7.1 Recipient Policy Block / Spam Filter (recipient-specific, does NOT trip breaker unless >= 5 distinct domains reject)
+ * 4. 5.1.1 / 5.1.0 / 5.1.2 / 5.2.1 Hard Bounce (bad recipient / account disabled -> permanent isolation & suppression)
+ * 5. 5.2.2 Soft Bounce (mailbox full -> non-fatal, soft retry with cap)
+ * 6. 421 / 4xx / 4.x Greylisting & Network Timeouts (transient retry with cap of 3)
  */
 export function classifySmtpError(rawError: string | Error | unknown): SmtpClassificationResult {
   const message = rawError instanceof Error ? rawError.message : String(rawError || '');
@@ -29,7 +31,7 @@ export function classifySmtpError(rawError: string | Error | unknown): SmtpClass
 
   // 1. Mailbox Daily Sending Limit Exceeded:
   // 5.4.5 ("Daily user sending quota exceeded", "Daily send limit reached", "Rate limit exceeded")
-  // Action: Timed pause until the start of next send day (auto-resumes automatically without manual intervention).
+  // Action: Timed pause with rolling 24-hour auto-resume.
   if (
     /5\.4\.5|daily send limit|daily sending quota|user sending limit|daily quota exceeded|sending quota/i.test(lower)
   ) {
@@ -43,13 +45,26 @@ export function classifySmtpError(rawError: string | Error | unknown): SmtpClass
     };
   }
 
-  // 2. Mailbox Authentication / Credential / Security Failures:
-  // 535, 5.7.8 (Bad credentials), 5.7.x (Auth security), 554 (relay denied / policy)
+  // 2. Recipient Server Policy / Spam Rejection (550 5.7.1):
+  // Specific to recipient domain (e.g. corporate spam filters, SPF/DMARC policy of recipient).
+  // Action: Non-fatal for the 5-slot scheduler; capped per lead/domain. Only trips breaker if >= 5 distinct domains reject in window.
+  if (
+    /5\.7\.1|relay access denied|spam block|policy rejection|delivery not authorized|client host rejected/i.test(lower)
+  ) {
+    return {
+      type: 'recipient_policy_block',
+      message,
+      isFatalForLead: false,
+      shouldTripCircuitBreaker: false,
+      shouldRetryLead: true,
+    };
+  }
+
+  // 3. Mailbox Authentication / Credential Failures:
+  // 535, 5.7.8 (Bad credentials), invalid credentials, wrong password
   // Action: Mailbox credential issue. Leave leads untouched. Trip circuit breaker after 3 failures (manual resume).
   if (
-    /535|5\.7\.8|eauth|authentication failed|invalid credentials|invalid login|wrong password|username and password not accepted|badauth|auth error/i.test(lower) ||
-    /5\.7\.\d|5\.7\.[a-z0-9]+/i.test(lower) ||
-    /554/i.test(lower)
+    /535|5\.7\.8|eauth|authentication failed|invalid credentials|invalid login|wrong password|username and password not accepted|badauth|auth error/i.test(lower)
   ) {
     return {
       type: 'mailbox_auth',

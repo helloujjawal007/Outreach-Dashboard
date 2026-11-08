@@ -9,6 +9,7 @@ import { suppressionService } from './suppressionService';
 import { classifySmtpError } from '../utils/smtpClassifier';
 import { validateAuditAsset, isValidPdfFile } from '../utils/auditPolicy';
 import { cleanupOldAuditPdfs } from '../routes/auditCallback';
+import { resolveRecipientTimezone, isWithinRecipientWindow } from '../utils/timezoneHelper';
 import { env } from '../config/env';
 
 export const SLOTS = ['A', 'B', 'C', 'D', 'E'] as const;
@@ -52,7 +53,7 @@ export class FiveSlotSenderService {
   private isTickRunning = false;
   // Circuit breaker state for mailbox / SMTP authentication errors
   private consecutiveAuthFailures = 0;
-  private isCircuitBreakerTripped = false;
+  public isCircuitBreakerTripped = false;
   private circuitBreakerAlert: string | null = null;
   // Tracks last cycle index dispatched per slot to guarantee 1 send per slot per cycle
   private lastSlotCycleDispatched = new Map<SlotId, number>();
@@ -62,6 +63,8 @@ export class FiveSlotSenderService {
   private lastGlobalSentEpochMs = 0;
   // Timed pause for 5.4.5 daily quota limits (auto-resumes at start of next send window)
   public quotaPauseUntil: Date | null = null;
+  // Sliding 1-hour window for tracking distinct 5.7.1 recipient policy blocks
+  private recentPolicyBlocks: Array<{ domain: string; epochMs: number }> = [];
 
   getLastSlotSent(slotId: SlotId): number | undefined {
     return this.lastSlotSentEpochMs.get(slotId);
@@ -75,20 +78,27 @@ export class FiveSlotSenderService {
     this.lastSlotSentEpochMs.clear();
     this.lastSlotCycleDispatched.clear();
     this.lastGlobalSentEpochMs = 0;
+    this.recentPolicyBlocks = [];
   }
 
   /**
    * Syncs per-slot last sent timestamps from the DB on reboot
    * Guarantees persistence of the per-slot last-sent guard across process restarts
+   * When batchTag is supplied, strictly scopes to leads with that test tag to prevent test cross-contamination.
    */
-  async syncLastSentFromDb(): Promise<void> {
+  async syncLastSentFromDb(batchTag?: string): Promise<void> {
     try {
-      const res = await query<{ slot_id: SlotId; last_sent: string }>(
-        `SELECT slot_id, MAX(last_sent_at) as last_sent 
-         FROM leads 
-         WHERE slot_id IS NOT NULL AND last_sent_at IS NOT NULL 
-         GROUP BY slot_id`
-      );
+      const sql = batchTag
+        ? `SELECT slot_id, MAX(last_sent_at) as last_sent 
+           FROM leads 
+           WHERE notes = $1 AND slot_id IS NOT NULL AND last_sent_at IS NOT NULL 
+           GROUP BY slot_id`
+        : `SELECT slot_id, MAX(last_sent_at) as last_sent 
+           FROM leads 
+           WHERE slot_id IS NOT NULL AND last_sent_at IS NOT NULL 
+           GROUP BY slot_id`;
+      const params = batchTag ? [batchTag] : [];
+      const res = await query<{ slot_id: SlotId; last_sent: string }>(sql, params);
       for (const row of res.rows) {
         if (row.slot_id && row.last_sent) {
           const epoch = new Date(row.last_sent).getTime();
@@ -147,8 +157,8 @@ export class FiveSlotSenderService {
           ...row,
           slot_cycle_min: parseFloat(row.slot_cycle_min as any) || 10,
           slot_offset_min: parseFloat(row.slot_offset_min as any) || 2,
-          daily_send_limit: parseInt(row.daily_send_limit as any, 10) || 150,
-          send_window_start_hour: parseInt(row.send_window_start_hour as any, 10) || 8,
+          daily_send_limit: row.daily_send_limit !== null && row.daily_send_limit !== undefined ? parseInt(row.daily_send_limit as any, 10) : 150,
+          send_window_start_hour: row.send_window_start_hour !== null && row.send_window_start_hour !== undefined ? parseInt(row.send_window_start_hour as any, 10) : 8,
           send_window_end_hour: parseInt(row.send_window_end_hour as any, 10) || 19,
           global_min_gap_sec: parseInt(row.global_min_gap_sec as any, 10) || 120,
         };
@@ -597,8 +607,8 @@ export class FiveSlotSenderService {
   computeGridState(now: Date = new Date(), settings: SlotSenderSettings) {
     const nowSec = Math.floor(now.getTime() / 1000);
     const anchorSec = Math.floor(new Date(settings.anchor_timestamp).getTime() / 1000);
-    const cycleSec = Math.max(60, settings.slot_cycle_min * 60);
-    const offsetSec = Math.max(10, settings.slot_offset_min * 60);
+    const cycleSec = Math.max(5, settings.slot_cycle_min * 60);
+    const offsetSec = Math.max(1, settings.slot_offset_min * 60);
 
     const elapsed = Math.max(0, nowSec - anchorSec);
     const cycleIndex = Math.floor(elapsed / cycleSec);
@@ -792,11 +802,12 @@ export class FiveSlotSenderService {
           [marketTz]
         );
         const sentToday = parseInt(metricRes.rows[0]?.count || '0', 10);
-        if (sentToday >= (settings.daily_send_limit || 150)) {
+        const capLimit = settings.daily_send_limit ?? 150;
+        if (sentToday >= capLimit) {
           return {
             activeSlot,
             dispatched: false,
-            reason: `Daily send limit reached (${sentToday}/${settings.daily_send_limit || 150} emails today in ${marketTz})`,
+            reason: `Daily send limit reached (${sentToday}/${capLimit} emails today in ${marketTz})`,
           };
         }
       }
@@ -825,14 +836,17 @@ export class FiveSlotSenderService {
         audit_pdf_path: string;
         audit_retry_count: number;
         audit_requested_at: string | null;
+        location?: string | null;
+        country?: string | null;
+        metadata?: any;
       }>(
-        `SELECT id, business_name, website, email, slot_id, outreach_stage, audit_status, audit_findings, audit_pdf_path, audit_retry_count, audit_requested_at
+        `SELECT id, business_name, website, email, slot_id, outreach_stage, audit_status, audit_findings, audit_pdf_path, audit_retry_count, audit_requested_at, location, country, metadata
          FROM leads
          WHERE deleted_at IS NULL
            AND status = 'active'
            AND consent_status = 'none'
            AND (slot_id = $1 OR (slot_id IS NULL AND $1 = 'A'))
-           AND (outreach_stage IS NULL OR outreach_stage != 'sending')
+           AND (outreach_stage IS NULL OR (outreach_stage != 'sending' AND outreach_stage != 'completed' AND outreach_stage != 'skipped_no_opportunity'))
            AND (
              (last_contacted_at IS NULL AND (outreach_stage IS NULL OR outreach_stage = 'initial'))
              OR (outreach_stage = 'followup_1' AND last_contacted_at <= NOW() - INTERVAL '48 hours')
@@ -862,16 +876,40 @@ export class FiveSlotSenderService {
       let readyCandidate: typeof candidateQuery.rows[0] | null = null;
 
       for (const candidate of candidateQuery.rows) {
+        // Recipient Timezone Window Check (09:00 - 17:00 recipient local time, Monday-Friday)
+        const recipientTz = resolveRecipientTimezone(
+          candidate.metadata?.timezone,
+          candidate.location,
+          candidate.country,
+          settings.send_window_timezone || 'UTC'
+        );
+
+        if (!testOptions?.bypassWindow) {
+          const windowCheck = isWithinRecipientWindow(
+            now,
+            recipientTz,
+            settings.send_window_start_hour ?? 9,
+            settings.send_window_end_hour ?? 17,
+            settings.weekdays_only !== false
+          );
+          if (!windowCheck.inWindow) {
+            console.log(
+              `[FiveSlotSenderService] ⏸️ Skipping lead "${candidate.business_name}" (${candidate.id}): ${windowCheck.reason}`
+            );
+            continue; // Evaluate next candidate in slot whose local business hours are open
+          }
+        }
+
         const validation = validateAuditAsset(candidate.audit_findings, candidate.audit_pdf_path);
 
-        // Item 10: Clean sites: honor noOpportunity ONLY for complete audits (candidate.audit_status === 'ready')
-        // Use separate status 'skipped_no_opportunity' instead of 'completed'; 0 failure_log rows, 0 emails sent.
+        // Item 12: Clean sites: honor noOpportunity ONLY for complete audits (candidate.audit_status === 'ready')
+        // Use separate status 'skipped_no_opportunity' AND outreach_stage 'skipped_no_opportunity'; 0 failure_log rows, 0 emails sent.
         if (candidate.audit_status === 'ready' && validation.noOpportunity) {
-          console.log(`[FiveSlotSenderService] 🟢 Clean site detected for "${candidate.business_name}": Complete audit found 0 flaws. Marking status = 'skipped_no_opportunity'.`);
+          console.log(`[FiveSlotSenderService] 🟢 Clean site detected for "${candidate.business_name}": Complete audit found 0 flaws. Marking status = 'skipped_no_opportunity', outreach_stage = 'skipped_no_opportunity'.`);
           await query(
             `UPDATE leads 
              SET status = 'skipped_no_opportunity', 
-                 outreach_stage = 'completed', 
+                 outreach_stage = 'skipped_no_opportunity', 
                  manual_review_reason = 'Clean site: 0 technical flaws detected in complete audit (skipped_no_opportunity)',
                  updated_at = NOW() 
              WHERE id = $1`,
@@ -969,7 +1007,11 @@ export class FiveSlotSenderService {
         const suppCheck = await suppressionService.isSuppressed({ email: candidate.email });
         if (suppCheck.suppressed) {
           console.warn(`[FiveSlotSenderService] 🚫 Lead ${candidate.id} (${candidate.email}) suppressed at send time (${suppCheck.reason}). Skipping.`);
-          await query(`UPDATE leads SET consent_status = 'opted_out', updated_at = NOW() WHERE id = $1`, [candidate.id]);
+          if (suppCheck.reason === 'hard_bounce') {
+            await query(`UPDATE leads SET status = 'manual_review', manual_review_reason = 'Suppressed: hard_bounce', updated_at = NOW() WHERE id = $1`, [candidate.id]);
+          } else {
+            await query(`UPDATE leads SET consent_status = 'opted_out', status = 'inactive', updated_at = NOW() WHERE id = $1`, [candidate.id]);
+          }
           continue;
         }
 
@@ -1088,14 +1130,28 @@ export class FiveSlotSenderService {
       };
     }
 
-    // 2. Mailbox Daily Sending Quota (5.4.5) - Timed pause until next send day with auto-resume
+    // 2. Mailbox Daily Sending Quota (5.4.5) - Rolling 24-hour timed pause with auto-resume
     if (classification.type === 'daily_limit_pause') {
-      const settings = await this.getSettings();
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(settings.send_window_start_hour || 9, 0, 0, 0);
-      this.quotaPauseUntil = tomorrow;
-      console.warn(`[FiveSlotSenderService] ⏸️ 5.4.5 Mailbox Daily Quota reached: Timed pause until ${tomorrow.toISOString()} (auto-resumes tomorrow).`);
+      let resumeTime: Date;
+      try {
+        const earliestRes = await query<{ earliest_sent: string }>(
+          `SELECT MIN(sent_at) as earliest_sent FROM messages 
+           WHERE direction = 'outbound' AND status IN ('sent', 'delivered') AND sent_at >= NOW() - INTERVAL '24 hours'`
+        );
+        if (earliestRes.rows[0]?.earliest_sent) {
+          resumeTime = new Date(new Date(earliestRes.rows[0].earliest_sent).getTime() + 24 * 3600 * 1000);
+        } else {
+          resumeTime = new Date(Date.now() + 24 * 3600 * 1000);
+        }
+      } catch {
+        resumeTime = new Date(Date.now() + 24 * 3600 * 1000);
+      }
+
+      if (resumeTime.getTime() <= Date.now()) {
+        resumeTime = new Date(Date.now() + 60 * 60 * 1000);
+      }
+      this.quotaPauseUntil = resumeTime;
+      console.warn(`[FiveSlotSenderService] ⏸️ 5.4.5 Mailbox Daily Quota reached: Rolling 24-hour pause active until ${resumeTime.toISOString()} (resumes 24h after first send in window).`);
       
       // Leave lead untouched in queue for next turn
       await query(
@@ -1106,7 +1162,79 @@ export class FiveSlotSenderService {
         activeSlot,
         dispatched: false,
         leadId: candidate.id,
-        reason: `5.4.5 Daily Sending Quota exceeded. Timed pause until ${tomorrow.toISOString()} (auto-resume).`,
+        reason: `5.4.5 Daily Sending Quota exceeded. Rolling 24h pause until ${resumeTime.toISOString()} (auto-resume).`,
+      };
+    }
+
+    // 3. Recipient Server Policy / Spam Filter Block (550 5.7.1)
+    // Recipient-specific block. Only trips breaker if >= 5 distinct domains reject in a short time.
+    if (classification.type === 'recipient_policy_block') {
+      this.consecutiveAuthFailures = 0;
+      const recipientDomain = (candidate.email || '').split('@')[1]?.toLowerCase() || 'unknown.domain';
+      const nowMs = Date.now();
+
+      // Prune blocks older than 1 hour (sliding 1-hour window)
+      this.recentPolicyBlocks = this.recentPolicyBlocks.filter((b) => nowMs - b.epochMs < 3600 * 1000);
+      this.recentPolicyBlocks.push({ domain: recipientDomain, epochMs: nowMs });
+
+      const distinctDomains = new Set(this.recentPolicyBlocks.map((b) => b.domain));
+      console.warn(
+        `[FiveSlotSenderService] ⚠️ 5.7.1 Recipient Policy Block from "${recipientDomain}". Distinct rejecting domains in last hour: ${distinctDomains.size}/5`
+      );
+
+      // Only trip circuit breaker if >= 5 distinct recipient domains reject in a short time
+      if (distinctDomains.size >= 5) {
+        this.isCircuitBreakerTripped = true;
+        this.circuitBreakerAlert = `Circuit breaker tripped: 5 distinct recipient domains rejected messages with 5.7.1 policy blocks in the last hour. Outbound sender paused to protect reputation.`;
+        await query(
+          `UPDATE slot_sender_settings 
+           SET is_active = false, circuit_breaker_tripped = true, updated_at = NOW() 
+           WHERE id = 'default'`
+        );
+        console.error(`[FiveSlotSenderService] 🚨 CIRCUIT BREAKER TRIPPED! 5 distinct recipient domains rejected with 5.7.1.`);
+      }
+
+      const leadRetriesRes = await query<{ transient_retry_count: number }>(
+        `UPDATE leads 
+         SET transient_retry_count = COALESCE(transient_retry_count, 0) + 1,
+             send_retry_count = COALESCE(send_retry_count, 0) + 1,
+             outreach_stage = $1,
+             claimed_stage = NULL,
+             claimed_at = NULL,
+             updated_at = NOW() 
+         WHERE id = $2 AND (outreach_stage = 'sending' OR outreach_stage = $1)
+         RETURNING transient_retry_count`,
+        [prevStage, candidate.id]
+      );
+      const retries = leadRetriesRes.rows[0]?.transient_retry_count || 1;
+      if (retries >= 3) {
+        const { leadIsolationService } = await import('./leadIsolationService');
+        await leadIsolationService.isolateFailedLead(
+          candidate.id,
+          `Recipient policy block cap reached after 3 retries (${classification.message})`
+        );
+        await failureLogService.logFailure({
+          leadId: candidate.id,
+          company: candidate.business_name,
+          website: candidate.website,
+          email: candidate.email,
+          slotId: activeSlot,
+          stage: prevStage,
+          type: 'SEND_FAILED',
+          errorMessage: `Recipient policy block cap reached: ${classification.message}`,
+          attempts: retries,
+        });
+        console.warn(`[FiveSlotSenderService] Lead ${candidate.id} quarantined: recipient policy block cap reached.`);
+      } else {
+        console.warn(`[FiveSlotSenderService] Lead ${candidate.id} recipient policy block (${retries}/3). Left in queue for retry.`);
+      }
+
+      return {
+        activeSlot,
+        dispatched: false,
+        leadId: candidate.id,
+        reason: `Recipient policy block (5.7.1) from ${recipientDomain}: ${classification.message}`,
+        circuitBreakerTripped: this.isCircuitBreakerTripped,
       };
     }
 

@@ -10,6 +10,8 @@ import { workflowRoutingService } from '../services/workflowRoutingService';
 import { leadIsolationService } from '../services/leadIsolationService';
 import { classifySmtpError, type SmtpErrorType } from '../utils/smtpClassifier';
 
+import { signUnsubscribeToken } from '../utils/tokenSigner';
+
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
   name: string;
@@ -97,6 +99,7 @@ export interface MockSendRecord {
   subject: string;
   stage: string;
   body?: string;
+  headers?: Record<string, string>;
   attachments?: Array<{ filename: string; path?: string }>;
 }
 
@@ -109,8 +112,13 @@ export class EmailAdapter {
     this.isMockMode = enabled;
   }
 
+  isTestDatabase(): boolean {
+    const dbUrl = (process.env.DATABASE_URL || '').toLowerCase();
+    return dbUrl.includes('_test') || dbUrl.includes('test_') || dbUrl.endsWith('/test');
+  }
+
   isMock(): boolean {
-    return this.isMockMode || process.env.MOCK_SMTP === 'true';
+    return this.isMockMode || process.env.MOCK_SMTP === 'true' || this.isTestDatabase();
   }
 
   getMockSentLog(): MockSendRecord[] {
@@ -406,8 +414,21 @@ export class EmailAdapter {
     // Structured Humanoid HTML version with escaped entities
     const htmlBody = buildHumanoidHtml(finalBodyText);
 
+    // Build RFC 8058 / RFC 2369 compliant List-Unsubscribe headers
+    const publicBaseUrl = (
+      process.env.PUBLIC_APP_URL ||
+      process.env.APP_URL ||
+      'https://outreach.cloudconsultancy.in'
+    ).replace(/\/$/, '');
+    const unsubToken = signUnsubscribeToken(params.leadId || 'lead', params.to);
+    const unsubUrl = `${publicBaseUrl}/api/unsubscribe?token=${unsubToken}`;
+    const customHeaders: Record<string, string> = {
+      'List-Unsubscribe': `<${unsubUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    };
+
     // 2. Dispatch via Mock Transport or Multi-Inbox Rotation Pool
-    if (this.isMock() || process.env.MOCK_SMTP === 'true') {
+    if (this.isMock() || process.env.MOCK_SMTP === 'true' || this.isTestDatabase()) {
       try {
         const mockTransporter = nodemailer.createTransport({ jsonTransport: true });
         fromAddress = activeInbox ? `"${activeInbox.sender_name}" <${activeInbox.email}>` : `"Cloud Consultancy" <cloudconsultancy.ad@gmail.com>`;
@@ -420,6 +441,7 @@ export class EmailAdapter {
           subject: finalSubject,
           text: plainText,
           html: htmlBody,
+          headers: customHeaders,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         });
 
@@ -437,6 +459,7 @@ export class EmailAdapter {
           subject: finalSubject,
           stage: params.stage || 'initial',
           body: params.body,
+          headers: customHeaders,
           attachments: params.attachments,
         };
 
@@ -448,6 +471,9 @@ export class EmailAdapter {
         liveError = mockErr?.message || 'Mock SMTP error';
       }
     } else if (activeInbox) {
+      if (this.isTestDatabase()) {
+        throw new Error('[CRITICAL SAFETY ERROR] Live SMTP dispatch attempted against test database! Dispatch blocked.');
+      }
       try {
         const transporter = inboxRotationService.getTransporter(activeInbox);
         fromAddress = `"${activeInbox.sender_name}" <${activeInbox.email}>`;
@@ -460,6 +486,7 @@ export class EmailAdapter {
           subject: finalSubject,
           text: plainText,
           html: htmlBody,
+          headers: customHeaders,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         });
 
@@ -486,6 +513,9 @@ export class EmailAdapter {
         console.error(`[EmailAdapter] SMTP error on inbox ${activeInbox.email}:`, liveError);
       }
     } else if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS && params.to) {
+      if (this.isTestDatabase()) {
+        throw new Error('[CRITICAL SAFETY ERROR] Live SMTP dispatch attempted against test database! Dispatch blocked.');
+      }
       // Fallback: Dispatch via .env SMTP
       try {
         const cleanPass = env.SMTP_PASS.replace(/\s+/g, '');
@@ -517,6 +547,7 @@ export class EmailAdapter {
           subject: finalSubject,
           text: plainText,
           html: htmlBody,
+          headers: customHeaders,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         });
         liveDelivery = 'sent_live';

@@ -127,14 +127,15 @@ export class LeadIsolationService {
    *
    * Requirement: "it should check before sending it. if older msg is there it should send follow up email."
    */
-  async getLeadMessageHistory(leadId: string): Promise<LeadMessageHistory> {
+  async getLeadMessageHistory(leadId: string, overrideStage?: string): Promise<LeadMessageHistory> {
     const leadRes = await query<{
       first_contacted_at: Date | null;
       last_contacted_at: Date | null;
       outreach_stage: string | null;
+      claimed_stage: string | null;
       status: string;
     }>(
-      `SELECT first_contacted_at, last_contacted_at, outreach_stage, status FROM leads WHERE id = $1`,
+      `SELECT first_contacted_at, last_contacted_at, outreach_stage, claimed_stage, status FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -142,6 +143,7 @@ export class LeadIsolationService {
       first_contacted_at: null,
       last_contacted_at: null,
       outreach_stage: null,
+      claimed_stage: null,
       status: 'active',
     };
 
@@ -165,23 +167,24 @@ export class LeadIsolationService {
     );
     const scheduledSentCount = Number(schedRes.rows[0]?.count || 0);
 
-    // 3. Stage mapping
+    // 3. Stage mapping (Modern 3-touch cadence: initial -> followup_1 -> followup_2 -> completed)
     const stageMap: Record<string, number> = {
       initial: 0,
       followup_1: 1,
       followup_2: 2,
       followup_3: 3,
-      completed: 4,
+      completed: 3,
     };
-    const leadStageNum = lead.outreach_stage ? (stageMap[lead.outreach_stage] ?? 0) : 0;
+    const effectiveStage = overrideStage || (lead.outreach_stage === 'sending' ? lead.claimed_stage : lead.outreach_stage);
+    const leadStageNum = effectiveStage ? (stageMap[effectiveStage] ?? 0) : 0;
     const hasContactTimestamp = Boolean(lead.last_contacted_at || lead.first_contacted_at);
 
     // If an older message exists via outbound messages, scheduled dispatches, or recorded contact timestamps,
-    // effectiveTouchCount is GUARANTEED to be at least 1!
+    // effectiveTouchCount is GUARANTEED to be at least the stage number!
     const priorRecordedTouches = Math.max(outboundCount, scheduledSentCount, leadStageNum);
     const effectiveTouchCount = Math.max(
       priorRecordedTouches,
-      hasContactTimestamp ? 1 : 0
+      hasContactTimestamp ? Math.max(1, leadStageNum) : leadStageNum
     );
 
     const hasPriorContact = effectiveTouchCount > 0;
@@ -193,8 +196,6 @@ export class LeadIsolationService {
         ? 'followup_1'
         : effectiveTouchCount === 2
         ? 'followup_2'
-        : effectiveTouchCount === 3
-        ? 'followup_3'
         : 'completed';
 
     return {

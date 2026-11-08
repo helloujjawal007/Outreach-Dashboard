@@ -1569,19 +1569,22 @@ export class ClientAuditIntelligenceService {
       .map((issue) => `• ${issue}`)
       .join('\n');
 
-    const emailSubject = `Quick technical diagnostic on ${cleanBiz} (${auditReport.overallScore}/100)`;
+    const auditDateStr = auditReport.auditedAt
+      ? new Date(auditReport.auditedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+    const emailSubject = `Technical diagnostic breakdown for ${cleanBiz} (${auditReport.overallScore}/100)`;
 
     const emailBody = [
       `Hi ${salutation},`,
       ``,
-      `I was reviewing ${auditReport.domain} earlier today and noticed a couple of technical items affecting your mobile speed and Google search positioning:`,
+      `I put together a quick technical site diagnostic for ${auditReport.domain} (audited on ${auditDateStr}, diagnostic score: ${auditReport.overallScore}/100) and noted a couple of key items impacting mobile speed and Google indexing:`,
       ``,
       issuesBullets,
       ``,
-      `I put together a quick technical audit summary for ${cleanBiz} (${auditReport.overallScore}/100) detailing the exact bottlenecks and fixes:`,
-      `${this.AUDIT_TOOL_URL}`,
+      `I compiled the complete asset breakdown, Core Web Vitals measurements, and recommended fixes in a 1-page PDF diagnostic report for your team.`,
       ``,
-      `Happy to share how to resolve these or answer any questions if you'd find it useful.`,
+      `Happy to share the implementation steps or answer any questions if that would be helpful.`,
       ``,
       this.AGENCY_SIGNATURE,
     ].join('\n');
@@ -1589,12 +1592,12 @@ export class ClientAuditIntelligenceService {
     const whatsappMessage = [
       `Hi ${salutation}, this is Cloud Consultancy.`,
       ``,
-      `We ran a quick review on ${auditReport.domain} via our diagnostic dashboard (${this.AUDIT_TOOL_URL}) and it scored ${auditReport.overallScore}/100.`,
+      `We recently completed a technical check on ${auditReport.domain} (audited on ${auditDateStr}, diagnostic score: ${auditReport.overallScore}/100).`,
       ``,
-      `We noticed a couple of quick opportunities affecting your Google rankings and mobile speed:`,
-      auditReport.criticalIssues.slice(0, 2).map((i) => `- ${i}`).join('\n'),
+      `We noticed a couple of key items impacting your mobile load speed and Google rankings:`,
+      auditReport.criticalIssues.slice(0, 2).map((i) => `• ${i}`).join('\n'),
       ``,
-      `Would you like us to send the full fix breakdown or answer any quick questions?`,
+      `I have a 1-page technical audit report with the exact fixes. Would you like me to send that over?`,
       ``,
       this.AGENCY_SIGNATURE,
     ].join('\n');

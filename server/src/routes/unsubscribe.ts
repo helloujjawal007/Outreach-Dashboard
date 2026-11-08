@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import validator from 'validator';
 import { suppressionService } from '../services/suppressionService';
 import { query } from '../config/db';
+import { verifyUnsubscribeToken } from '../utils/tokenSigner';
 
 export const unsubscribeRouter = Router();
 
-function renderUnsubscribeHtml(title: string, message: string, email?: string): string {
+function renderPageHtml(title: string, contentHtml: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -34,8 +35,8 @@ function renderUnsubscribeHtml(title: string, message: string, email?: string): 
       text-align: center;
     }
     .icon {
-      width: 48px;
-      height: 48px;
+      width: 52px;
+      height: 52px;
       margin: 0 auto 16px;
       border-radius: 50%;
       background: #e0f2fe;
@@ -43,7 +44,16 @@ function renderUnsubscribeHtml(title: string, message: string, email?: string): 
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      font-size: 26px;
+      font-weight: 700;
+    }
+    .icon.success {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+    .icon.error {
+      background: #fee2e2;
+      color: #dc2626;
     }
     h1 {
       font-size: 20px;
@@ -60,130 +70,195 @@ function renderUnsubscribeHtml(title: string, message: string, email?: string): 
     .email-badge {
       display: inline-block;
       background: #f1f5f9;
-      padding: 4px 12px;
+      padding: 6px 14px;
       border-radius: 6px;
       font-family: monospace;
       font-size: 13px;
       color: #334155;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .btn-submit {
+      background: #0284c7;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease-in-out;
+    }
+    .btn-submit:hover {
+      background: #0369a1;
     }
     .footer {
       font-size: 12px;
       color: #94a3b8;
       border-top: 1px solid #f1f5f9;
       padding-top: 16px;
+      margin-top: 24px;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="icon">✓</div>
-    <h1>${title}</h1>
-    ${email ? `<div class="email-badge">${email}</div>` : ''}
-    <p>${message}</p>
+    ${contentHtml}
     <div class="footer">Cloud Consultancy &bull; Outreach & Communications</div>
   </div>
 </body>
 </html>`;
 }
 
-// GET /api/unsubscribe or /unsubscribe
+// GET /api/unsubscribe
+// Renders confirmation page without automatically opting out on GET
+// (protects against email security bots that pre-fetch incoming links)
 unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> => {
+  const tokenParam = typeof req.query.token === 'string' ? req.query.token.trim() : (typeof req.query.t === 'string' ? req.query.t.trim() : '');
   const emailParam = typeof req.query.email === 'string' ? req.query.email.trim() : '';
-  const tokenParam = typeof req.query.t === 'string' ? req.query.t.trim() : '';
-  const leadIdParam = typeof req.query.leadId === 'string' ? req.query.leadId.trim() : '';
 
-  let targetEmail = emailParam;
-  if (!targetEmail && tokenParam) {
-    try {
-      const decoded = Buffer.from(tokenParam, 'base64url').toString('utf8');
-      if (validator.isEmail(decoded)) {
-        targetEmail = decoded;
-      }
-    } catch {}
-  }
+  let targetEmail = '';
+  let validToken = tokenParam;
 
-  if (!targetEmail && leadIdParam) {
-    try {
-      const leadRes = await query<{ email: string }>(`SELECT email FROM leads WHERE id = $1`, [leadIdParam]);
-      if (leadRes.rows.length > 0 && leadRes.rows[0].email) {
-        targetEmail = leadRes.rows[0].email;
-      }
-    } catch {}
-  }
-
-  if (!targetEmail || !validator.isEmail(targetEmail)) {
-    res.status(400).send(renderUnsubscribeHtml('Unsubscribe', 'Please provide a valid email address to unsubscribe.'));
+  if (tokenParam) {
+    const verified = verifyUnsubscribeToken(tokenParam);
+    if (verified.valid && verified.email) {
+      targetEmail = verified.email;
+    } else {
+      res.status(400).send(
+        renderPageHtml(
+          'Invalid Link',
+          `<div class="icon error">!</div>
+           <h1>Invalid or Expired Link</h1>
+           <p>This unsubscribe link is invalid or has expired. Please use the original link from your email.</p>`
+        )
+      );
+      return;
+    }
+  } else if (emailParam && validator.isEmail(emailParam)) {
+    targetEmail = emailParam;
+  } else {
+    res.status(400).send(
+      renderPageHtml(
+        'Unsubscribe Request',
+        `<div class="icon error">!</div>
+         <h1>Invalid Request</h1>
+         <p>No valid unsubscribe token or recipient address was provided.</p>`
+      )
+    );
     return;
   }
 
-  try {
-    await suppressionService.suppress({
-      email: targetEmail,
-      reason: 'Recipient unsubscribed via web link',
-      source: 'web_link',
-    });
+  // Render Confirmation Page with POST form
+  const confirmationHtml = `
+    <div class="icon">✉</div>
+    <h1>Confirm Unsubscribe</h1>
+    <div class="email-badge">${targetEmail}</div>
+    <p>Please confirm that you would like to unsubscribe from future outreach and email communications from Cloud Consultancy.</p>
+    <form method="POST" action="/api/unsubscribe">
+      <input type="hidden" name="token" value="${validToken}" />
+      <input type="hidden" name="email" value="${targetEmail}" />
+      <button type="submit" class="btn-submit">Confirm Unsubscribe</button>
+    </form>
+  `;
 
-    // Ensure lead status is updated to opted_out
-    await query(
-      `UPDATE leads 
-       SET consent_status = 'opted_out', 
-           status = CASE WHEN status = 'active' THEN 'inactive' ELSE status END,
-           updated_at = NOW() 
-       WHERE LOWER(email) = LOWER($1)`,
-      [targetEmail]
-    );
-
-    if (req.headers.accept?.includes('application/json')) {
-      res.json({ success: true, message: `Successfully unsubscribed ${targetEmail}` });
-      return;
-    }
-
-    res.send(
-      renderUnsubscribeHtml(
-        'Unsubscribe Successful',
-        'You have been unsubscribed from all future outreach and notifications. Please allow up to 24 hours for all queued systems to clear.',
-        targetEmail
-      )
-    );
-  } catch (err: any) {
-    console.error('[Unsubscribe Router Error]', err);
-    res.status(500).send(renderUnsubscribeHtml('Error', 'Unable to process unsubscribe request. Please try again.'));
-  }
+  res.send(renderPageHtml('Confirm Unsubscribe', confirmationHtml));
 });
 
 // POST /api/unsubscribe
+// Performs the actual opt-out and suppression
 unsubscribeRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : (typeof req.query.email === 'string' ? req.query.email.trim() : '');
+  const tokenParam = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const emailParam = typeof req.body?.email === 'string' ? req.body.email.trim() : (typeof req.query.email === 'string' ? req.query.email.trim() : '');
 
-  if (!email || !validator.isEmail(email)) {
-    res.status(400).json({ success: false, error: 'Valid email address is required' });
+  let targetEmail = '';
+  let leadId = '';
+
+  if (tokenParam) {
+    const verified = verifyUnsubscribeToken(tokenParam);
+    if (verified.valid && verified.email) {
+      targetEmail = verified.email;
+      leadId = verified.leadId || '';
+    }
+  }
+
+  if (!targetEmail && emailParam && validator.isEmail(emailParam)) {
+    targetEmail = emailParam;
+  }
+
+  if (!targetEmail || !validator.isEmail(targetEmail)) {
+    if (req.headers.accept?.includes('application/json')) {
+      res.status(400).json({ success: false, error: 'Valid signed token or email address is required' });
+      return;
+    }
+    res.status(400).send(
+      renderPageHtml(
+        'Error',
+        `<div class="icon error">!</div>
+         <h1>Unsubscribe Failed</h1>
+         <p>A valid signed token or email address is required to process your request.</p>`
+      )
+    );
     return;
   }
 
   try {
+    // 1. Add to global suppression list
     await suppressionService.suppress({
-      email,
-      reason: 'Recipient unsubscribed via web link',
+      email: targetEmail,
+      reason: 'Recipient unsubscribed via signed web link',
       source: 'web_link',
     });
 
-    await query(
-      `UPDATE leads 
-       SET consent_status = 'opted_out', 
-           status = CASE WHEN status = 'active' THEN 'inactive' ELSE status END,
-           updated_at = NOW() 
-       WHERE LOWER(email) = LOWER($1)`,
-      [email]
-    );
+    // 2. Update leads table: set consent_status = 'opted_out' and status = 'inactive'
+    if (leadId) {
+      await query(
+        `UPDATE leads 
+         SET consent_status = 'opted_out', 
+             status = CASE WHEN status = 'active' THEN 'inactive' ELSE status END,
+             updated_at = NOW() 
+         WHERE id = $1`,
+        [leadId]
+      );
+    } else {
+      await query(
+        `UPDATE leads 
+         SET consent_status = 'opted_out', 
+             status = CASE WHEN status = 'active' THEN 'inactive' ELSE status END,
+             updated_at = NOW() 
+         WHERE LOWER(email) = LOWER($1)`,
+        [targetEmail]
+      );
+    }
 
-    res.json({
-      success: true,
-      message: `Successfully unsubscribed ${email} from all outreach communications.`,
-    });
+    if (req.headers.accept?.includes('application/json')) {
+      res.json({
+        success: true,
+        message: `Successfully unsubscribed ${targetEmail} from all outreach communications.`,
+        email: targetEmail,
+      });
+      return;
+    }
+
+    const successHtml = `
+      <div class="icon success">✓</div>
+      <h1>Unsubscribe Successful</h1>
+      <div class="email-badge">${targetEmail}</div>
+      <p>You have been unsubscribed from all future outreach and notifications. Please allow up to 24 hours for all queued systems to clear.</p>
+    `;
+    res.send(renderPageHtml('Unsubscribe Successful', successHtml));
   } catch (err: any) {
     console.error('[Unsubscribe POST Error]', err);
-    res.status(500).json({ success: false, error: 'Failed to process unsubscribe request' });
+    if (req.headers.accept?.includes('application/json')) {
+      res.status(500).json({ success: false, error: 'Failed to process unsubscribe request' });
+      return;
+    }
+    res.status(500).send(
+      renderPageHtml(
+        'Error',
+        `<div class="icon error">!</div>
+         <h1>Error Processing Request</h1>
+         <p>Unable to process unsubscribe request. Please try again or contact support.</p>`
+      )
+    );
   }
 });
-

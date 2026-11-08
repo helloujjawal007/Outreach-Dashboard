@@ -183,7 +183,7 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     if (incomingStatus === 'failed' || auditError) {
       console.warn(`[AuditCallback] TD reported audit failure for "${lead.business_name}" (${leadId}): ${auditError}`);
       await query(
-        `UPDATE leads SET audit_status = 'failed', manual_review_reason = $1, updated_at = NOW() WHERE id = $2`,
+        `UPDATE leads SET audit_status = 'failed', status = 'manual_review', manual_review_reason = $1, updated_at = NOW() WHERE id = $2`,
         [`Technical Audit Pro error: ${auditError || 'Unknown audit failure'}`, leadId]
       );
       const { failureLogService } = await import('../services/failureLogService');
@@ -281,7 +281,8 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
           audit_status = 'ready',
           audit_findings = '[]'::jsonb,
           audit_score = $1,
-          status = 'completed',
+          status = 'skipped_no_opportunity',
+          outreach_stage = 'skipped_no_opportunity',
           manual_review_reason = 'Clean site: 0 technical flaws detected (no opportunity for audit outreach)',
           audit_ready_at = NOW(),
           updated_at = NOW()

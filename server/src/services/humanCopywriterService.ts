@@ -1,3 +1,5 @@
+import { signUnsubscribeToken } from '../utils/tokenSigner';
+
 export interface LeadContext {
   id: string;
   businessName: string;
@@ -8,11 +10,13 @@ export interface LeadContext {
   country?: string;
   website?: string | null;
   auditScore?: number;
+  psiPerformanceScore?: number | null;
   auditIssues?: string[];
   auditFindings?: string[];
   auditKeyTakeaways?: string;
   auditPdfName?: string;
   auditPdfPath?: string;
+  auditDate?: string;
   gmbNotes?: string;
   industryLocation?: string;
 }
@@ -133,16 +137,43 @@ export class HumanCopywriterService {
 
   /**
    * Physical postal address (configurable via environment variable)
+   * Refuses send if unset or matching known generic placeholders.
    */
   public getPostalAddress(): string {
-    return process.env.OUTREACH_POSTAL_ADDRESS || 'Cloud Consultancy Outbound, 100 Pine Street, Suite 1250, San Francisco, CA 94111';
+    const address = (
+      process.env.COMPANY_POSTAL_ADDRESS ||
+      process.env.OUTREACH_POSTAL_ADDRESS ||
+      ''
+    ).trim();
+
+    if (
+      !address ||
+      /100 pine street|suite 1250|123 main st|your address|placeholder|city, state/i.test(address)
+    ) {
+      throw new Error(
+        `Refusing to send email: COMPANY_POSTAL_ADDRESS is unset or a known placeholder ("${address}"). A valid physical postal address is required for anti-spam compliance.`
+      );
+    }
+    return address;
   }
 
   /**
-   * Builds honest, professional humanoid signature without automated unsubscribe links.
+   * Builds honest, professional humanoid signature with valid postal address and cryptographically signed unsubscribe token.
    */
-  public buildFooter(_leadId?: string, _leadEmail?: string): string {
-    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}`;
+  public buildFooter(leadId?: string, leadEmail?: string): string {
+    const address = this.getPostalAddress();
+    let unsubText = '';
+    if (leadId && leadEmail) {
+      const publicBaseUrl = (
+        process.env.PUBLIC_APP_URL ||
+        process.env.APP_URL ||
+        'https://outreach.cloudconsultancy.in'
+      ).replace(/\/$/, '');
+      const token = signUnsubscribeToken(leadId, leadEmail);
+      const unsubUrl = `${publicBaseUrl}/api/unsubscribe?token=${token}`;
+      unsubText = `\n\nIf you prefer not to receive future updates, you can unsubscribe here: ${unsubUrl}`;
+    }
+    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}\n\n${address}${unsubText}`;
   }
 
   private compose(bodyLines: string[], leadId?: string, leadEmail?: string): string {
@@ -268,6 +299,10 @@ export class HumanCopywriterService {
       throw new Error(`Audit findings missing for lead ${lead.id} (${lead.businessName}). Never send empty audit templates.`);
     }
 
+    const auditDateFormatted = lead.auditDate
+      ? new Date(lead.auditDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
     const bulletList = rawFindings.slice(0, 5).map((f) => (f.startsWith('•') ? f : `• ${f}`));
     const findingsBullets = bulletList.join('\n');
 
@@ -288,7 +323,12 @@ export class HumanCopywriterService {
       ? 'When mobile visitors experience loading delays or Core Web Vitals benchmark gaps, bounce rates climb quickly.'
       : 'When mobile visitors experience loading delays or missing metadata, bounce rates climb quickly.';
 
-    const scoreClause = scoreVal ? ` (Lighthouse mobile test score: ${scoreVal}/100)` : '';
+    let scoreClause = '';
+    if (lead.psiPerformanceScore !== undefined && lead.psiPerformanceScore !== null) {
+      scoreClause = ` (PageSpeed mobile performance score: ${lead.psiPerformanceScore}/100)`;
+    } else if (scoreVal) {
+      scoreClause = ` (Diagnostic performance score: ${scoreVal}/100)`;
+    }
 
     if (stage === 'initial') {
       const subjects = [
@@ -332,7 +372,7 @@ export class HumanCopywriterService {
         body: this.compose([
           greeting,
           ``,
-          `Following up briefly on the technical breakdown I sent over for ${domain}.`,
+          `Following up briefly on the technical breakdown I sent over for ${domain} (audited on ${auditDateFormatted}).`,
           ``,
           fu1FindingsIntro,
           rawFindings.slice(0, 3).map((f) => (f.startsWith('•') ? f : `• ${f}`)).join('\n'),
@@ -358,7 +398,7 @@ export class HumanCopywriterService {
         body: this.compose([
           greeting,
           ``,
-          `Following up one last time regarding ${domain}.`,
+          `Following up one last time regarding the technical audit for ${domain} (${auditDateFormatted}).`,
           ``,
           `If resolving these technical items or improving mobile load speed is on your radar this quarter, let me know and I'd be glad to share a straightforward walkthrough of our approach.`,
           ``,

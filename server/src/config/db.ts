@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Pool, type QueryResult, type QueryResultRow } from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -68,7 +69,7 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
-const TEST_DB_ALLOWLIST = ['outreach_dashboard_test', 'test_outreach_dashboard'];
+const TEST_DB_ALLOWLIST = ['outreach_dashboard_test', 'test_outreach_dashboard', 'outreach_dashboard_migration_scratch'];
 
 /**
  * Production Safety Assertion:
@@ -117,12 +118,15 @@ export interface ProductionDatabaseMd5 {
   failureLogMd5: string;
   messagesMd5: string;
   settingsMd5: string;
+  suppressionMd5: string;
+  compositeMd5: string;
 }
 
 /**
  * Connects directly to the live production CRM database ('outreach_dashboard')
- * and computes MD5 checksums over ALL ordered rows (covering NULL notes and every column).
- * Zero filter is applied: any change to production leads, failure_log, messages, or settings will alter the MD5.
+ * and computes MD5 checksums over ALL ordered rows across all columns (row_to_json).
+ * Covers leads, failure_log, messages, slot_sender_settings, and global_suppression_list.
+ * Zero filter is applied: any change to ANY row or column will alter the MD5.
  */
 export async function computeProductionDatabaseMd5(
   prodDbUrl = process.env.PROD_DATABASE_URL || 'postgresql://localhost:5432/outreach_dashboard'
@@ -139,44 +143,65 @@ export async function computeProductionDatabaseMd5(
       failure_log_md5: string;
       messages_md5: string;
       settings_md5: string;
+      suppression_md5: string;
     }>(`
       SELECT 
         (SELECT md5(COALESCE(string_agg(row_to_json(l)::text, '' ORDER BY l.id), '')) FROM leads l) as leads_md5,
         (SELECT md5(COALESCE(string_agg(row_to_json(f)::text, '' ORDER BY f.id), '')) FROM failure_log f) as failure_log_md5,
         (SELECT md5(COALESCE(string_agg(row_to_json(m)::text, '' ORDER BY m.id), '')) FROM messages m) as messages_md5,
-        (SELECT md5(COALESCE(string_agg(row_to_json(s)::text, '' ORDER BY s.id), '')) FROM slot_sender_settings s) as settings_md5
+        (SELECT md5(COALESCE(string_agg(row_to_json(s)::text, '' ORDER BY s.id), '')) FROM slot_sender_settings s) as settings_md5,
+        (SELECT md5(COALESCE(string_agg(row_to_json(g)::text, '' ORDER BY g.id), '')) FROM global_suppression_list g) as suppression_md5
     `);
 
+    const leadsMd5 = res.rows[0]?.leads_md5 || '';
+    const failureLogMd5 = res.rows[0]?.failure_log_md5 || '';
+    const messagesMd5 = res.rows[0]?.messages_md5 || '';
+    const settingsMd5 = res.rows[0]?.settings_md5 || '';
+    const suppressionMd5 = res.rows[0]?.suppression_md5 || '';
+    const compositeMd5 = crypto
+      .createHash('md5')
+      .update(`${leadsMd5}:${failureLogMd5}:${messagesMd5}:${settingsMd5}:${suppressionMd5}`)
+      .digest('hex');
+
     return {
-      leadsMd5: res.rows[0]?.leads_md5 || '',
-      failureLogMd5: res.rows[0]?.failure_log_md5 || '',
-      messagesMd5: res.rows[0]?.messages_md5 || '',
-      settingsMd5: res.rows[0]?.settings_md5 || '',
+      leadsMd5,
+      failureLogMd5,
+      messagesMd5,
+      settingsMd5,
+      suppressionMd5,
+      compositeMd5,
     };
   } finally {
     await prodPool.end();
   }
 }
 
-/**
- * Asserts that the production database has not changed a single byte during a test execution.
- */
 export function assertProductionImmutability(
   before: ProductionDatabaseMd5,
   after: ProductionDatabaseMd5,
-  contextName = 'Test Suite'
+  testName: string
 ): void {
+  const violations: string[] = [];
   if (before.leadsMd5 !== after.leadsMd5) {
-    throw new Error(`[IMMUTABILITY VIOLATION] ${contextName}: Production leads table was modified! Before: ${before.leadsMd5}, After: ${after.leadsMd5}`);
+    violations.push(`leads (before=${before.leadsMd5}, after=${after.leadsMd5})`);
   }
   if (before.failureLogMd5 !== after.failureLogMd5) {
-    throw new Error(`[IMMUTABILITY VIOLATION] ${contextName}: Production failure_log table was modified! Before: ${before.failureLogMd5}, After: ${after.failureLogMd5}`);
+    violations.push(`failure_log (before=${before.failureLogMd5}, after=${after.failureLogMd5})`);
   }
   if (before.messagesMd5 !== after.messagesMd5) {
-    throw new Error(`[IMMUTABILITY VIOLATION] ${contextName}: Production messages table was modified! Before: ${before.messagesMd5}, After: ${after.messagesMd5}`);
+    violations.push(`messages (before=${before.messagesMd5}, after=${after.messagesMd5})`);
   }
   if (before.settingsMd5 !== after.settingsMd5) {
-    throw new Error(`[IMMUTABILITY VIOLATION] ${contextName}: Production slot_sender_settings table was modified! Before: ${before.settingsMd5}, After: ${after.settingsMd5}`);
+    violations.push(`slot_sender_settings (before=${before.settingsMd5}, after=${after.settingsMd5})`);
+  }
+  if (before.suppressionMd5 !== after.suppressionMd5) {
+    violations.push(`global_suppression_list (before=${before.suppressionMd5}, after=${after.suppressionMd5})`);
+  }
+
+  if (violations.length > 0) {
+    throw new Error(
+      `[CRITICAL IMMUTABILITY VIOLATION] Test "${testName}" modified production database rows! Violations: ${violations.join(', ')}`
+    );
   }
 }
 

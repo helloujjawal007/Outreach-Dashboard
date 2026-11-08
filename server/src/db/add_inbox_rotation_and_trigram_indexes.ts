@@ -105,7 +105,7 @@ export async function addInboxRotationAndTrigramIndexes() {
   `);
   console.log('✅ Added inbox tracking to scheduled_dispatches and messages');
 
-  // 6. Purge legacy obsolete inboxes (onlinedigitalsolution, growthflow) and guarantee sales@cloudconsultancy.in is primary default
+  // 6. Purge legacy obsolete inboxes (onlinedigitalsolution, growthflow) and guarantee cloudconsultancy.ad@gmail.com is primary default
   try {
     await query(`
       DELETE FROM connected_inboxes 
@@ -123,7 +123,7 @@ export async function addInboxRotationAndTrigramIndexes() {
 
   const primaryEmail = (env.SMTP_USER && !env.SMTP_USER.includes('onlinedigitalsolution'))
     ? env.SMTP_USER
-    : 'sales@cloudconsultancy.in';
+    : 'cloudconsultancy.ad@gmail.com';
 
   const cleanPass = (env.SMTP_PASS || '').replace(/\s+/g, '');
   const senderName = 'Cloud Consultancy';

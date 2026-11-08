@@ -147,7 +147,8 @@ export class TechnicalAuditPdfService {
       )
       .join('');
 
-    const formattedDate = new Date().toLocaleDateString('en-US', {
+    const auditDateSource = report.auditedAt ? new Date(report.auditedAt) : new Date();
+    const formattedDate = auditDateSource.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -263,9 +264,8 @@ export class TechnicalAuditPdfService {
       <div class="brand-sub">Engineering & Infrastructure Advisory • cloudconsultancy.ad@gmail.com</div>
     </div>
     <div style="text-align: right;">
-      <div style="font-weight: 700; font-size: 12px; color: #0f172a;">Technical Site Diagnostic Memo</div>
-      <div style="font-size: 10px; color: #64748b;">Verification: https://technical-audit-dashboard.vercel.app/</div>
-      <div style="font-size: 10px; color: #94a3b8;">Audit Date: ${formattedDate}</div>
+      <div style="font-weight: 800; font-size: 13px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Technical Site Diagnostic Memo</div>
+      <div style="font-size: 11px; font-weight: 600; color: #475569; margin-top: 4px;">Audit Date: <span style="color: #0f172a;">${formattedDate}</span></div>
     </div>
   </div>
 
@@ -372,10 +372,10 @@ export class TechnicalAuditPdfService {
   <!-- CONSULTANT NOTES & NEXT STEPS -->
   <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 14px; margin-top: 14px;">
     <div style="font-weight: 700; font-size: 11px; color: #0f172a; margin-bottom: 4px;">
-      Consultant Summary & Verification Notice
+      Consultant Summary & Remediation Scope
     </div>
     <div style="font-size: 10.5px; color: #475569; line-height: 1.5;">
-      This technical review was compiled by Cloud Consultancy for <strong>${cleanBiz}</strong> to provide direct, actionable engineering insight. The metrics referenced can be independently verified on our diagnostics platform at <strong>https://technical-audit-dashboard.vercel.app/</strong>. These issues can typically be remediated within 1–2 development cycles without needing a ground-up rebuild.
+      This technical review was compiled by Cloud Consultancy for <strong>${cleanBiz}</strong> based on live diagnostic tests performed on <strong>${formattedDate}</strong>. These prioritized findings can typically be remediated within 1–2 development sprints without needing a full ground-up rebuild.
     </div>
   </div>
 
@@ -460,7 +460,8 @@ export class TechnicalAuditPdfService {
     businessName?: string
   ): void {
     const cleanBiz = businessName || report.domain;
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateSource = report.auditedAt ? new Date(report.auditedAt) : new Date();
+    const dateStr = dateSource.toISOString().split('T')[0];
     const issuesText = (report.criticalIssues || []).slice(0, 4).join('; ');
     const recsText = (report.recommendations || []).slice(0, 3).map((r) => r.title).join('; ');
 
@@ -473,7 +474,7 @@ export class TechnicalAuditPdfService {
       '0 -28 Td',
       `(${cleanBiz} - Target Domain: ${report.domain}) Tj`,
       '0 -18 Td',
-      `(Date: ${dateStr} | Diagnostic Health Rating: ${report.overallScore}/100 [${report.grade}]) Tj`,
+      `(Audit Date: ${dateStr} | Diagnostic Health Rating: ${report.overallScore}/100 [${report.grade}]) Tj`,
       '0 -24 Td',
       '/F1 13 Tf',
       '(Measured Infrastructure & Delivery Signals:) Tj',
@@ -499,7 +500,7 @@ export class TechnicalAuditPdfService {
       '(Architecture: Modern edge caching, asset compression, schema.org JSON-LD integration) Tj',
       '0 -28 Td',
       '/F1 9 Tf',
-      '(Prepared by Cloud Consultancy - cloudconsultancy.ad@gmail.com - https://technical-audit-dashboard.vercel.app/) Tj',
+      '(Prepared by Cloud Consultancy - cloudconsultancy.ad@gmail.com) Tj',
       'ET',
     ].join('\n');
 

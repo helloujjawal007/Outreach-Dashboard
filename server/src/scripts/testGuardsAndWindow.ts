@@ -1,10 +1,13 @@
+import path from 'path';
+import fs from 'fs';
 import { query, assertNotProduction, computeProductionDatabaseMd5, assertProductionImmutability } from '../config/db';
 import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
 import { emailAdapter } from '../adapters/emailAdapter';
+import { isWithinRecipientWindow } from '../utils/timezoneHelper';
 
 async function main() {
   console.log('========================================================================');
-  console.log('🛡️ ITEMS 2 & 12: GUARDS ON (WINDOW, WEEKEND, MIN GAP, CAP, RECIPIENT TZ)');
+  console.log('🛡️ ITEMS 2, 4, 5, 6: GUARDS ON (WINDOW, WEEKEND, MIN GAP, CAP, RECIPIENT TZ)');
   console.log('========================================================================\n');
 
   await assertNotProduction('testGuardsAndWindow');
@@ -13,8 +16,17 @@ async function main() {
   const testTag = `guards_${Date.now()}`;
   emailAdapter.setMockMode(true);
 
+  // Ensure test audit PDF exists on disk with valid magic bytes
+  const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
+  if (!fs.existsSync(auditsDir)) fs.mkdirSync(auditsDir, { recursive: true });
+  const testPdfPath = path.join(auditsDir, `${testTag}_valid_audit.pdf`);
+  fs.writeFileSync(
+    testPdfPath,
+    '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n' + '0'.repeat(2000)
+  );
+
   // -------------------------------------------------------------------------
-  // TEST A: Outside Window Block
+  // TEST A: Outside Window Block (Market Fallback UTC)
   // -------------------------------------------------------------------------
   console.log('[Test A] Testing Send Window Guard (Outside 08:00 - 19:00 UTC)...');
   await fiveSlotSenderService.updateSettings({
@@ -25,7 +37,6 @@ async function main() {
     is_active: true,
   });
 
-  // Simulate a tick at 21:30 UTC (Night time)
   const nightDate = new Date('2026-11-09T21:30:00.000Z'); // Monday 21:30 UTC
   const tickOutsideWindow = await fiveSlotSenderService.processGlobalTick(nightDate, testTag);
   console.log(`   - Tick at ${nightDate.toISOString()}: dispatched=${tickOutsideWindow.dispatched}`);
@@ -60,7 +71,7 @@ async function main() {
   console.log('✅ PASS: Weekend sending correctly blocked with explicit reason.\n');
 
   // -------------------------------------------------------------------------
-  // TEST C: Global Minimum-Gap Guard (75% of slot offset)
+  // TEST C: Global Minimum-Gap Guard (Enforcing minimum spacing across slots)
   // -------------------------------------------------------------------------
   console.log('[Test C] Testing Global Minimum-Gap Guard (Enforcing minimum spacing across slots)...');
   await fiveSlotSenderService.updateSettings({
@@ -73,15 +84,21 @@ async function main() {
     is_active: true,
   });
 
-  // Queue a ready lead in Slot A and Slot B
+  // Queue a verified ready lead in Slot A with real PDF on disk
   const leadA = await query<{ id: string }>(
-    `INSERT INTO leads (business_name, email, website, outreach_stage, status, slot_id, notes, audit_status, audit_findings, audit_pdf_path)
-     VALUES ($1, $2, $3, 'initial', 'active', 'A', $4, 'ready', '["Mobile load 3.5s"]', '/tmp/test.pdf')
+    `INSERT INTO leads (business_name, email, website, outreach_stage, status, slot_id, notes, audit_status, audit_findings, audit_pdf_path, audit_pdf_name)
+     VALUES ($1, $2, $3, 'initial', 'active', 'A', $4, 'ready', '["Mobile LCP 3.5s"]', $5, $6)
      RETURNING id`,
-    [`${testTag}_A`, `a_${testTag}@example.test`, 'https://a.test', testTag]
+    [
+      `${testTag}_A`,
+      `a_${testTag}@example.test`,
+      'https://a.test',
+      testTag,
+      testPdfPath,
+      path.basename(testPdfPath),
+    ]
   );
 
-  // Set anchor to now so Slot A is due
   const now = new Date('2026-11-09T10:00:00.000Z'); // Monday 10:00 UTC
   await fiveSlotSenderService.updateSettings({ anchor_timestamp: now.toISOString() });
 
@@ -98,24 +115,40 @@ async function main() {
   console.log('✅ PASS: Global minimum gap active and enforced.\n');
 
   // -------------------------------------------------------------------------
-  // TEST D: Daily Send Limit Cap (Excluding Mock Sends from Production Quota)
+  // TEST D: Daily Send Limit Cap (Accounted exactly, excluding mock sends)
   // -------------------------------------------------------------------------
   console.log('[Test D] Testing Daily Send Cap Guard & Mock Exemption...');
   (fiveSlotSenderService as any).lastGlobalSentEpochMs = 0;
+
+  // Count existing non-mock sent messages for today
+  const existingSentRes = await query<{ count: string }>(
+    `SELECT COUNT(*) as count FROM messages 
+     WHERE direction = 'outbound' AND status IN ('sent', 'delivered')
+       AND (metadata->>'is_mock' IS NULL OR metadata->>'is_mock' != 'true')
+       AND sent_at >= CURRENT_DATE`
+  );
+  const existingSent = parseInt(existingSentRes.rows[0]?.count || '0', 10);
+  const targetCap = existingSent + 3;
+
   await fiveSlotSenderService.updateSettings({
-    daily_send_limit: 3,
+    daily_send_limit: targetCap,
     send_window_timezone: 'UTC',
     global_min_gap_sec: 0,
     is_active: true,
   });
 
-  // Create conversation row and insert 3 real outbound messages in messages table for today
+  const dummyLead = await query<{ id: string }>(
+    `INSERT INTO leads (business_name, email, outreach_stage, status, notes)
+     VALUES ('Cap Dummy', 'dummy@cap.test', 'initial', 'active', $1) RETURNING id`,
+    [testTag]
+  );
   const conv = await query<{ id: string }>(
     `INSERT INTO conversations (entity_type, lead_id, channel, status) VALUES ('lead', $1, 'email', 'open') RETURNING id`,
-    [leadA.rows[0].id]
+    [dummyLead.rows[0].id]
   );
   const convId = conv.rows[0].id;
 
+  // Insert exactly 3 outbound non-mock messages to hit the cap
   await query(
     `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, metadata)
      VALUES 
@@ -126,25 +159,63 @@ async function main() {
   );
 
   const tickCap = await fiveSlotSenderService.processGlobalTick(now, testTag);
-  console.log(`   - Tick when sent today = 3 and daily_send_limit = 3: dispatched=${tickCap.dispatched}`);
+  console.log(`   - Existing: ${existingSent}, Injected: 3, Total: ${targetCap}, Limit: ${targetCap}`);
+  console.log(`   - Tick when sent today == daily_send_limit: dispatched=${tickCap.dispatched}`);
   console.log(`   - Block Reason: "${tickCap.reason}"`);
 
   if (tickCap.dispatched || !tickCap.reason?.includes('Daily send limit reached')) {
     throw new Error('Test D FAILED: Daily send limit guard did not block tick!');
   }
-  console.log('✅ PASS: Daily send cap reached and blocked.\n');
+  console.log('✅ PASS: Daily send cap reached and blocked with exact count accounting.\n');
 
   // -------------------------------------------------------------------------
-  // TEST E: Explicit Per-Test Config Bypass
+  // TEST E: Explicit Per-Test Config Bypass (MUST ACTUALLY DISPATCH)
   // -------------------------------------------------------------------------
-  console.log('[Test E] Testing Explicit Per-Test Config Bypass (bypassWindow, bypassMinGap, bypassDailyCap)...');
+  console.log('[Test E] Testing Explicit Per-Test Config Bypass (MUST ACTUALLY DISPATCH)...');
+  // Reset last sent guard to allow clean dispatch of Slot A
+  fiveSlotSenderService.resetLastSlotSent();
+
   const tickBypass = await fiveSlotSenderService.processGlobalTick(
     now,
     testTag,
     { bypassWindow: true, bypassMinGap: true, bypassDailyCap: true }
   );
-  console.log(`   - Tick with explicit bypass config: dispatched=${tickBypass.dispatched}, slot=${tickBypass.activeSlot}`);
-  console.log('✅ PASS: Explicit bypass config honored only when explicitly requested in test harness.\n');
+
+  console.log(`   - Tick Result: dispatched=${tickBypass.dispatched}, slot=${tickBypass.activeSlot}, leadId=${tickBypass.leadId}`);
+
+  if (!tickBypass.dispatched || tickBypass.activeSlot !== 'A') {
+    throw new Error(`Test E FAILED: Explicit bypass did not dispatch lead! reason: ${tickBypass.reason}`);
+  }
+  console.log('✅ PASS: Gate Bug Resolved: Ready lead with valid PDF dispatched successfully in Test E.\n');
+
+  // -------------------------------------------------------------------------
+  // TEST F: Recipient Timezone-Aware Send Window (Item 6)
+  // -------------------------------------------------------------------------
+  console.log('[Test F] Testing Recipient-Timezone-Aware Send Windows (NY, Denver, Kolkata)...');
+  // At 2026-11-09 10:00:00 UTC (Monday):
+  // - New York (America/New_York, UTC-5): 05:00 AM (Early morning, OUTSIDE 09:00-17:00 window)
+  // - Denver (America/Denver, UTC-7):     03:00 AM (Night time, OUTSIDE 09:00-17:00 window)
+  // - Kolkata (Asia/Kolkata, UTC+5:30):   15:30 PM (Mid-afternoon, INSIDE 09:00-17:00 window)
+  const testDateUtc = new Date('2026-11-09T10:00:00.000Z');
+
+  const nyCheck = isWithinRecipientWindow(testDateUtc, 'America/New_York', 9, 17, true);
+  console.log(`   - New York: localTime="${nyCheck.localTimeStr}", inWindow=${nyCheck.inWindow} (MUST be false)`);
+  if (nyCheck.inWindow) {
+    throw new Error('Test F FAILED: New York at 05:00 AM was wrongly allowed in window!');
+  }
+
+  const denverCheck = isWithinRecipientWindow(testDateUtc, 'America/Denver', 9, 17, true);
+  console.log(`   - Denver:   localTime="${denverCheck.localTimeStr}", inWindow=${denverCheck.inWindow} (MUST be false)`);
+  if (denverCheck.inWindow) {
+    throw new Error('Test F FAILED: Denver at 03:00 AM was wrongly allowed in window!');
+  }
+
+  const kolkataCheck = isWithinRecipientWindow(testDateUtc, 'Asia/Kolkata', 9, 17, true);
+  console.log(`   - Kolkata:  localTime="${kolkataCheck.localTimeStr}", inWindow=${kolkataCheck.inWindow} (MUST be true)`);
+  if (!kolkataCheck.inWindow) {
+    throw new Error('Test F FAILED: Kolkata at 15:30 PM was wrongly blocked!');
+  }
+  console.log('✅ PASS: Recipient-specific timezone evaluation verified across all timezones.\n');
 
   // Verify Production Immutability
   const prodMd5After = await computeProductionDatabaseMd5();

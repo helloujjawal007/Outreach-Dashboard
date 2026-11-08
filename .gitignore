@@ -28,9 +28,7 @@ dist-ssr
 *.cert
 chrome-bin/
 .cache/
-server/data/whatsapp_session/
-server/data/audits/
-server/data/*.json
+server/data/
 .whatsapp_session/
 *.tsbuildinfo
 scratch/

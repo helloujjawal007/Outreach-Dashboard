@@ -11,6 +11,9 @@ import { technicalAuditPdfService } from './technicalAuditPdfService';
 import { leadIsolationService } from './leadIsolationService';
 import { suppressionService } from './suppressionService';
 import { sequenceEnrollmentService } from './sequenceEnrollmentService';
+import { validateAuditAsset } from '../utils/auditPolicy';
+import { resolveRecipientTimezone, isWithinRecipientWindow } from '../utils/timezoneHelper';
+import { fiveSlotSenderService } from './fiveSlotSenderService';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -72,6 +75,7 @@ export class StageOutreachService {
       category: string;
       email: string;
       outreach_stage: string | null;
+      claimed_stage?: string | null;
       consent_status: string;
       status: string;
       manual_review_reason?: string;
@@ -84,8 +88,10 @@ export class StageOutreachService {
       gmb_notes?: string;
       audit_findings?: any;
       audit_score?: number;
+      audit_ready_at?: string;
+      created_at?: string;
     }>(
-      `SELECT id, business_name, category, email, outreach_stage, consent_status, status, manual_review_reason, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes, audit_findings, audit_score FROM leads WHERE id = $1`,
+      `SELECT id, business_name, category, email, outreach_stage, claimed_stage, consent_status, status, manual_review_reason, website, location, primary_contact_name, audit_key_takeaways, audit_pdf_name, audit_pdf_path, gmb_notes, audit_findings, audit_score, audit_ready_at, created_at FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -96,7 +102,8 @@ export class StageOutreachService {
     const lead = leadRes.rows[0];
 
     // Check message history across outbound messages, sent scheduled dispatches, and contact timestamps
-    const history = await leadIsolationService.getLeadMessageHistory(leadId);
+    const activeStage = (lead.outreach_stage === 'sending' && lead.claimed_stage) ? lead.claimed_stage : (lead.outreach_stage || undefined);
+    const history = await leadIsolationService.getLeadMessageHistory(leadId, activeStage);
     const effectiveTouchCount = history.effectiveTouchCount;
 
     // If lead is currently quarantined in 'Need to Check' (manual_review), block outreach
@@ -114,11 +121,11 @@ export class StageOutreachService {
       };
     }
 
-    if (effectiveTouchCount >= 4 || lead.outreach_stage === 'completed') {
+    if (effectiveTouchCount >= 3 || lead.outreach_stage === 'completed') {
       return {
         stage: 'completed',
         stageLabel: 'Sequence Completed',
-        nextStepLabel: 'Sequence Completed (4 touches sent)',
+        nextStepLabel: 'Sequence Completed (3 touches sent)',
         sentCount: effectiveTouchCount,
         outboundCount: effectiveTouchCount,
         subject: `Sequence Completed`,
@@ -167,6 +174,7 @@ export class StageOutreachService {
           category: lead.category,
           website: lead.website,
           primaryContactName: lead.primary_contact_name,
+          email: lead.email,
           city: lead.location,
           auditKeyTakeaways: lead.audit_key_takeaways,
           auditPdfName: lead.audit_pdf_name,
@@ -174,6 +182,7 @@ export class StageOutreachService {
           gmbNotes: lead.gmb_notes,
           auditScore: lead.audit_score ? Number(lead.audit_score) : undefined,
           auditFindings: parsedFindings,
+          auditDate: lead.audit_ready_at || lead.created_at,
         },
         resolvedStage === 'completed' ? 'followup_3' : resolvedStage
       );
@@ -207,7 +216,11 @@ export class StageOutreachService {
    * Automatically dispatch the next appropriate stage touch to a single lead
    * Supports omni-channel execution: Email + Website Form + WhatsApp
    */
-  async sendNextStageToLead(leadId: string, preClaimedStage?: string): Promise<StageDispatchResult> {
+  async sendNextStageToLead(
+    leadId: string,
+    preClaimedStage?: string,
+    options?: { force?: boolean; bypassGuards?: boolean }
+  ): Promise<StageDispatchResult> {
     const leadRes = await query<{
       id: string;
       business_name: string;
@@ -216,6 +229,8 @@ export class StageOutreachService {
       phone: string;
       whatsapp: string;
       website: string;
+      country?: string;
+      location?: string;
       notes: string;
       metadata: any;
       status: string;
@@ -231,7 +246,7 @@ export class StageOutreachService {
       audit_score?: number;
       slot_id?: string;
       manual_review_reason?: string;
-    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, notes, metadata, status, manual_review_reason, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways, audit_findings, audit_score, slot_id FROM leads WHERE id = $1`, [leadId]);
+    }>(`SELECT id, business_name, category, email, phone, whatsapp, website, country, location, notes, metadata, status, manual_review_reason, consent_status, outreach_stage, outreach_workflow, audit_status, deleted_at, audit_pdf_path, audit_pdf_name, audit_key_takeaways, audit_findings, audit_score, slot_id FROM leads WHERE id = $1`, [leadId]);
 
     if (leadRes.rows.length === 0) {
       return {
@@ -308,6 +323,145 @@ export class StageOutreachService {
           reason: 'Conflict: Dispatch already claimed by concurrent worker or stage changed.',
         };
       }
+    }
+
+    // Manual Send Safeguards (Audit gate, Window, Cap, Min Gap, Oversize check)
+    if (!preClaimedStage && !options?.force && !options?.bypassGuards) {
+      const settings = await fiveSlotSenderService.getSettings();
+
+      // 1. Audit Gate Check
+      if (activeStage === 'initial') {
+        const validation = validateAuditAsset(lead.audit_findings, lead.audit_pdf_path);
+        if (!validation.ready) {
+          await query(
+            `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
+            [activeStage, leadId]
+          );
+          return {
+            leadId,
+            businessName: lead.business_name,
+            email: lead.email,
+            phone: lead.phone,
+            stage: 'initial',
+            stageLabel: 'Audit Gate Blocked',
+            subject: '',
+            success: false,
+            skipped: true,
+            reason: `Audit gate blocked: ${validation.reason || 'Lead audit is not ready or valid PDF report missing from disk'}`,
+          };
+        }
+      }
+
+      // 2. Recipient Send Window Check
+      const recipientTz = resolveRecipientTimezone(
+        lead.metadata?.timezone,
+        lead.location,
+        lead.country,
+        settings.send_window_timezone || 'UTC'
+      );
+      const windowCheck = isWithinRecipientWindow(
+        new Date(),
+        recipientTz,
+        settings.send_window_start_hour ?? 9,
+        settings.send_window_end_hour ?? 17,
+        settings.weekdays_only !== false
+      );
+      if (!windowCheck.inWindow) {
+        await query(
+          `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
+          [activeStage, leadId]
+        );
+        return {
+          leadId,
+          businessName: lead.business_name,
+          email: lead.email,
+          phone: lead.phone,
+          stage: activeStage as any,
+          stageLabel: 'Outside Send Window',
+          subject: '',
+          success: false,
+          skipped: true,
+          reason: windowCheck.reason || 'Outside recipient send window',
+        };
+      }
+
+      // 3. Daily Send Cap Check
+      const metricRes = await query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM messages 
+         WHERE direction = 'outbound' AND status IN ('sent', 'delivered')
+           AND (metadata->>'is_mock' IS NULL OR metadata->>'is_mock' != 'true')
+           AND sent_at >= CURRENT_DATE`
+      );
+      const sentToday = parseInt(metricRes.rows[0]?.count || '0', 10);
+      const capLimit = settings.daily_send_limit ?? 150;
+      if (sentToday >= capLimit) {
+        await query(
+          `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
+          [activeStage, leadId]
+        );
+        return {
+          leadId,
+          businessName: lead.business_name,
+          email: lead.email,
+          phone: lead.phone,
+          stage: activeStage as any,
+          stageLabel: 'Daily Cap Exceeded',
+          subject: '',
+          success: false,
+          skipped: true,
+          reason: `Daily send limit reached (${sentToday}/${capLimit} emails today)`,
+        };
+      }
+
+      // 4. Global Minimum Gap Check
+      const globalMinGapSec = settings.global_min_gap_sec || 90;
+      const lastGlobalEpoch = (fiveSlotSenderService as any).lastGlobalSentEpochMs || 0;
+      if (lastGlobalEpoch > 0 && Date.now() - lastGlobalEpoch < globalMinGapSec * 1000) {
+        const remainingSec = Math.ceil((globalMinGapSec * 1000 - (Date.now() - lastGlobalEpoch)) / 1000);
+        await query(
+          `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
+          [activeStage, leadId]
+        );
+        return {
+          leadId,
+          businessName: lead.business_name,
+          email: lead.email,
+          phone: lead.phone,
+          stage: activeStage as any,
+          stageLabel: 'Min Gap Active',
+          subject: '',
+          success: false,
+          skipped: true,
+          reason: `Global minimum-gap guard active: must wait at least ${globalMinGapSec}s between sends (${remainingSec}s remaining)`,
+        };
+      }
+    }
+
+    // 5. Oversize Attachment Check (> 2 MB)
+    if (lead.audit_pdf_path && fs.existsSync(lead.audit_pdf_path)) {
+      try {
+        const stats = fs.statSync(lead.audit_pdf_path);
+        if (stats.size > 2 * 1024 * 1024) {
+          if (!preClaimedStage) {
+            await query(
+              `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
+              [activeStage, leadId]
+            );
+          }
+          return {
+            leadId,
+            businessName: lead.business_name,
+            email: lead.email,
+            phone: lead.phone,
+            stage: activeStage as any,
+            stageLabel: 'Attachment Oversize',
+            subject: '',
+            success: false,
+            skipped: true,
+            reason: `Attachment size (${(stats.size / (1024 * 1024)).toFixed(2)} MB) exceeds 2 MB limit; must be optimized or stripped before dispatch.`,
+          };
+        }
+      } catch {}
     }
 
     // Suppression Check: Re-verify global suppression at send time
@@ -751,8 +905,6 @@ export class StageOutreachService {
           ? 'followup_1'
           : stageInfo.stage === 'followup_1'
           ? 'followup_2'
-          : stageInfo.stage === 'followup_2'
-          ? 'followup_3'
           : 'completed';
 
       await query(
@@ -766,7 +918,8 @@ export class StageOutreachService {
              claimed_at = NULL,
              send_retry_count = 0,
              transient_retry_count = 0,
-             outreach_stage = $3, 
+             outreach_stage = $3::varchar, 
+             status = CASE WHEN $3::text = 'completed' THEN 'completed' ELSE status END,
              updated_at = NOW() 
          WHERE id = $4`,
         [stageInfo.stage, emailResult?.messageId || null, nextStageName, leadId]

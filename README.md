@@ -365,9 +365,9 @@ In your Render Dashboard (**Web Service → Environment Variables**), configure:
 | `SMTP_HOST` | `smtppro.zoho.in` | Outbound Zoho SMTP host |
 | `SMTP_PORT` | `465` | SSL port |
 | `SMTP_SECURE` | `true` | Enforce SSL connection |
-| `SMTP_USER` | `sales@cloudconsultancy.in` | Sender email address |
-| `SMTP_PASS` | *(Zoho App Password)* | Generated Zoho Application-Specific Password |
-| `SMTP_FROM` | `"Cloud Consultancy" <sales@...>` | From header display |
+| `SMTP_USER` | `cloudconsultancy.ad@gmail.com` | Sender email address |
+| `SMTP_PASS` | *(Google App Password)* | Generated Google Application-Specific Password |
+| `SMTP_FROM` | `"Cloud Consultancy" <cloudconsultancy.ad@gmail.com>` | From header display |
 | `IMAP_HOST` | `imappro.zoho.in` | Inbound Zoho IMAP host |
 | `IMAP_PORT` | `993` | IMAP SSL port |
 | `ADMIN_PASSWORD` | `your-secure-password` | Dashboard authentication password |
@@ -441,7 +441,32 @@ Outreach-Dashboard/
 
 ---
 
-## 7. Security Best Practices
+## 7. 5-Slot Sender Engine & Deliverability Architecture
+
+### 7.1 Deterministic 5-Virtual Slot Scheduler
+* **Anchor-Based Cyclic Grid**: 5 virtual slots (A, B, C, D, E) run on a continuous deterministic grid (default: 10-minute cycle, 2-minute slot offset).
+* **Zero Double-Sends**: Atomic claiming (`UPDATE ... RETURNING`) paired with slot-level and global minimum-gap guards prevent duplicate sends or burst firing upon server restart or configuration changes.
+* **Recipient Timezone Windows**: Dispatches are constrained to `09:00 - 17:00` in the prospect's local timezone (e.g. `America/New_York`, `America/Denver`, `Asia/Kolkata`), pausing automatically over weekends.
+* **Daily Send Caps**: Configurable hard caps with exact accounting that ignores mock/test dispatches.
+
+### 7.2 Technical Diagnostic PDF Generator
+* **Agency-Grade Memo Layout**: Generates a 1-page executive technical audit memo containing Core Web Vitals (LCP, CLS, TTFB), mobile viewport assessment, SSL status, prioritized roadblocks, and remediation recommendations.
+* **Prominent Audit Date**: Every memo clearly documents the exact audit date without external third-party verification URLs.
+* **Dual-Engine Rendering**: Renders via Chrome Headless CLI or a zero-dependency `%PDF-1.4` compliant direct stream writer.
+* **Post-Send Purge**: Audit PDFs are automatically purged from local disk following successful email dispatch to protect server storage.
+
+### 7.3 Compliance & Deliverability Standards
+* **Physical Postal Address**: Mandatory `COMPANY_POSTAL_ADDRESS` loaded dynamically; generic placeholders are strictly refused.
+* **One-Click Unsubscribe (RFC 8058)**: Dispatches include signed `List-Unsubscribe` and `List-Unsubscribe-Post` headers with tamper-proof HMAC-SHA256 tokens.
+* **Scanner Pre-fetch Protection**: `GET /api/unsubscribe` renders an interactive opt-out confirmation page to prevent automated corporate email scanners from unsubscribing recipients; `POST /api/unsubscribe` completes the suppression.
+* **SMTP Classification Matrix**:
+  - `550 5.1.1` / `5.2.1`: Hard bounce isolated to `Need to Check` with suppression reason `hard_bounce`, keeping `consent_status` clean.
+  - `550 5.7.1`: Policy blocks tracked in a 1-hour sliding window; circuit breaker trips only when $\ge 5$ distinct domains reject.
+  - `550 5.4.5`: Daily user quota paused dynamically across rolling 24-hour windows with automated resumption.
+
+---
+
+## 8. Security Best Practices
 * **Zero Credential Leaks**: `.env` is strictly excluded in `.gitignore`.
 * **Path Traversal Protection**: The Express server inspects all request paths for null bytes, relative traversal tokens (`..`, `\`), and hidden configuration files (`.env`, `.git`).
 * **Session Security**: Session tokens are encrypted and transmitted via HTTP-only security standards.

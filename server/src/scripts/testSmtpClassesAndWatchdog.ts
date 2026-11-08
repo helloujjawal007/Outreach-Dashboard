@@ -72,12 +72,12 @@ async function main() {
   console.log('✅ PASS: All SMTP error categories classified accurately.\n');
 
   // -------------------------------------------------------------------------
-  // TEST 2: 5.1.1 & 5.2.1 Hard Bounce Lead Isolation & Suppression
+  // TEST 2: 5.1.1 & 5.2.1 Hard Bounce Isolation & Suppression (Item 14 Separation)
   // -------------------------------------------------------------------------
-  console.log('[Test 2] Testing 5.1.1 & 5.2.1 Hard Bounce: Isolation, Opted-Out, and Suppression...');
+  console.log('[Test 2] Testing 5.1.1 & 5.2.1 Hard Bounce: Isolation & Suppression without marking opted_out (Item 14)...');
   const leadHb = await query<{ id: string }>(
-    `INSERT INTO leads (business_name, email, website, outreach_stage, status, slot_id, notes)
-     VALUES ($1, $2, 'https://bounce.test', 'initial', 'active', 'A', $3)
+    `INSERT INTO leads (business_name, email, website, outreach_stage, status, consent_status, slot_id, notes)
+     VALUES ($1, $2, 'https://bounce.test', 'initial', 'active', 'none', 'A', $3)
      RETURNING id`,
     [`${testTag}_HardBounce`, `bounce_${testTag}@unknown-box-${testTag}.test`, testTag]
   );
@@ -102,11 +102,70 @@ async function main() {
   );
   const supCheck = await suppressionService.isSuppressed({ email: `bounce_${testTag}@unknown-box-${testTag}.test` });
 
-  console.log(`   - Hard Bounce Lead: status="${hbPost.rows[0]?.status}", consent="${hbPost.rows[0]?.consent_status}", suppressed=${supCheck.suppressed}`);
-  if (hbPost.rows[0]?.status !== 'manual_review' || hbPost.rows[0]?.consent_status !== 'opted_out' || !supCheck.suppressed) {
-    throw new Error('Test 2 FAILED: Hard bounce lead was not isolated and suppressed!');
+  console.log(`   - Hard Bounce Lead: status="${hbPost.rows[0]?.status}" (MUST be manual_review)`);
+  console.log(`   - Consent Status:   consent_status="${hbPost.rows[0]?.consent_status}" (MUST NOT be opted_out, remains none)`);
+  console.log(`   - Suppression:      suppressed=${supCheck.suppressed}, reason="${supCheck.reason}"`);
+
+  if (hbPost.rows[0]?.status !== 'manual_review') {
+    throw new Error('Test 2 FAILED: Hard bounce lead was not isolated into manual_review!');
   }
-  console.log('✅ PASS: Hard bounce lead isolated, marked opted_out, and globally suppressed.\n');
+  if (hbPost.rows[0]?.consent_status === 'opted_out') {
+    throw new Error('Test 2 FAILED: Item 14 violation: Hard bounce lead was incorrectly marked opted_out!');
+  }
+  if (!supCheck.suppressed || !supCheck.reason?.includes('bounce')) {
+    throw new Error('Test 2 FAILED: Hard bounce lead was not added to global suppression list with hard_bounce reason!');
+  }
+  console.log('✅ PASS: Hard bounce isolated, suppressed as hard_bounce, with consent_status strictly separated (NOT opted_out).\n');
+
+  // -------------------------------------------------------------------------
+  // TEST 2B: 550 5.7.1 Recipient Policy Block (Sliding Window & 5-Domain Threshold)
+  // -------------------------------------------------------------------------
+  console.log('[Test 2b] Testing 550 5.7.1 Recipient Policy Block: Tripping breaker ONLY on >= 5 distinct domains (Item 11)...');
+  (fiveSlotSenderService as any).isCircuitBreakerTripped = false;
+  (fiveSlotSenderService as any).recentPolicyBlocks = [];
+
+  // Simulate 4 distinct domains rejecting with 5.7.1
+  for (let i = 1; i <= 4; i++) {
+    const domain = `policy-reject-${i}-${testTag}.test`;
+    const leadRes = await query<{ id: string }>(
+      `INSERT INTO leads (business_name, email, website, outreach_stage, status, slot_id, notes)
+       VALUES ($1, $2, $3, 'initial', 'active', 'A', $4)
+       RETURNING id`,
+      [`Biz ${i}`, `contact@${domain}`, `https://${domain}`, testTag]
+    );
+    await (fiveSlotSenderService as any).handleDispatchFailure(
+      { id: leadRes.rows[0].id, business_name: `Biz ${i}`, email: `contact@${domain}`, website: `https://${domain}` },
+      'initial',
+      'A',
+      `550 5.7.1 Blocked by spam filter on ${domain}`
+    );
+  }
+  console.log(`   - After 4 distinct domains: isCircuitBreakerTripped=${fiveSlotSenderService.isCircuitBreakerTripped} (MUST be false)`);
+  if (fiveSlotSenderService.isCircuitBreakerTripped) {
+    throw new Error('Test 2b FAILED: Circuit breaker tripped prematurely before 5 distinct domains rejected!');
+  }
+
+  // 5th distinct domain rejects with 5.7.1 -> Breaker MUST trip
+  const domain5 = `policy-reject-5-${testTag}.test`;
+  const lead5Res = await query<{ id: string }>(
+    `INSERT INTO leads (business_name, email, website, outreach_stage, status, slot_id, notes)
+     VALUES ($1, $2, $3, 'initial', 'active', 'A', $4)
+     RETURNING id`,
+    [`Biz 5`, `contact@${domain5}`, `https://${domain5}`, testTag]
+  );
+  await (fiveSlotSenderService as any).handleDispatchFailure(
+    { id: lead5Res.rows[0].id, business_name: `Biz 5`, email: `contact@${domain5}`, website: `https://${domain5}` },
+    'initial',
+    'A',
+    `550 5.7.1 Blocked by spam filter on ${domain5}`
+  );
+  console.log(`   - After 5 distinct domains: isCircuitBreakerTripped=${fiveSlotSenderService.isCircuitBreakerTripped} (MUST be true)`);
+  if (!fiveSlotSenderService.isCircuitBreakerTripped) {
+    throw new Error('Test 2b FAILED: Circuit breaker did not trip after 5 distinct domains rejected with 5.7.1!');
+  }
+  console.log('✅ PASS: 550 5.7.1 treated as recipient-specific policy block; circuit breaker tripped only upon >= 5 distinct domains.\n');
+  (fiveSlotSenderService as any).isCircuitBreakerTripped = false;
+  (fiveSlotSenderService as any).recentPolicyBlocks = [];
 
   // -------------------------------------------------------------------------
   // TEST 3: 5.4.5 Mailbox Daily Limit Quota (Timed Pause & Auto-Resume)

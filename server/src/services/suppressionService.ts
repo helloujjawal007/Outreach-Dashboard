@@ -173,18 +173,29 @@ export class SuppressionService {
         );
 
         for (const lead of leadRes.rows) {
-          const consentStatus = 'opted_out';
-          const leadStatus = reason.includes('bounce') ? 'manual_review' : 'inactive';
+          const isBounce = reason.includes('bounce') || reason === 'hard_bounce';
+          const leadStatus = isBounce ? 'manual_review' : 'inactive';
 
-          // Update lead status
-          await query(
-            `UPDATE leads 
-             SET consent_status = $1, 
-                 status = CASE WHEN status = 'active' THEN $2 ELSE status END,
-                 updated_at = NOW() 
-             WHERE id = $3`,
-            [consentStatus, leadStatus, lead.id]
-          );
+          if (isBounce) {
+            // Item 14: Separate hard bounce suppression from consent_status (do NOT mark opted_out)
+            await query(
+              `UPDATE leads 
+               SET status = CASE WHEN status = 'active' THEN $1 ELSE status END,
+                   updated_at = NOW() 
+               WHERE id = $2`,
+              [leadStatus, lead.id]
+            );
+          } else {
+            // Genuine opt-out / complaint -> mark consent_status = 'opted_out'
+            await query(
+              `UPDATE leads 
+               SET consent_status = 'opted_out', 
+                   status = CASE WHEN status = 'active' THEN $1 ELSE status END,
+                   updated_at = NOW() 
+               WHERE id = $2`,
+              [leadStatus, lead.id]
+            );
+          }
 
           // Discard pending queue
           await query(

@@ -347,7 +347,7 @@ export class GmbScraperService {
       if (parsed.hostname === 'localhost' || parsed.hostname.endsWith('.local') || !parsed.hostname.includes('.')) {
         return { isLive: false, verifiedUrl: '', error: 'Invalid hostname' };
       }
-    } catch (e: any) {
+    } catch (_e: any) {
       return { isLive: false, verifiedUrl: '', error: 'Malformed URL' };
     }
 
@@ -729,7 +729,7 @@ export class GmbScraperService {
       await new Promise<void>((resolve, reject) => {
         if (!ws) return reject(new Error('No WebSocket instance'));
         ws.onopen = () => resolve();
-        ws.onerror = (e) => reject(new Error('WebSocket connection error'));
+        ws.onerror = (_e) => reject(new Error('WebSocket connection error'));
       });
 
       let msgId = 1;

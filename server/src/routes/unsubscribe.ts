@@ -117,7 +117,7 @@ unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> =>
   const emailParam = typeof req.query.email === 'string' ? req.query.email.trim() : '';
 
   let targetEmail = '';
-  let validToken = tokenParam;
+  const validToken = tokenParam;
 
   if (tokenParam) {
     const verified = verifyUnsubscribeToken(tokenParam);

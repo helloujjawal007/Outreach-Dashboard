@@ -1016,7 +1016,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                         setIntervalPreset(preset.id);
                       }}
                       className={`p-2 rounded-lg border text-center transition-all ${
-                        intervalSeconds === preset.seconds
+                        intervalPreset === preset.id || intervalSeconds === preset.seconds
                           ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/20 text-brand-900 font-bold shadow-2xs'
                           : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
                       }`}

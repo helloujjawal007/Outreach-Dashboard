@@ -318,7 +318,7 @@ export async function runMigrations() {
           slot_cycle_min INT NOT NULL DEFAULT 10,
           slot_offset_min INT NOT NULL DEFAULT 2,
           anchor_timestamp TIMESTAMPTZ NOT NULL DEFAULT '2026-01-01 00:00:00+00',
-          td_endpoint_url TEXT DEFAULT '',
+          td_endpoint_url TEXT DEFAULT 'http://127.0.0.1:5055/api/od/audit-request',
           td_shared_secret TEXT DEFAULT 'td-secret-key-2026',
           max_audit_retries INT NOT NULL DEFAULT 3,
           daily_send_limit INT NOT NULL DEFAULT 150,
@@ -336,7 +336,9 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS circuit_breaker_tripped BOOLEAN NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS consecutive_auth_failures INT NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS send_window_timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
-        ADD COLUMN IF NOT EXISTS global_min_gap_sec INT NOT NULL DEFAULT 120;
+        ADD COLUMN IF NOT EXISTS global_min_gap_sec INT NOT NULL DEFAULT 90,
+        ADD COLUMN IF NOT EXISTS whatsapp_cold_outreach_enabled BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS whatsapp_daily_limit INT NOT NULL DEFAULT 20;
 
       ALTER TABLE slot_sender_settings 
         ALTER COLUMN slot_cycle_min TYPE NUMERIC USING slot_cycle_min::numeric,

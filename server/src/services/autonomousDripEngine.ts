@@ -108,7 +108,7 @@ export class AutonomousDripEngine {
   /**
    * Counts leads currently due across all 4 drip stages (Day 0, Day 2.5, Day 5.5, Day 10)
    */
-  async getLeadsDueCounts(settings: DripEngineSettings): Promise<{
+  async getLeadsDueCounts(_settings?: DripEngineSettings): Promise<{
     initialDue: number;
     followup1Due: number;
     followup2Due: number;

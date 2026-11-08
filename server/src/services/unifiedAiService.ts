@@ -219,7 +219,6 @@ export class UnifiedAiService {
     const { businessName, category = '', contactName, channel, stage, style = 'conversational', notes = '', location = '' } = req;
     const cleanBiz = this.cleanBusinessName(businessName);
     const salutation = this.buildSalutation(businessName, contactName);
-    const cat = category.toLowerCase();
 
     // Multi-Model Rate Limiting Check & Orchestrated Generation
     try {

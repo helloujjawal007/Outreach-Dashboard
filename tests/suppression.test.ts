@@ -1,7 +1,6 @@
 import { query } from '../server/src/config/db';
 import { suppressionService } from '../server/src/services/suppressionService';
 import { stageOutreachService } from '../server/src/services/stageOutreachService';
-import { emailSchedulerService } from '../server/src/services/emailSchedulerService';
 
 async function runSuppressionTests() {
   const token = (await fetch('http://localhost:5001/api/auth/login', {

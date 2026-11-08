@@ -266,11 +266,19 @@ async function main() {
     throw new Error('FAILED: Email body missing signed unsubscribe link!');
   }
 
-  // Verify audit PDF deletion from disk post-send
-  const pdfExistsAfterSend = fs.existsSync(pdfPath);
-  console.log(`[Post-Send Purge] Checking if audit PDF was deleted from disk: ${pdfExistsAfterSend ? 'STILL EXISTS (FAIL)' : 'PURGED FROM DISK (PASS)'}`);
-  if (pdfExistsAfterSend) {
-    throw new Error('FAILED: Audit PDF was not purged from disk after successful email dispatch!');
+  // Verify audit PDF lifecycle post-send (Mandate 1: retained for Follow-up 1, then purged after Follow-up 1)
+  const pdfExistsAfterInitial = fs.existsSync(pdfPath);
+  console.log(`[Mandate 1 PDF Retention] Checking if audit PDF is preserved on disk for Follow-up 1: ${pdfExistsAfterInitial ? 'PRESERVED ON DISK (PASS)' : 'MISSING (FAIL)'}`);
+  if (!pdfExistsAfterInitial) {
+    throw new Error('FAILED: Audit PDF was prematurely deleted before Follow-up 1 could attach it!');
+  }
+
+  // Dispatch Follow-up 1 (Day 2.5 touch which attaches and then deletes PDF)
+  await stageOutreachService.sendNextStageToLead(liveLeadId, undefined, { bypassGuards: true });
+  const pdfExistsAfterFU1 = fs.existsSync(pdfPath);
+  console.log(`[Mandate 1 Post-FU1 Purge] Checking if audit PDF was purged after Follow-up 1: ${pdfExistsAfterFU1 ? 'STILL EXISTS (FAIL)' : 'PURGED FROM DISK (PASS)'}`);
+  if (pdfExistsAfterFU1) {
+    throw new Error('FAILED: Audit PDF was not purged after Follow-up 1 dispatch!');
   }
 
   // Cleanup test leads and test suppression

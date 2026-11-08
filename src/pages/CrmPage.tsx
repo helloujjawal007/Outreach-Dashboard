@@ -45,7 +45,6 @@ import {
   TrendingUp,
   Flame,
   DollarSign,
-  Briefcase,
   FileText,
   Download,
   ArrowUp,
@@ -60,7 +59,7 @@ import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
 import { ChannelOutreachHub } from '@/components/ChannelOutreachHub';
 import type { Store } from '@/store';
-import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter, ScraperProgressStatus } from '@/types';
+import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
 import { api, cleanSiteUrl } from '@/services/api';
 import { getCountryFlag } from '@/utils/countryFlag';
@@ -390,22 +389,6 @@ export function CrmPage({
 
   // Inbound Gmail IMAP Sync state & handler
   const [isSyncingInbox, setIsSyncingInbox] = useState(false);
-  const [isSyncingGmb, setIsSyncingGmb] = useState(false);
-
-  const handleSyncGmbAll = useCallback(async () => {
-    try {
-      setIsSyncingGmb(true);
-      const res = await store.syncGmb();
-      setBulkActionSuccess(`Google Business Profile Sync completed! Matched and updated ${res.totalSynced} leads.`);
-      setTimeout(() => setBulkActionSuccess(null), 5000);
-    } catch (err: any) {
-      console.error('GMB sync failed:', err);
-      setBulkActionSuccess(err?.message || 'Failed to sync with Google Business Profiles');
-      setTimeout(() => setBulkActionSuccess(null), 5000);
-    } finally {
-      setIsSyncingGmb(false);
-    }
-  }, [store]);
 
   const handleSyncInbox = useCallback(async () => {
     try {
@@ -437,80 +420,9 @@ export function CrmPage({
   }, [store, selectedLead]);
 
   // Lead Location Scraper state & handlers
-  const [isScrapingLocations, setIsScrapingLocations] = useState(false);
-  const [scraperStatus, setScraperStatus] = useState<ScraperProgressStatus | null>(null);
   const [isScrapingSingle, setIsScrapingSingle] = useState(false);
   const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState(false);
   const [auditModalLead, setAuditModalLead] = useState<Lead | null>(null);
-
-  // Polling for gradual location scrape status
-  useEffect(() => {
-    let interval: any = null;
-
-    if (isScrapingLocations) {
-      interval = setInterval(async () => {
-        try {
-          const res = await store.getScrapeLocationsStatus();
-          if (res?.status) {
-            setScraperStatus(res.status);
-            if (!res.status.isRunning) {
-              setIsScrapingLocations(false);
-              await store.fetchLeads();
-              setBulkActionSuccess(
-                `Lead Scraper finished: ${res.status.identifiedCount} identified, ${res.status.unidentifiedCount} marked as (Not identified).`
-              );
-              setTimeout(() => setBulkActionSuccess(null), 6000);
-            }
-          }
-        } catch (err) {
-          console.error('Error fetching scrape status:', err);
-        }
-      }, 2000);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isScrapingLocations, store]);
-
-  // Initial check if scraper is already running in background
-  useEffect(() => {
-    store
-      .getScrapeLocationsStatus()
-      .then((res) => {
-        if (res?.status?.isRunning) {
-          setIsScrapingLocations(true);
-          setScraperStatus(res.status);
-        }
-      })
-      .catch(() => {});
-  }, [store]);
-
-  const handleStartLocationScrape = useCallback(async () => {
-    try {
-      setIsScrapingLocations(true);
-      const res = await store.scrapeLeadLocations({ overwriteIdentified: false, delayMs: 1200 });
-      setBulkActionSuccess(res.message || `Started gradual location scraper for ${res.total} leads.`);
-      setTimeout(() => setBulkActionSuccess(null), 4000);
-    } catch (err: any) {
-      setIsScrapingLocations(false);
-      setBulkActionSuccess(err?.message || 'Failed to start location scraper');
-      setTimeout(() => setBulkActionSuccess(null), 5000);
-    }
-  }, [store]);
-
-  const handleStopLocationScrape = useCallback(async () => {
-    try {
-      await store.stopScrapeLocations();
-      setIsScrapingLocations(false);
-      setBulkActionSuccess('Stopped location scraping.');
-      await store.fetchLeads();
-      setTimeout(() => setBulkActionSuccess(null), 4000);
-    } catch (err: any) {
-      setBulkActionSuccess(err?.message || 'Failed to stop location scraper');
-      setTimeout(() => setBulkActionSuccess(null), 4000);
-    }
-  }, [store]);
 
   const handleScrapeSingleLocation = useCallback(
     async (leadId: string) => {
@@ -2139,56 +2051,6 @@ export function CrmPage({
     if (status === 'replied') return <Badge variant="green">{consentLabels[status]}</Badge>;
     if (status === 'opted_out') return <Badge variant="red">{consentLabels[status]}</Badge>;
     return <Badge variant="gray">{consentLabels[status]}</Badge>;
-  };
-
-  const stageBadge = (lead: Lead) => {
-    if (lead.entityType === 'client') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-          <UserCheck size={11} /> Client Account
-        </span>
-      );
-    }
-    if (lead.consentStatus === 'opted_out') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 border border-rose-200">
-          🛑 Opted Out
-        </span>
-      );
-    }
-    if (lead.consentStatus === 'replied') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-          <CheckCircle2 size={11} /> Replied
-        </span>
-      );
-    }
-    if (lead.outreachStage === 'followup_1') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-200">
-          <Clock size={11} /> Follow-up 1 Due
-        </span>
-      );
-    }
-    if (lead.outreachStage === 'followup_2') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-700 border border-purple-200">
-          <Clock size={11} /> Follow-up 2 Due
-        </span>
-      );
-    }
-    if (lead.outreachStage === 'completed') {
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 border border-slate-200">
-          Completed (3x)
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 border border-blue-200">
-        <Zap size={11} /> First Msg Needed
-      </span>
-    );
   };
 
   const currentBatch = useMemo(() => {

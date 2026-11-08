@@ -21,7 +21,6 @@ import {
   MailX,
   Copy,
   LogOut,
-  TrendingUp,
   ShieldAlert,
   Search,
 } from 'lucide-react';

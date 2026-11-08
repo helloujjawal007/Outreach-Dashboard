@@ -136,19 +136,22 @@ flowchart TD
   * 5 parallel virtual slots (`A`, `B`, `C`, `D`, `E`).
   * Each slot is assigned an offset: Slot A at :00, Slot B at :02, Slot C at :04, Slot D at :06, Slot E at :08, repeating cyclically every 10 minutes.
   * Dispatches never overlap; strict tick re-entrancy guards prevent double-sends even under heavy load.
-* **Multi-Mailbox Slot Mapping (`connected_inboxes`)**:
-  * Slots map mailboxes using modulo routing (`inboxes[slotIndex % inboxCount]`).
-  * If 1 mailbox is configured (e.g., `cloudconsultancy.ad@gmail.com`), all 5 slots use it safely on the staggered grid without collision.
-  * If 5 distinct mailboxes are added, each slot operates with its own dedicated sender identity.
+* **Multi-Mailbox Dynamic Slot Mapping**:
+  * Slots map configured inboxes dynamically via modulo round-robin (`inboxes[slotIndex % inboxes.length]`).
+  * **Single Mailbox Setup**: If only 1 email is provided (e.g. `cloudconsultancy.ad@gmail.com`), all 5 slots seamlessly and safely share this single mailbox across the staggered 2-minute grid without sender collisions.
+  * **Multi-Mailbox Setup**: Adding 2, 3, 4, or 5 inboxes automatically distributes slots across the available mailboxes. Mailboxes can be configured in UI Settings (`connected_inboxes`) or loaded via `server/src/config/senderConfig.ts` with host, port (465/587), App Password, and IMAP credentials.
+* **PostgreSQL Advisory Lock & Leader Election**:
+  * Prevents concurrent scheduler execution when multiple containers run against the same database (e.g., Render zero-downtime rolling deploys). Uses session lock `pg_advisory_lock(749202601)`.
 * **Rolling JIT Audit Dispatch**:
   * Audits are dispatched to the diagnostic engine just-in-time only for top-queued leads within the active horizon, preventing queue starvation.
 
-### 2.7 Audit Lifecycle: Post-Send Purge & On-Demand Redownload
-* **Storage Optimization via Instant Purge**:
-  * When an email with a PDF audit is successfully dispatched via SMTP, Nodemailer transmits the document to the lead and simultaneously syncs the full RFC 822 email payload (with attachment) to the Gmail/Zoho `Sent` folder via IMAP (`emailSentSyncService`).
-  * Immediately upon successful delivery, the local PDF file on disk is deleted (`fs.unlinkSync`), and database pointers (`audit_pdf_path`, `audit_pdf_name`) are set to `NULL`.
-* **On-Demand Audit Redownload**:
-  * If team members or clients need to retrieve the audit later, the system provides on-demand generation and retrieval via `GET /api/audit/redownload/:leadId` or `GET /api/audit/lead/:leadId/pdf`, reconstructing the PDF dynamically from the lead's stored diagnostic metrics.
+### 2.7 Audit Lifecycle: 30-Minute Disk Retention & Dynamic Regeneration
+* **30-Minute Automatic Purge**:
+  * Generated PDF audits are safely kept on disk for exactly 30 minutes following initial dispatch.
+  * A 30-minute unref timer and an automated 10-minute background sweeper (`run30MinAuditPdfCleanup`) purge old files from `server/data/audits/`, ensuring ephemeral storage does not exceed quotas on cloud hosts like Render.
+* **Zero-Failure Dynamic On-The-Fly Regeneration**:
+  * The full diagnostic findings JSON (`audit_findings`, `audit_score`, `website`) is permanently stored in PostgreSQL.
+  * When Follow-up 1 dispatches at Day 2.5 (or if an on-demand audit download is requested via `GET /api/audit/redownload/:leadId`), the system dynamically reconstructs and re-renders the branded PDF in real time via headless Chrome, ensuring attachments are always delivered even after the disk cache has been purged.
 
 ### 2.8 Consultative Humanoid Copywriting (Zero AI Watermark & Zero Unsubscribe)
 * **Humanoid, Authentic Tone**:

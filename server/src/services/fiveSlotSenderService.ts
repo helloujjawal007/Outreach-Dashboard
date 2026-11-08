@@ -1,6 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-import { query } from '../config/db';
+import { query, pool } from '../config/db';
 import { stageOutreachService } from './stageOutreachService';
 import { failureLogService } from './failureLogService';
 import { clientAuditService } from './clientAuditIntelligenceService';
@@ -8,7 +6,6 @@ import { technicalAuditPdfService } from './technicalAuditPdfService';
 import { suppressionService } from './suppressionService';
 import { classifySmtpError } from '../utils/smtpClassifier';
 import { validateAuditAsset, isValidPdfFile } from '../utils/auditPolicy';
-import { cleanupOldAuditPdfs } from '../routes/auditCallback';
 import { resolveRecipientTimezone, isWithinRecipientWindow } from '../utils/timezoneHelper';
 import { env } from '../config/env';
 
@@ -31,6 +28,8 @@ export interface SlotSenderSettings {
   consecutive_auth_failures?: number;
   send_window_timezone?: string;
   global_min_gap_sec?: number;
+  whatsapp_cold_outreach_enabled?: boolean;
+  whatsapp_daily_limit?: number;
 }
 
 export interface SlotStatus {
@@ -51,6 +50,51 @@ export interface SlotStatus {
 export class FiveSlotSenderService {
   private timer: NodeJS.Timeout | null = null;
   private isTickRunning = false;
+  // Leader election state via PostgreSQL advisory lock
+  private leaderClient: any = null;
+  public isLeader = false;
+  public readonly ADVISORY_LOCK_ID = 749202601;
+
+  async acquireLeaderLock(): Promise<boolean> {
+    if (this.isLeader && this.leaderClient) return true;
+    try {
+      const client = await pool.connect();
+      const res = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [this.ADVISORY_LOCK_ID]);
+      if (res.rows[0]?.acquired === true) {
+        this.leaderClient = client;
+        this.isLeader = true;
+        this.leaderClient.on('error', () => {
+          this.isLeader = false;
+          this.leaderClient = null;
+        });
+        console.log(`[FiveSlotSenderService] 👑 Leader lock acquired (pg_advisory_lock ${this.ADVISORY_LOCK_ID}). Active leader scheduler instance.`);
+        return true;
+      } else {
+        client.release();
+        this.isLeader = false;
+        return false;
+      }
+    } catch (err: any) {
+      console.warn(`[FiveSlotSenderService] Leader lock acquisition warning:`, err?.message);
+      this.isLeader = false;
+      return false;
+    }
+  }
+
+  async releaseLeaderLock(): Promise<void> {
+    if (this.leaderClient) {
+      try {
+        await this.leaderClient.query('SELECT pg_advisory_unlock($1)', [this.ADVISORY_LOCK_ID]);
+      } catch (_) {}
+      try {
+        this.leaderClient.release();
+      } catch (_) {}
+      this.leaderClient = null;
+      this.isLeader = false;
+      console.log(`[FiveSlotSenderService] 🛡️ Leader lock released (pg_advisory_unlock ${this.ADVISORY_LOCK_ID}).`);
+    }
+  }
+
   // Circuit breaker state for mailbox / SMTP authentication errors
   private consecutiveAuthFailures = 0;
   public isCircuitBreakerTripped = false;
@@ -147,9 +191,8 @@ export class FiveSlotSenderService {
    */
   async getSettings(): Promise<SlotSenderSettings> {
     try {
-      const res = await query<SlotSenderSettings>(
-        `SELECT slot_cycle_min, slot_offset_min, anchor_timestamp, td_endpoint_url, td_shared_secret, max_audit_retries, daily_send_limit, send_window_start_hour, send_window_end_hour, weekdays_only, is_active, send_window_timezone, global_min_gap_sec
-         FROM slot_sender_settings WHERE id = 'default'`
+      const res = await query<any>(
+        `SELECT * FROM slot_sender_settings WHERE id = 'default'`
       );
       if (res.rows.length > 0) {
         const row = res.rows[0];
@@ -160,7 +203,10 @@ export class FiveSlotSenderService {
           daily_send_limit: row.daily_send_limit !== null && row.daily_send_limit !== undefined ? parseInt(row.daily_send_limit as any, 10) : 150,
           send_window_start_hour: row.send_window_start_hour !== null && row.send_window_start_hour !== undefined ? parseInt(row.send_window_start_hour as any, 10) : 8,
           send_window_end_hour: parseInt(row.send_window_end_hour as any, 10) || 19,
-          global_min_gap_sec: parseInt(row.global_min_gap_sec as any, 10) || 120,
+          global_min_gap_sec: parseInt(row.global_min_gap_sec as any, 10) || 90,
+          td_endpoint_url: row.td_endpoint_url || 'http://127.0.0.1:5055/api/od/audit-request',
+          whatsapp_cold_outreach_enabled: row.whatsapp_cold_outreach_enabled ?? false,
+          whatsapp_daily_limit: row.whatsapp_daily_limit ?? 20,
         };
       }
     } catch (err) {
@@ -171,7 +217,7 @@ export class FiveSlotSenderService {
       slot_cycle_min: 10,
       slot_offset_min: 2,
       anchor_timestamp: '2026-01-01 00:00:00+00',
-      td_endpoint_url: '',
+      td_endpoint_url: 'http://127.0.0.1:5055/api/od/audit-request',
       td_shared_secret: 'td-secret-key-2026',
       max_audit_retries: 3,
       daily_send_limit: 150,
@@ -180,8 +226,129 @@ export class FiveSlotSenderService {
       weekdays_only: true,
       is_active: true,
       send_window_timezone: 'UTC',
-      global_min_gap_sec: 120,
+      global_min_gap_sec: 90,
+      whatsapp_cold_outreach_enabled: false,
+      whatsapp_daily_limit: 20,
     };
+  }
+
+  /**
+   * Probes TD connection endpoint with header and secret
+   */
+  async testTdConnection(targetUrl?: string, targetSecret?: string): Promise<{
+    ok: boolean;
+    status?: number;
+    latencyMs: number;
+    url: string;
+    message: string;
+    details?: any;
+  }> {
+    const settings = await this.getSettings();
+    const url = (targetUrl || settings.td_endpoint_url || 'http://127.0.0.1:5055/api/od/audit-request').trim();
+    const secret = (targetSecret || settings.td_shared_secret || 'td-secret-key-2026').trim();
+
+    if (!url) {
+      return {
+        ok: false,
+        latencyMs: 0,
+        url,
+        message: 'TD endpoint URL is empty or unconfigured',
+      };
+    }
+
+    const start = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const probePayload = {
+        ping: true,
+        testProbe: true,
+        leadId: 'test-ping-probe',
+        website: 'https://cloudconsultancy.in',
+        email: 'cloudconsultancy.ad@gmail.com',
+        company: 'Cloud Consultancy Probe',
+        callbackUrl: 'https://outreach.cloudconsultancy.in/api/audit-callback',
+      };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-audit-secret': secret,
+          'x-td-secret': secret,
+        },
+        body: JSON.stringify(probePayload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const latencyMs = Date.now() - start;
+      const bodyText = await res.text();
+
+      if (res.ok || res.status === 200 || res.status === 202) {
+        return {
+          ok: true,
+          status: res.status,
+          latencyMs,
+          url,
+          message: `Connected successfully to TD (${res.status} OK in ${latencyMs}ms)`,
+          details: bodyText.slice(0, 300),
+        };
+      } else if (res.status === 401 || res.status === 403) {
+        return {
+          ok: false,
+          status: res.status,
+          latencyMs,
+          url,
+          message: `TD secret authentication rejected (HTTP ${res.status}): Header x-audit-secret invalid`,
+          details: bodyText.slice(0, 300),
+        };
+      } else if (res.status === 404) {
+        return {
+          ok: false,
+          status: res.status,
+          latencyMs,
+          url,
+          message: `Route not found (HTTP 404). Expected TD endpoint: /api/od/audit-request`,
+          details: bodyText.slice(0, 300),
+        };
+      } else {
+        return {
+          ok: false,
+          status: res.status,
+          latencyMs,
+          url,
+          message: `TD responded with HTTP ${res.status} in ${latencyMs}ms`,
+          details: bodyText.slice(0, 300),
+        };
+      }
+    } catch (err: any) {
+      const latencyMs = Date.now() - start;
+      return {
+        ok: false,
+        latencyMs,
+        url,
+        message: `Failed to connect to TD at ${url}: ${err?.name === 'AbortError' ? 'Connection timed out after 6000ms' : (err?.message || 'Connection refused')}`,
+      };
+    }
+  }
+
+  /**
+   * Startup verification probe for TD connection
+   */
+  async checkTdStartupConnection(): Promise<void> {
+    const settings = await this.getSettings();
+    if (settings.td_endpoint_url && settings.td_endpoint_url.startsWith('http')) {
+      console.log(`[FiveSlotSenderService] 🔌 Probing TD connection at startup: ${settings.td_endpoint_url}...`);
+      const check = await this.testTdConnection();
+      if (check.ok) {
+        console.log(`[FiveSlotSenderService] 🔌 TD Connection Check: SUCCESS (${check.status} in ${check.latencyMs}ms)`);
+      } else {
+        console.warn(`[FiveSlotSenderService] ⚠️ TD Connection Check Notice: ${check.message}`);
+      }
+    } else {
+      console.log('[FiveSlotSenderService] ℹ️ TD endpoint URL not set; local audit engine active.');
+    }
   }
 
   /**
@@ -225,7 +392,7 @@ export class FiveSlotSenderService {
         updated.weekdays_only,
         updated.is_active,
         updated.send_window_timezone || 'UTC',
-        updated.global_min_gap_sec || 120,
+        updated.global_min_gap_sec || 90,
       ]
     );
 
@@ -672,6 +839,7 @@ export class FiveSlotSenderService {
       bypassWindow?: boolean;
       bypassMinGap?: boolean;
       bypassDailyCap?: boolean;
+      bypassLeaderLock?: boolean;
     }
   ): Promise<{
     activeSlot: SlotId | null;
@@ -697,6 +865,18 @@ export class FiveSlotSenderService {
       } else {
         console.log(`[FiveSlotSenderService] 🟢 5.4.5 Quota pause elapsed. Auto-resuming 5-slot sender.`);
         this.quotaPauseUntil = null;
+      }
+    }
+
+    // 0. PostgreSQL Advisory Lock Leader Election: Only ONE scheduler leader may run against this database
+    if (!this.isLeader && !testOptions?.bypassLeaderLock) {
+      const acquired = await this.acquireLeaderLock();
+      if (!acquired) {
+        return {
+          activeSlot: null,
+          dispatched: false,
+          reason: `Scheduler standby: PostgreSQL advisory lock (${this.ADVISORY_LOCK_ID}) held by another active leader instance on this database`,
+        };
       }
     }
 
@@ -1530,9 +1710,10 @@ export class FiveSlotSenderService {
 
     console.log(`[FiveSlotSenderService] 🚀 5-Slot Staggered Sender active (Single Timer, 10s tick interval).`);
 
-    // Run immediate startup checks: Stale Reaper + Rolling Audits
+    // Run immediate startup checks: Stale Reaper + Rolling Audits + TD Connection Probe
     this.reapStaleSendingClaims().catch(() => {});
     this.dispatchRollingAudits().catch(() => {});
+    this.checkTdStartupConnection().catch(() => {});
 
     this.timer = setInterval(() => {
       this.processGlobalTick().catch((err) => {

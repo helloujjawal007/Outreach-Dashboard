@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/services/api';
 import type { FailureRecord, FailureType, SlotId } from '@/types';
 import { SlotsPanel } from '@/components/SlotsPanel';
@@ -7,7 +7,6 @@ import {
   Download,
   RefreshCw,
   Search,
-  Filter,
   CheckCircle2,
   RotateCcw,
   ExternalLink,
@@ -16,7 +15,6 @@ import {
   Check,
   XCircle,
   FileText,
-  ShieldAlert,
 } from 'lucide-react';
 
 export function FailuresPage() {

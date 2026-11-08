@@ -414,9 +414,20 @@ async function main() {
         if (!record.attachments || record.attachments.length === 0) {
           throw new Error(`Initial email to ${record.recipientEmail} missing PDF attachment!`);
         }
+        const att = record.attachments[0];
+        const tdMeta = tdGeneratedMap.get(record.leadId);
+        if (tdMeta) {
+          if (!att.filename?.includes('.pdf')) {
+            throw new Error(`Attachment filename ${att.filename} is not a PDF!`);
+          }
+          const attContent = att.content ? att.content.toString() : (att.path && fs.existsSync(att.path) ? fs.readFileSync(att.path, 'utf8') : '');
+          if (attContent && !attContent.includes(tdMeta.domain)) {
+            throw new Error(`PDF attachment for ${record.leadId} does NOT contain domain ${tdMeta.domain}!`);
+          }
+        }
       }
     }
-    console.log('   ✓ Verified all sent emails: valid signature, postal address, signed unsubscribe link, and RFC headers.\n');
+    console.log('   ✓ Verified all sent emails: valid signature, postal address, signed unsubscribe link, RFC headers, and PDF content matching domain.\n');
 
     // -------------------------------------------------------------------------
     // 8. Full Mathematical Accounting of ALL 100 Leads
@@ -462,6 +473,7 @@ async function main() {
       failureMap[row.failure_type] = fc;
       console.log(`   - type="${row.failure_type}": ${fc} row(s)`);
     }
+    console.log(`   Total Failure Log rows: ${totalFailures}`);
 
     // Specific mode checks:
     // A. clean_site: exactly 5 leads in skipped_no_opportunity, 0 failures, 0 emails
@@ -489,6 +501,32 @@ async function main() {
     if (droppedCount !== 3) {
       throw new Error(`never_calls_back accounting error: expected 3 REPORT_DELIVERY_FAILED rows, got ${droppedCount}`);
     }
+
+    // Specific audit check for lead41-never_calls_back (Mandate 6)
+    const lead41Res = await query<{ id: string; status: string; outreach_stage: string; website: string }>(
+      `SELECT id, status, outreach_stage, website FROM leads WHERE notes = $1 AND website LIKE '%lead41-never_calls_back%'`,
+      [testTag]
+    );
+    if (lead41Res.rows.length === 0) {
+      throw new Error('lead41-never_calls_back not found in test database!');
+    }
+    const lead41 = lead41Res.rows[0];
+    const lead41Sends = mockSentLog.filter((m) => m.leadId === lead41.id);
+    const lead41Failures = await query<{ type: string; error_message: string }>(
+      `SELECT type, error_message FROM failure_log WHERE lead_id = $1`,
+      [lead41.id]
+    );
+    console.log(`      ↳ lead41-never_calls_back audit: status="${lead41.status}", stage="${lead41.outreach_stage}", emailsSent=${lead41Sends.length}, failures=${lead41Failures.rows.length} (${lead41Failures.rows[0]?.type || 'none'} - ${lead41Failures.rows[0]?.error_message || ''})`);
+    if (lead41Sends.length !== 0) {
+      throw new Error(`VIOLATION: lead41-never_calls_back received ${lead41Sends.length} email(s)! Expected 0.`);
+    }
+    if (lead41.status !== 'manual_review') {
+      throw new Error(`VIOLATION: lead41-never_calls_back status is '${lead41.status}'! Expected 'manual_review'.`);
+    }
+    if (lead41Failures.rows.length === 0) {
+      throw new Error('VIOLATION: lead41-never_calls_back has NO failure_log entry!');
+    }
+    console.log(`      ✓ CONFIRMED: lead41-never_calls_back sent ZERO emails and is quarantined in manual_review with failure_log: ${lead41Failures.rows[0].type}`);
 
     // D. bad_pdf & deleted_pdf: exactly 3 leads in PDF_MISSING
     const pdfMissingCount = failureMap['PDF_MISSING'] || 0;

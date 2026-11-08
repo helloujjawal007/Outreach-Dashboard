@@ -134,7 +134,7 @@ export class GoogleMapsScraper {
       await new Promise<void>((resolve, reject) => {
         if (!ws) return reject(new Error('No WebSocket instance'));
         ws.onopen = () => resolve();
-        ws.onerror = (e) => reject(new Error('WebSocket connection error'));
+        ws.onerror = (_e) => reject(new Error('WebSocket connection error'));
       });
 
       let msgId = 1;
@@ -155,7 +155,7 @@ export class GoogleMapsScraper {
                 if (res.error) reject(new Error(res.error.message));
                 else resolve(res.result);
               }
-            } catch (e) {
+            } catch (_e) {
               // ignore parse errors for other events
             }
           };

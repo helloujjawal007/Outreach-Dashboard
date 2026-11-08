@@ -1196,7 +1196,7 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
 
     const initialMetadata: Record<string, any> =
       req.body.metadata && typeof req.body.metadata === 'object' ? { ...req.body.metadata } : {};
-    let finalCategory = category || 'Uncategorized';
+    let finalCategory = safeCategory || 'Uncategorized';
 
     // Auto-enrich Google Business Profile if enabled (default true)
     if (req.body.enrichGoogle !== false) {
@@ -1272,7 +1272,7 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
         facebook ? facebook.trim() : '',
         standardizedWhatsapp,
         req.body.linkedin ? req.body.linkedin.trim() : '',
-        notes ? notes.trim() : '',
+        safeNotes ? safeNotes.trim() : '',
         effectiveStatus,
         batchId || null,
         waEval.isEligible,

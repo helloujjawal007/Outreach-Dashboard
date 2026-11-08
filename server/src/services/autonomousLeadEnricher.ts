@@ -242,7 +242,7 @@ export class AutonomousLeadEnricher {
               leadUpdated = true;
               console.log(`[AutonomousLeadEnricher] 🎯 Discovered email "${targetEmail}" for ${lead.business_name}!`);
             }
-          } catch (crawlErr) {
+          } catch (_crawlErr) {
             // Silently continue
           }
         }

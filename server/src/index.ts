@@ -246,6 +246,17 @@ app.use('/api/sequences', sequencesRouter);
 app.use('/api/failures', failuresRouter);
 app.use('/api/slots', slotsRouter);
 
+// Forward /api/settings/test-td-connection to fiveSlotSenderService
+app.post('/api/settings/test-td-connection', async (req, res) => {
+  try {
+    const { url, secret } = req.body || {};
+    const result = await fiveSlotSenderService.testTdConnection(url, secret);
+    res.json({ success: result.ok, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, ok: false, message: err?.message || 'TD probe failure' });
+  }
+});
+
 // Automatic 28-Day Retention Cleanup Routine
 async function run28DayRetentionCleanup() {
   try {
@@ -270,6 +281,35 @@ async function run28DayRetentionCleanup() {
     }
   } catch (err) {
     console.error('[Retention Cleanup Error]', err);
+  }
+}
+
+// Automatic 30-Minute Post-Send PDF Storage Purge Routine
+function run30MinAuditPdfCleanup() {
+  try {
+    const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
+    if (!fs.existsSync(auditsDir)) return;
+    const now = Date.now();
+    const maxAgeMs = 30 * 60 * 1000; // 30 minutes
+    const files = fs.readdirSync(auditsDir);
+    let purgedCount = 0;
+    for (const file of files) {
+      if (file.endsWith('.pdf')) {
+        const filePath = path.join(auditsDir, file);
+        try {
+          const stats = fs.statSync(filePath);
+          if (now - stats.mtimeMs > maxAgeMs) {
+            fs.unlinkSync(filePath);
+            purgedCount++;
+          }
+        } catch (_) {}
+      }
+    }
+    if (purgedCount > 0) {
+      console.log(`[Storage Cleanup] 🗑️ Purged ${purgedCount} sent audit PDF(s) older than 30 minutes.`);
+    }
+  } catch (err: any) {
+    console.warn('[Storage Cleanup] 30-minute PDF cleanup notice:', err?.message);
   }
 }
 
@@ -326,6 +366,10 @@ async function startServer() {
   // Run 28-day retention cleanup on startup and schedule daily check
   await run28DayRetentionCleanup();
   setInterval(run28DayRetentionCleanup, 24 * 60 * 60 * 1000);
+
+  // Run 30-minute PDF disk storage purge on startup and every 10 minutes
+  run30MinAuditPdfCleanup();
+  setInterval(run30MinAuditPdfCleanup, 10 * 60 * 1000);
 
   // 1. Email Channel: Automated Gmail IMAP polling for inbound replies (every 30s)
   emailInboundService.startPolling(30000);

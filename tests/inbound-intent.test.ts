@@ -1,5 +1,4 @@
 import { unifiedAiService } from '../server/src/services/unifiedAiService';
-import { autonomousInboundAgent } from '../server/src/services/autonomousInboundAgent';
 import { query } from '../server/src/config/db';
 
 async function runInboundIntentTests() {

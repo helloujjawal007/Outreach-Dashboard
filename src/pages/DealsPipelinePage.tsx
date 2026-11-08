@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   XCircle,
   Calendar,
-  Building2,
   Trash2,
   RefreshCw,
   Search,
@@ -23,7 +22,7 @@ import {
   Check,
 } from 'lucide-react';
 import { api } from '@/services/api';
-import type { Deal, DealStage, PipelineSummary, CrmTask, LeadActivity, Lead } from '@/types';
+import type { Deal, DealStage, PipelineSummary, CrmTask, Lead } from '@/types';
 import { LeadActivityDrawer } from '@/components/LeadActivityDrawer';
 import { useStore } from '@/store';
 
@@ -57,12 +56,8 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewDealModal, setShowNewDealModal] = useState(false);
   const [showTasksDrawer, setShowTasksDrawer] = useState(false);
-  const [activeActivityLead, setActiveActivityLead] = useState<{ leadId: string; businessName: string } | null>(null);
   const [selectedLeadForDrawer, setSelectedLeadForDrawer] = useState<Lead | null>(null);
   const [isLeadDrawerOpen, setIsLeadDrawerOpen] = useState(false);
-  const [activities, setActivities] = useState<LeadActivity[]>([]);
-  const [loadingActivities, setLoadingActivities] = useState(false);
-  const [newNoteText, setNewNoteText] = useState('');
 
   // Drag and Drop state
   const [draggedDealId, setDraggedDealId] = useState<string | null>(null);
@@ -253,52 +248,6 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
 
     setSelectedLeadForDrawer(fallbackLead);
     setIsLeadDrawerOpen(true);
-  };
-
-  const openActivityFeed = async (leadId: string, businessName: string) => {
-    // Find matching deal
-    const deal = deals.find((d) => d.lead_id === leadId || d.business_name === businessName);
-    if (deal) {
-      await handleDealClick(deal);
-      return;
-    }
-    try {
-      const fullLead = await api.getLeadById(leadId);
-      if (fullLead) {
-        setSelectedLeadForDrawer(fullLead);
-        setIsLeadDrawerOpen(true);
-        return;
-      }
-    } catch (_) {}
-    setActiveActivityLead({ leadId, businessName });
-    setLoadingActivities(true);
-    try {
-      const res = await api.getLeadActivities(leadId);
-      setActivities(res.activities);
-    } catch (err) {
-      console.error('Load activities failed:', err);
-    } finally {
-      setLoadingActivities(false);
-    }
-  };
-
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNoteText.trim() || !activeActivityLead) return;
-
-    try {
-      await api.logActivity({
-        leadId: activeActivityLead.leadId,
-        activityType: 'note',
-        title: 'Sales Consultation Note',
-        description: newNoteText.trim(),
-      });
-      setNewNoteText('');
-      const res = await api.getLeadActivities(activeActivityLead.leadId);
-      setActivities(res.activities);
-    } catch (err) {
-      console.error('Add note failed:', err);
-    }
   };
 
   return (

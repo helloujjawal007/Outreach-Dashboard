@@ -9,8 +9,42 @@ import {
 import { query } from '../config/db';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const fixKeyName = (file: string): string => file?.replace(/\//g, '__')?.replace(/:/g, '-');
+
+const getSessionEncryptionKey = (): Buffer => {
+  const secret = process.env.WHATSAPP_ENCRYPTION_KEY || process.env.SESSION_SECRET || 'cc-whatsapp-session-enc-key-2026';
+  return crypto.scryptSync(secret, 'od-whatsapp-session-salt', 32);
+};
+
+export function encryptSessionData(plainText: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getSessionEncryptionKey(), iv);
+  let encrypted = cipher.update(plainText, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const tag = cipher.getAuthTag().toString('hex');
+  return `enc:v1:${iv.toString('hex')}:${tag}:${encrypted}`;
+}
+
+export function decryptSessionData(cipherText: string): string {
+  if (!cipherText || !cipherText.startsWith('enc:v1:')) {
+    // Unencrypted legacy fallback
+    return cipherText;
+  }
+  const parts = cipherText.split(':');
+  if (parts.length !== 5) {
+    throw new Error('Invalid encrypted session key payload format');
+  }
+  const iv = Buffer.from(parts[2], 'hex');
+  const tag = Buffer.from(parts[3], 'hex');
+  const encrypted = parts[4];
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getSessionEncryptionKey(), iv);
+  decipher.setAuthTag(tag);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
 
 /**
  * PostgreSQL-backed Authentication State Adapter for Baileys.
@@ -43,11 +77,12 @@ export async function usePostgresAuthState(): Promise<{
             if (file.endsWith('.json')) {
               try {
                 const content = fs.readFileSync(path.join(diskDir, file), 'utf-8');
+                const encrypted = encryptSessionData(content);
                 await query(
                   `INSERT INTO whatsapp_session_keys (key_id, key_data, updated_at) 
                    VALUES ($1, $2, NOW()) 
                    ON CONFLICT (key_id) DO NOTHING`,
-                  [fixKeyName(file), content]
+                  [fixKeyName(file), encrypted]
                 );
               } catch {
                 // Ignore corrupt individual file
@@ -65,11 +100,12 @@ export async function usePostgresAuthState(): Promise<{
   const writeData = async (data: any, key: string): Promise<void> => {
     const fixedKey = fixKeyName(key);
     const jsonStr = JSON.stringify(data, BufferJSON.replacer);
+    const encrypted = encryptSessionData(jsonStr);
     await query(
       `INSERT INTO whatsapp_session_keys (key_id, key_data, updated_at)
        VALUES ($1, $2, NOW())
        ON CONFLICT (key_id) DO UPDATE SET key_data = $2, updated_at = NOW()`,
-      [fixedKey, jsonStr]
+      [fixedKey, encrypted]
     );
   };
 
@@ -81,7 +117,8 @@ export async function usePostgresAuthState(): Promise<{
         [fixedKey]
       );
       if (res.rows.length === 0) return null;
-      return JSON.parse(res.rows[0].key_data, BufferJSON.reviver);
+      const decrypted = decryptSessionData(res.rows[0].key_data);
+      return JSON.parse(decrypted, BufferJSON.reviver);
     } catch {
       return null;
     }

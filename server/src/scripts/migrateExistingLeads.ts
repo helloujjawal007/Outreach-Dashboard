@@ -1,7 +1,11 @@
 import { Pool } from 'pg';
 import { pool } from '../config/db';
 
-export async function runMigration(targetPool: Pool = pool, isDryRun = process.argv.includes('--dry-run')) {
+export async function runMigration(
+  targetPool: Pool = pool,
+  isDryRun = process.argv.includes('--dry-run'),
+  confirmBackup = process.argv.includes('--confirm-backup')
+) {
   console.log('========================================================================');
   console.log(`🔄 MIGRATION: LEGACY DRIP CLEANUP & ROUND-ROBIN STICKY SLOTS ${isDryRun ? '(DRY RUN)' : '(LIVE EXECUTION)'}`);
   console.log('========================================================================\n');
@@ -9,6 +13,17 @@ export async function runMigration(targetPool: Pool = pool, isDryRun = process.a
   const dbRes = await targetPool.query<{ current_database: string }>('SELECT current_database()');
   const dbName = dbRes.rows[0].current_database;
   console.log(`[Database Target]: "${dbName}" | Mode: ${isDryRun ? 'DRY RUN (No changes)' : 'LIVE'}\n`);
+
+  // Mandatory Safety Checks (Mandate 16):
+  // 1. Refuse to run on production database
+  if (dbName === 'outreach_dashboard') {
+    throw new Error('[IMMUTABILITY REFUSAL] Refusing to run migration directly on production database "outreach_dashboard". Migrations must run on scratch or test databases.');
+  }
+
+  // 2. Require --confirm-backup for live modifications
+  if (!isDryRun && !confirmBackup) {
+    throw new Error('[SAFETY CHECK] Live migration execution requires explicit --confirm-backup flag, or pass --dry-run for simulation.');
+  }
 
   console.log(`[Context - Legacy Stage Cleanup & Slot Alignment]:
   • Under the legacy 4-touch cadence, leads progressed: initial -> followup_1 -> followup_2 -> followup_3.

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { query, assertNotProduction, computeProductionDatabaseMd5, assertProductionImmutability } from '../config/db';
-import { fiveSlotSenderService, SLOTS, type SlotId } from '../services/fiveSlotSenderService';
+import { fiveSlotSenderService, SLOTS } from '../services/fiveSlotSenderService';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { analyzeSoakLogFile } from './analyzeSoakLog';
 

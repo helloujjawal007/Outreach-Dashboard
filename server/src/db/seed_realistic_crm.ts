@@ -1,5 +1,4 @@
 import { query } from '../config/db';
-import crypto from 'node:crypto';
 
 /**
  * Production-Grade CRM Seed Script

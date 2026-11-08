@@ -191,7 +191,6 @@ export class HumanCopywriterService {
     const cleanCat = this.cleanCategory(lead.category);
     const categoryPhrase = cleanCat !== 'local services' ? `${cleanCat.toLowerCase()} companies` : 'local businesses';
     const cityPhrase = cleanCity ? ` in ${cleanCity}` : '';
-    const cityText = cleanCity ? ` in ${cleanCity}` : ' in your local market';
 
     const rawWeb = (lead.website || '').trim();
     const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawWeb);
@@ -282,7 +281,6 @@ export class HumanCopywriterService {
     const domain = rawWeb.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
     const pdfName = lead.auditPdfName || `${domain.replace(/[^a-z0-9]/gi, '_')}_Technical_Audit.pdf`;
     const scoreVal = lead.auditScore ? Number(lead.auditScore) : undefined;
-    const scoreSummary = scoreVal ? `scoring ${scoreVal}/100 on Core Web Vitals` : 'below Google mobile speed benchmarks';
 
     // Extract 3-5 real concrete audit findings from TD
     let rawFindings: string[] = [];

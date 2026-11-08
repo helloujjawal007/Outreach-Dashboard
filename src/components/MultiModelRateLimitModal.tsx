@@ -3,18 +3,12 @@ import { api } from '@/services/api';
 import type { AiModelProfile, AiDiagnosticReport } from '@/types';
 import {
   X,
-  Zap,
-  Activity,
   CheckCircle2,
-  AlertTriangle,
   Play,
   RotateCcw,
   ShieldCheck,
-  Server,
   Layers,
-  Sparkles,
   Gauge,
-  Clock,
   Cpu,
 } from 'lucide-react';
 

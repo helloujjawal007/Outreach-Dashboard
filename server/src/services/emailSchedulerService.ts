@@ -1,4 +1,3 @@
-import fs from 'fs';
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanizerService } from './humanizerService';

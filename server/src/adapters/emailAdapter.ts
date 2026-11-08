@@ -11,6 +11,7 @@ import { leadIsolationService } from '../services/leadIsolationService';
 import { classifySmtpError, type SmtpErrorType } from '../utils/smtpClassifier';
 
 import { signUnsubscribeToken } from '../utils/tokenSigner';
+import { SENDER_CONFIG } from '../config/senderConfig';
 
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
@@ -69,10 +70,10 @@ export function buildHumanoidHtml(bodyText: string): string {
 
     // Detect bullet list block
     const lines = trimmed.split('\n');
-    const isBulletBlock = lines.length > 0 && lines.every((l) => /^\s*[•\-\*]\s+/.test(l));
+    const isBulletBlock = lines.length > 0 && lines.every((l) => /^\s*[•\-*]\s+/.test(l));
     if (isBulletBlock) {
       const lis = lines
-        .map((l) => `<li style="margin-bottom: 6px;">${escapeHtml(l.replace(/^\s*[•\-\*]\s+/, ''))}</li>`)
+        .map((l) => `<li style="margin-bottom: 6px;">${escapeHtml(l.replace(/^\s*[•\-*]\s+/, ''))}</li>`)
         .join('');
       return `<ul style="margin: 0 0 16px 0; padding-left: 20px; line-height: 1.6; color: #1e293b;">${lis}</ul>`;
     }
@@ -100,7 +101,7 @@ export interface MockSendRecord {
   stage: string;
   body?: string;
   headers?: Record<string, string>;
-  attachments?: Array<{ filename: string; path?: string }>;
+  attachments?: Array<{ filename: string; path?: string; content?: Buffer | string }>;
 }
 
 export class EmailAdapter {
@@ -313,7 +314,7 @@ export class EmailAdapter {
     // Dynamic Token Replacement & Residual Placeholder Sweep (Checklist Item 2)
     let sanitizedSubject = params.subject || 'Outreach Follow-up';
     let sanitizedBody = params.body;
-    let finalAttachments: Array<{ filename: string; path?: string; content?: Buffer | string }> =
+    const finalAttachments: Array<{ filename: string; path?: string; content?: Buffer | string }> =
       params.attachments && Array.isArray(params.attachments) ? [...params.attachments] : [];
 
     if (params.leadId) {
@@ -415,11 +416,21 @@ export class EmailAdapter {
     const htmlBody = buildHumanoidHtml(finalBodyText);
 
     // Build RFC 8058 / RFC 2369 compliant List-Unsubscribe headers
-    const publicBaseUrl = (
-      process.env.PUBLIC_APP_URL ||
-      process.env.APP_URL ||
-      'https://outreach.cloudconsultancy.in'
-    ).replace(/\/$/, '');
+    const rawPublicUrl = process.env.PUBLIC_APP_URL || SENDER_CONFIG.publicAppUrl;
+    const publicBaseUrl = rawPublicUrl.replace(/\/$/, '');
+
+    // Mandatory RFC 8058 HTTPS Public URL enforcement (Mandate 11)
+    if (process.env.ALLOW_INSECURE_UNSUBSCRIBE_FOR_TESTS !== 'true') {
+      const isHttps = publicBaseUrl.startsWith('https://');
+      const isLocal = publicBaseUrl.includes('localhost') || publicBaseUrl.includes('127.0.0.1');
+      if (!isHttps || isLocal) {
+        throw new Error(
+          `[EmailAdapter Compliance Guard] Refusing to send: PUBLIC_APP_URL must be a public HTTPS URL (got "${publicBaseUrl}"). ` +
+          `HTTP and localhost/127.0.0.1 URLs violate RFC 8058 deliverability mandates.`
+        );
+      }
+    }
+
     const unsubToken = signUnsubscribeToken(params.leadId || 'lead', params.to);
     const unsubUrl = `${publicBaseUrl}/api/unsubscribe?token=${unsubToken}`;
     const customHeaders: Record<string, string> = {
@@ -431,8 +442,8 @@ export class EmailAdapter {
     if (this.isMock() || process.env.MOCK_SMTP === 'true' || this.isTestDatabase()) {
       try {
         const mockTransporter = nodemailer.createTransport({ jsonTransport: true });
-        fromAddress = activeInbox ? `"${activeInbox.sender_name}" <${activeInbox.email}>` : `"Cloud Consultancy" <cloudconsultancy.ad@gmail.com>`;
-        cleanReplyTo = activeInbox ? activeInbox.email : 'cloudconsultancy.ad@gmail.com';
+        fromAddress = activeInbox ? `"${activeInbox.sender_name}" <${activeInbox.email}>` : SENDER_CONFIG.fromAddress;
+        cleanReplyTo = activeInbox ? activeInbox.email : SENDER_CONFIG.replyTo;
 
         const sendInfo = await mockTransporter.sendMail({
           from: fromAddress,

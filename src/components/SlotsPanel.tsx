@@ -4,7 +4,6 @@ import type { SlotStatus, SlotSenderSettings, SlotId } from '@/types';
 import {
   Clock,
   Mail,
-  Zap,
   Settings as SettingsIcon,
   Play,
   RefreshCw,
@@ -27,8 +26,30 @@ export function SlotsPanel() {
   const [tdUrlInput, setTdUrlInput] = useState('');
   const [tdSecretInput, setTdSecretInput] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [isTestingTd, setIsTestingTd] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [nowSec, setNowSec] = useState(Math.floor(Date.now() / 1000));
+
+  const handleTestTdConnection = async () => {
+    setIsTestingTd(true);
+    setFeedback(null);
+    try {
+      const res = await api.testTdConnection({
+        url: tdUrlInput.trim(),
+        secret: tdSecretInput.trim(),
+      });
+      if (res.ok) {
+        setFeedback(`✓ TD Connection Verified: ${res.message} (${res.latencyMs}ms)`);
+      } else {
+        setFeedback(`⚠️ TD Connection Failed: ${res.message}`);
+      }
+    } catch (err: any) {
+      setFeedback(`❌ TD Probe Error: ${err?.message}`);
+    } finally {
+      setIsTestingTd(false);
+      setTimeout(() => setFeedback(null), 8000);
+    }
+  };
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -234,6 +255,14 @@ export function SlotsPanel() {
             </div>
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleTestTdConnection}
+              disabled={isTestingTd}
+              className="px-3 py-1 rounded bg-amber-50 border border-amber-300 text-amber-800 font-semibold hover:bg-amber-100 disabled:opacity-50"
+            >
+              {isTestingTd ? 'Testing TD...' : 'Test TD Connection'}
+            </button>
             <button
               type="button"
               onClick={() => setShowSettings(false)}

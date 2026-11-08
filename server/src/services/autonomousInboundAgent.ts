@@ -1,6 +1,5 @@
 import { query } from '../config/db';
 import { unifiedAiService, type InboundClassification } from './unifiedAiService';
-import { conversationOrchestrator } from './orchestratorService';
 import { emailAdapter } from '../adapters/emailAdapter';
 
 export interface AutonomousInboundSettings {
@@ -82,15 +81,13 @@ export class AutonomousInboundAgent {
 
     // 1. Fetch entity business name and contact info
     let businessName = params.senderName || 'Valued Business';
-    let leadNotes = '';
     if (params.entityType === 'lead') {
-      const leadRes = await query<{ business_name: string; notes: string; metadata: any }>(
-        `SELECT business_name, notes, metadata FROM leads WHERE id = $1`,
+      const leadRes = await query<{ business_name: string; metadata: any }>(
+        `SELECT business_name, metadata FROM leads WHERE id = $1`,
         [params.entityId]
       );
       if (leadRes.rows.length > 0) {
         businessName = leadRes.rows[0].business_name;
-        leadNotes = leadRes.rows[0].notes || '';
       }
     } else {
       const clientRes = await query<{ business_name: string }>(

@@ -16,13 +16,11 @@ import {
   Plus,
   CheckSquare,
   Square,
-  Trash2,
   User,
   MapPin,
   Flame,
   DollarSign,
   Briefcase,
-  AlertCircle,
   FileText,
 } from 'lucide-react';
 import { api } from '@/services/api';

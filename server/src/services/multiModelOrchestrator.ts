@@ -4,8 +4,6 @@
  * Cascading Failover, and End-to-End Functionality Verification.
  */
 
-import { ollamaService } from './ollamaService';
-
 export interface ModelProfile {
   id: string;
   name: string;
@@ -342,7 +340,6 @@ export class MultiModelOrchestrator {
    * Returns current status & metrics of all 10 models
    */
   public getModelsStatus(): Array<ModelProfile & { remainingRpm: number }> {
-    const now = Date.now();
     return Array.from(this.models.values()).map((m) => {
       const check = this.checkRateLimit(m.id);
       return {

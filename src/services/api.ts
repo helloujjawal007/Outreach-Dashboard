@@ -54,7 +54,6 @@ import type {
   AiDiagnosticReport,
   SlotSenderSettings,
   SlotsOverviewResponse,
-  FailureRecord,
   FailureLogsResponse,
 } from '@/types';
 
@@ -2177,6 +2176,21 @@ export const api = {
     return request<{ success: boolean; settings: SlotSenderSettings }>('/slots/settings', {
       method: 'POST',
       body: JSON.stringify(settings),
+    });
+  },
+
+  async testTdConnection(data?: { url?: string; secret?: string }): Promise<{
+    success: boolean;
+    ok: boolean;
+    latencyMs: number;
+    url: string;
+    message: string;
+    status?: number;
+    details?: any;
+  }> {
+    return request('/slots/test-td-connection', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
     });
   },
 

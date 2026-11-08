@@ -10,7 +10,6 @@ import {
   ArrowLeft,
   Clock,
   Phone,
-  Tag,
   CheckCircle2,
   CheckCheck,
   Sparkles,
@@ -21,19 +20,15 @@ import {
   ExternalLink,
   Layers,
   Send,
-  Filter,
   Linkedin,
   User,
   AlertTriangle,
   Trash2,
   Zap,
   Edit3,
-  Bot,
   MessageSquare,
   FileText,
   Download,
-  RotateCcw,
-  Check,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '@/services/api';
@@ -339,15 +334,6 @@ export function InboundRepliesModal({
     return allRecentMessages.length > 0 ? allRecentMessages : replies;
   }, [viewTab, replies, allInboundHistory, allRecentMessages]);
 
-  // Channel counts for pills in current viewTab
-  const channelCounts = useMemo(() => {
-    return {
-      all: baseDataset.length,
-      whatsapp: baseDataset.filter((m) => m.channel === 'whatsapp').length,
-      email: baseDataset.filter((m) => m.channel === 'email').length,
-    };
-  }, [baseDataset]);
-
   // Filter dataset by channel, date, and search query for Feed View
   const filteredMessages = useMemo(() => {
     let list = baseDataset;
@@ -649,21 +635,6 @@ export function InboundRepliesModal({
       setTimeout(() => setActionFeedback(null), 3000);
     } catch (err) {
       console.error('Failed to toggle read status:', err);
-    }
-  };
-
-  const handleMarkHandledClick = async (replyId: string, businessName: string) => {
-    try {
-      if (onMarkHandled) {
-        await onMarkHandled(replyId);
-      } else {
-        await api.markInboundHandled(replyId);
-      }
-      setActionFeedback(`Marked "${businessName}" as handled`);
-      await Promise.all([fetchRecentMessages(), fetchInboundHistory()]);
-      setTimeout(() => setActionFeedback(null), 3500);
-    } catch (err) {
-      console.error('Failed to mark handled:', err);
     }
   };
 
@@ -1331,7 +1302,6 @@ export function InboundRepliesModal({
                     ) : (
                       activeThreadMessages.map((msg, index) => {
                         const isInbound = msg.direction === 'inbound';
-                        const isBounce = msg.status === 'bounced' || msg.text?.startsWith('[DELIVERY FAILURE');
                         const isRead = Boolean(msg.is_read);
                         const isReplied = Boolean(msg.is_replied);
 

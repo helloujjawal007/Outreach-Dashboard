@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import type { ClientAuditReport } from './clientAuditIntelligenceService';
+import { SENDER_CONFIG } from '../config/senderConfig';
 
 export interface GeneratedPdfResult {
   pdfPath: string;
@@ -76,10 +77,6 @@ export class TechnicalAuditPdfService {
 
     const scoreColor =
       report.overallScore >= 80 ? '#10b981' : report.overallScore >= 55 ? '#f59e0b' : '#ef4444';
-    const scoreBadgeBg =
-      report.overallScore >= 80 ? '#ecfdf5' : report.overallScore >= 55 ? '#fffbeb' : '#fef2f2';
-    const scoreBadgeBorder =
-      report.overallScore >= 80 ? '#a7f3d0' : report.overallScore >= 55 ? '#fde68a' : '#fecaca';
 
     // Metrics formatting
     const metrics = report.metrics || {
@@ -96,13 +93,10 @@ export class TechnicalAuditPdfService {
     };
 
     const lcpSec = (metrics.lcpEstimateMs / 1000).toFixed(2);
-    const lcpStatus = metrics.lcpEstimateMs <= 1500 ? 'Good' : metrics.lcpEstimateMs <= 2500 ? 'Needs Work' : 'Poor';
     const lcpColor = metrics.lcpEstimateMs <= 1500 ? '#10b981' : metrics.lcpEstimateMs <= 2500 ? '#f59e0b' : '#ef4444';
 
-    const clsStatus = metrics.clsScore <= 0.05 ? 'Good' : metrics.clsScore <= 0.15 ? 'Needs Work' : 'Poor';
     const clsColor = metrics.clsScore <= 0.05 ? '#10b981' : metrics.clsScore <= 0.15 ? '#f59e0b' : '#ef4444';
 
-    const ttfbStatus = metrics.responseTimeMs <= 250 ? 'Fast' : metrics.responseTimeMs <= 600 ? 'Moderate' : 'Slow';
     const ttfbColor = metrics.responseTimeMs <= 250 ? '#10b981' : metrics.responseTimeMs <= 600 ? '#f59e0b' : '#ef4444';
 
     const altPercent = metrics.imagesTotal > 0
@@ -381,7 +375,7 @@ export class TechnicalAuditPdfService {
 
   <!-- FOOTER -->
   <div class="footer">
-    <div>Prepared by <strong>Cloud Consultancy</strong> • Systems & Architecture Advisory • <strong>cloudconsultancy.ad@gmail.com</strong></div>
+    <div>${SENDER_CONFIG.pdfFooterText}</div>
     <div>Confidential • Prepared for ${cleanBiz}</div>
   </div>
 
@@ -415,6 +409,7 @@ export class TechnicalAuditPdfService {
 
         if (fs.existsSync(targetPdfPath)) {
           const stats = fs.statSync(targetPdfPath);
+          console.log(`[TechnicalAuditPdfService] 🌐 Generated PDF via Headless Chrome: ${chromePath} for "${report.domain}" (${stats.size} bytes)`);
           // Cleanup temp html
           try {
             fs.unlinkSync(tempHtmlPath);
@@ -428,10 +423,14 @@ export class TechnicalAuditPdfService {
           };
         }
       } catch (chromeErr: any) {
-        console.warn(
-          `[TechnicalAuditPdfService] Chrome headless PDF print failed (${chromeErr?.message}), falling back to direct PDF stream writer.`
+        console.error(
+          `🚨 [ALERT: PDF GENERATOR FALLBACK TRIGGERED] Chrome headless rendering failed (${chromeErr?.message}). Falling back to direct %PDF-1.4 stream writer for "${report.domain}".`
         );
       }
+    } else {
+      console.error(
+        `🚨 [ALERT: PDF GENERATOR FALLBACK TRIGGERED] Chrome headless executable not found in system paths. Falling back to direct %PDF-1.4 stream writer for "${report.domain}".`
+      );
     }
 
     // Cleanup temp HTML if still exists
@@ -500,7 +499,7 @@ export class TechnicalAuditPdfService {
       '(Architecture: Modern edge caching, asset compression, schema.org JSON-LD integration) Tj',
       '0 -28 Td',
       '/F1 9 Tf',
-      '(Prepared by Cloud Consultancy - cloudconsultancy.ad@gmail.com) Tj',
+      `(${SENDER_CONFIG.pdfFooterText.replace(/[()]/g, '')}) Tj`,
       'ET',
     ].join('\n');
 

@@ -82,3 +82,18 @@ slotsRouter.post('/assign-lead', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/slots/test-td-connection
+ * Tests connectivity and secret verification with Technical Dashboard (TD)
+ */
+slotsRouter.post('/test-td-connection', async (req: Request, res: Response) => {
+  try {
+    const { url, secret } = req.body || {};
+    const result = await fiveSlotSenderService.testTdConnection(url, secret);
+    res.json({ success: result.ok, ...result });
+  } catch (err: any) {
+    console.error('[slotsRouter.test-td-connection] Error:', err);
+    res.status(500).json({ success: false, ok: false, message: err?.message || 'TD probe failure' });
+  }
+});
+

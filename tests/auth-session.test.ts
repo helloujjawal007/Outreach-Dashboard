@@ -1,6 +1,3 @@
-import { query } from '../server/src/config/db';
-import { generateSessionToken, revokeToken, isTokenRevoked } from '../server/src/middleware/auth';
-
 async function runAuthTests() {
   console.log('=== TEST 1: Logout Invalidates Token ===');
   // 1. Log in

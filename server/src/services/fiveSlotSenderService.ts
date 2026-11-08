@@ -60,6 +60,8 @@ export class FiveSlotSenderService {
   private lastSlotSentEpochMs = new Map<SlotId, number>();
   // Tracks last absolute sent epoch timestamp globally across all slots (Item 10: global min-gap guard)
   private lastGlobalSentEpochMs = 0;
+  // Timed pause for 5.4.5 daily quota limits (auto-resumes at start of next send window)
+  public quotaPauseUntil: Date | null = null;
 
   getLastSlotSent(slotId: SlotId): number | undefined {
     return this.lastSlotSentEpochMs.get(slotId);
@@ -651,8 +653,17 @@ export class FiveSlotSenderService {
    * Global scheduler tick (Single timer, never bursts on restart)
    * Protected with strict re-entrancy guard to prevent overlapping ticks
    * Optional filterTestBatch ensures tests strictly touch only test-tagged leads.
+   * Optional testOptions allow explicit per-test configuration overrides (window, min gap, daily cap).
    */
-  async processGlobalTick(overrideDate?: Date, filterTestBatch?: string): Promise<{
+  async processGlobalTick(
+    overrideDate?: Date,
+    filterTestBatch?: string,
+    testOptions?: {
+      bypassWindow?: boolean;
+      bypassMinGap?: boolean;
+      bypassDailyCap?: boolean;
+    }
+  ): Promise<{
     activeSlot: SlotId | null;
     dispatched: boolean;
     leadId?: string;
@@ -661,6 +672,22 @@ export class FiveSlotSenderService {
   }> {
     if (this.isTickRunning) {
       return { activeSlot: null, dispatched: false, reason: 'Tick already in progress (re-entrancy guard)' };
+    }
+
+    const now = overrideDate || new Date();
+
+    // Check 5.4.5 daily quota timed pause
+    if (this.quotaPauseUntil) {
+      if (now < this.quotaPauseUntil) {
+        return {
+          activeSlot: null,
+          dispatched: false,
+          reason: `5.4.5 Mailbox daily quota timed pause active until ${this.quotaPauseUntil.toISOString()}`,
+        };
+      } else {
+        console.log(`[FiveSlotSenderService] 🟢 5.4.5 Quota pause elapsed. Auto-resuming 5-slot sender.`);
+        this.quotaPauseUntil = null;
+      }
     }
 
     const settings = await this.getSettings();
@@ -675,8 +702,6 @@ export class FiveSlotSenderService {
 
     this.isTickRunning = true;
     try {
-      const now = overrideDate || new Date();
-
       // 1. Stale-Claim Reaper: Recover any crashed claims with duplicate-send protection
       await this.reapStaleSendingClaims();
 
@@ -697,10 +722,19 @@ export class FiveSlotSenderService {
         return { activeSlot, dispatched: false, reason: `Slot ${activeSlot} already dispatched in cycle ${grid.cycleIndex}` };
       }
 
-      // Item 10: Global Minimum-Gap Guard across all slots:
-      const globalMinGapSec = settings.global_min_gap_sec || (settings.slot_offset_min * 60) || 120;
+      // Item 3: Global Minimum-Gap Guard across all slots:
+      // Set to 75% of slot offset (e.g. 90s for 120s offset, 18s for 24s offset)
+      // This guarantees slots never send simultaneously while absorbing real-world tick jitter.
+      const defaultGlobalGapSec = Math.max(5, Math.floor(settings.slot_offset_min * 60 * 0.75));
+      const globalMinGapSec = settings.global_min_gap_sec !== undefined ? settings.global_min_gap_sec : defaultGlobalGapSec;
       const globalMinGapMs = globalMinGapSec * 1000;
-      if (this.lastGlobalSentEpochMs > 0 && now.getTime() - this.lastGlobalSentEpochMs < globalMinGapMs) {
+
+      if (
+        !testOptions?.bypassMinGap &&
+        this.lastGlobalSentEpochMs > 0 &&
+        now.getTime() >= this.lastGlobalSentEpochMs &&
+        now.getTime() - this.lastGlobalSentEpochMs < globalMinGapMs
+      ) {
         const remainingSec = Math.ceil((globalMinGapMs - (now.getTime() - this.lastGlobalSentEpochMs)) / 1000);
         return {
           activeSlot,
@@ -709,56 +743,62 @@ export class FiveSlotSenderService {
         };
       }
 
-      // B3: Per-Slot Last-Sent Guard:
-      // A change of cycle/offset can never produce two sends from one slot closer than the active cycle length!
-      const minCycleSeparationMs = (settings.slot_cycle_min || 10) * 60 * 1000;
+      // Item 3: Tolerant Per-Slot Last-Sent Guard:
+      // cycle length minus tick tolerance (15 seconds) so a send 1-2s late in cycle k does NOT lose its turn in cycle k+1
+      const tickToleranceMs = 15000;
+      const minCycleSeparationMs = Math.max(5000, ((settings.slot_cycle_min || 10) * 60 * 1000) - tickToleranceMs);
       const lastSentTime = this.lastSlotSentEpochMs.get(activeSlot);
-      if (lastSentTime && now.getTime() - lastSentTime < minCycleSeparationMs) {
+      if (lastSentTime && now.getTime() >= lastSentTime && now.getTime() - lastSentTime < minCycleSeparationMs) {
         const remainingSec = Math.ceil((minCycleSeparationMs - (now.getTime() - lastSentTime)) / 1000);
         return {
           activeSlot,
           dispatched: false,
-          reason: `Slot ${activeSlot} last-sent guard active: must wait at least ${settings.slot_cycle_min}m between sends (${remainingSec}s remaining). Zero double-sends on grid changes.`,
+          reason: `Slot ${activeSlot} last-sent guard active: must wait at least cycle length between sends (${remainingSec}s remaining). Zero double-sends on grid changes.`,
         };
       }
 
       // 4. Send Window & Daily Cap Checks (Protection for mailbox reputation)
+      const marketTz = settings.send_window_timezone || 'UTC';
       let currentHour = now.getHours();
       let currentDay = now.getDay(); // 0 = Sunday, 6 = Saturday
-      if (settings.send_window_timezone && settings.send_window_timezone.toUpperCase() === 'UTC') {
-        currentHour = now.getUTCHours();
-        currentDay = now.getUTCDay();
-      } else if (settings.send_window_timezone) {
-        try {
-          const tzDate = new Date(now.toLocaleString('en-US', { timeZone: settings.send_window_timezone }));
-          currentHour = tzDate.getHours();
-          currentDay = tzDate.getDay();
-        } catch {}
+      try {
+        const tzDate = new Date(now.toLocaleString('en-US', { timeZone: marketTz }));
+        currentHour = tzDate.getHours();
+        currentDay = tzDate.getDay();
+      } catch {}
+
+      if (!testOptions?.bypassWindow) {
+        if (settings.weekdays_only && (currentDay === 0 || currentDay === 6)) {
+          return { activeSlot, dispatched: false, reason: `Outside send window: Weekend resting (${marketTz})` };
+        }
+
+        if (currentHour < settings.send_window_start_hour || currentHour >= settings.send_window_end_hour) {
+          return {
+            activeSlot,
+            dispatched: false,
+            reason: `Outside send window (${settings.send_window_start_hour}:00 - ${settings.send_window_end_hour}:00 ${marketTz})`,
+          };
+        }
       }
 
-      if (settings.weekdays_only && (currentDay === 0 || currentDay === 6)) {
-        return { activeSlot, dispatched: false, reason: 'Outside send window: Weekend resting' };
-      }
-
-      if (currentHour < settings.send_window_start_hour || currentHour >= settings.send_window_end_hour) {
-        return {
-          activeSlot,
-          dispatched: false,
-          reason: `Outside send window (${settings.send_window_start_hour}:00 - ${settings.send_window_end_hour}:00)`,
-        };
-      }
-
-      // Check daily mailbox cap
-      const metricRes = await query<{ count: string }>(
-        `SELECT COUNT(*) as count FROM messages WHERE direction = 'outbound' AND sent_at >= CURRENT_DATE`
-      );
-      const sentToday = parseInt(metricRes.rows[0]?.count || '0', 10);
-      if (sentToday >= (settings.daily_send_limit || 150)) {
-        return {
-          activeSlot,
-          dispatched: false,
-          reason: `Daily send limit reached (${sentToday}/${settings.daily_send_limit || 150} emails today)`,
-        };
+      // Check daily mailbox cap in configured send-window timezone (excluding mock sends)
+      if (!testOptions?.bypassDailyCap) {
+        const metricRes = await query<{ count: string }>(
+          `SELECT COUNT(*) as count FROM messages 
+           WHERE direction = 'outbound' 
+             AND status IN ('sent', 'delivered')
+             AND (metadata->>'is_mock' IS NULL OR metadata->>'is_mock' != 'true')
+             AND sent_at >= (NOW() AT TIME ZONE $1)::date AT TIME ZONE $1`,
+          [marketTz]
+        );
+        const sentToday = parseInt(metricRes.rows[0]?.count || '0', 10);
+        if (sentToday >= (settings.daily_send_limit || 150)) {
+          return {
+            activeSlot,
+            dispatched: false,
+            reason: `Daily send limit reached (${sentToday}/${settings.daily_send_limit || 150} emails today in ${marketTz})`,
+          };
+        }
       }
 
       // Mark slot attempted for this cycle index to avoid duplicate triggers
@@ -824,14 +864,15 @@ export class FiveSlotSenderService {
       for (const candidate of candidateQuery.rows) {
         const validation = validateAuditAsset(candidate.audit_findings, candidate.audit_pdf_path);
 
-        // Item 4: Clean sites: do NOT synthesize findings. Add a noOpportunity path:
-        // skip the lead with a clear reason, no failure_log entry, and do not email invented problems.
-        if (validation.noOpportunity) {
-          console.log(`[FiveSlotSenderService] 🟢 Clean site detected for "${candidate.business_name}": 0 flaws found. Marking no_opportunity.`);
+        // Item 10: Clean sites: honor noOpportunity ONLY for complete audits (candidate.audit_status === 'ready')
+        // Use separate status 'skipped_no_opportunity' instead of 'completed'; 0 failure_log rows, 0 emails sent.
+        if (candidate.audit_status === 'ready' && validation.noOpportunity) {
+          console.log(`[FiveSlotSenderService] 🟢 Clean site detected for "${candidate.business_name}": Complete audit found 0 flaws. Marking status = 'skipped_no_opportunity'.`);
           await query(
             `UPDATE leads 
-             SET status = 'completed', 
-                 manual_review_reason = 'Clean site: 0 technical flaws detected (no opportunity for audit outreach)',
+             SET status = 'skipped_no_opportunity', 
+                 outreach_stage = 'completed', 
+                 manual_review_reason = 'Clean site: 0 technical flaws detected in complete audit (skipped_no_opportunity)',
                  updated_at = NOW() 
              WHERE id = $1`,
             [candidate.id]
@@ -1046,7 +1087,69 @@ export class FiveSlotSenderService {
       };
     }
 
-    // 2. Hard Bounce / Permanent Address Failure
+    // 2. Mailbox Daily Sending Quota (5.4.5) - Timed pause until next send day with auto-resume
+    if (classification.type === 'daily_limit_pause') {
+      const settings = await this.getSettings();
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(settings.send_window_start_hour || 9, 0, 0, 0);
+      this.quotaPauseUntil = tomorrow;
+      console.warn(`[FiveSlotSenderService] ⏸️ 5.4.5 Mailbox Daily Quota reached: Timed pause until ${tomorrow.toISOString()} (auto-resumes tomorrow).`);
+      
+      // Leave lead untouched in queue for next turn
+      await query(
+        `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL, updated_at = NOW() WHERE id = $2 AND outreach_stage = 'sending'`,
+        [prevStage, candidate.id]
+      );
+      return {
+        activeSlot,
+        dispatched: false,
+        leadId: candidate.id,
+        reason: `5.4.5 Daily Sending Quota exceeded. Timed pause until ${tomorrow.toISOString()} (auto-resume).`,
+      };
+    }
+
+    // 3. Soft Bounce / Mailbox Full (5.2.2) - Non-fatal retry up to 3 times before quarantine
+    if (classification.type === 'soft_bounce') {
+      this.consecutiveAuthFailures = 0;
+      const leadRetriesRes = await query<{ transient_retry_count: number }>(
+        `UPDATE leads 
+         SET transient_retry_count = COALESCE(transient_retry_count, 0) + 1,
+             send_retry_count = COALESCE(send_retry_count, 0) + 1,
+             outreach_stage = $1,
+             claimed_stage = NULL,
+             claimed_at = NULL,
+             updated_at = NOW() 
+         WHERE id = $2 AND (outreach_stage = 'sending' OR outreach_stage = $1)
+         RETURNING transient_retry_count`,
+        [prevStage, candidate.id]
+      );
+      const retries = leadRetriesRes.rows[0]?.transient_retry_count || 1;
+      if (retries >= 3) {
+        const { leadIsolationService } = await import('./leadIsolationService');
+        await leadIsolationService.isolateFailedLead(
+          candidate.id,
+          `Soft bounce cap reached after 3 retries (${classification.message})`
+        );
+        await failureLogService.logFailure({
+          leadId: candidate.id,
+          company: candidate.business_name,
+          website: candidate.website,
+          email: candidate.email,
+          slotId: activeSlot,
+          stage: prevStage,
+          type: 'SEND_FAILED',
+          errorMessage: `Soft bounce (mailbox full) cap reached: ${classification.message}`,
+          attempts: retries,
+        });
+        console.warn(`[FiveSlotSenderService] Lead ${candidate.id} quarantined: soft bounce cap reached.`);
+      } else {
+        console.warn(`[FiveSlotSenderService] Lead ${candidate.id} soft bounce (${retries}/3). Left in queue for retry.`);
+      }
+      return { activeSlot, dispatched: false, leadId: candidate.id, reason: classification.message };
+    }
+
+    // 4. Hard Bounce / Permanent Address Failure
     if (classification.type === 'hard_bounce') {
       this.consecutiveAuthFailures = 0;
       await query(
@@ -1084,7 +1187,7 @@ export class FiveSlotSenderService {
              claimed_stage = NULL,
              claimed_at = NULL,
              updated_at = NOW() 
-         WHERE id = $2 AND outreach_stage = 'sending'
+         WHERE id = $2 AND (outreach_stage = 'sending' OR outreach_stage = $1)
          RETURNING transient_retry_count`,
         [prevStage, candidate.id]
       );

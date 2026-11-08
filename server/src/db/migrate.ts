@@ -70,7 +70,7 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS deleted_expires_at TIMESTAMPTZ DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS outreach_stage VARCHAR(30) DEFAULT 'initial',
-        ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active',
+        ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active',
         ADD COLUMN IF NOT EXISTS website TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS country TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '',
@@ -122,6 +122,8 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS ai_suggested_reply TEXT;
 
       -- Global suppression list table & guaranteed schema columns
+      ALTER TABLE leads ALTER COLUMN status TYPE VARCHAR(50);
+
       CREATE TABLE IF NOT EXISTS global_suppression_list (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           email VARCHAR(255),

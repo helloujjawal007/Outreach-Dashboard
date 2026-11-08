@@ -3,6 +3,7 @@ export interface LeadContext {
   businessName: string;
   category?: string;
   primaryContactName?: string;
+  email?: string | null;
   city?: string;
   country?: string;
   website?: string | null;
@@ -83,27 +84,44 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Builds a natural salutation (never robotic like "Hello The Fitness World team")
+   * Builds an approved, natural greeting strictly adhering to the allowed pattern:
+   * /^(Hi [A-Z][a-z]+|Hi there|Hello .+ team),$/
    */
-  public buildSalutation(businessName: string, contactName?: string): string {
+  public buildGreeting(businessName: string, contactName?: string): string {
     const rawContact = (contactName || '').trim();
     const cleanBiz = this.cleanBusinessName(businessName);
-    const bizWithoutThe = cleanBiz.replace(/^the\s+/i, '').trim();
 
-    if (
-      rawContact &&
+    // Validate if contactName begins with a genuine single-word human first name
+    const candidateFirst = rawContact ? rawContact.split(' ')[0] : '';
+    const isHumanFirstName = Boolean(
+      candidateFirst &&
+      /^[A-Z][a-z]{1,20}$/.test(candidateFirst) &&
       rawContact.toLowerCase() !== businessName.toLowerCase() &&
       !rawContact.toLowerCase().includes('http') &&
-      !rawContact.toLowerCase().includes('@')
-    ) {
-      return rawContact.split(' ')[0];
+      !rawContact.toLowerCase().includes('@') &&
+      !rawContact.toLowerCase().includes('dr.') &&
+      !rawContact.toLowerCase().includes('mr.') &&
+      !rawContact.toLowerCase().includes('mrs.')
+    );
+
+    if (isHumanFirstName) {
+      return `Hi ${candidateFirst},`;
     }
 
-    if (bizWithoutThe && bizWithoutThe.toLowerCase() !== 'your team') {
-      return `${bizWithoutThe} team`;
+    if (cleanBiz && cleanBiz.toLowerCase() !== 'your team') {
+      const bizWithoutThe = cleanBiz.replace(/^the\s+/i, '').trim();
+      return `Hello ${bizWithoutThe} team,`;
     }
 
-    return 'there';
+    return 'Hi there,';
+  }
+
+  /**
+   * Backwards-compatible salutation helper
+   */
+  public buildSalutation(businessName: string, contactName?: string): string {
+    const greeting = this.buildGreeting(businessName, contactName);
+    return greeting.replace(/^Hi\s+|^Hello\s+|,$/g, '').trim();
   }
 
   /**
@@ -114,14 +132,26 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Signature block strictly using Cloud Consultancy & cloudconsultancy.ad@gmail.com
+   * Physical postal address (configurable via environment variable)
    */
-  private buildSignoff(): string {
-    return `Best regards,\n${this.agencyName}\n${this.senderEmail}`;
+  public getPostalAddress(): string {
+    return process.env.OUTREACH_POSTAL_ADDRESS || 'Cloud Consultancy Outbound, 100 Pine Street, Suite 1250, San Francisco, CA 94111';
   }
 
-  private compose(bodyLines: string[]): string {
-    return `${bodyLines.join('\n')}\n\n${this.buildSignoff()}`;
+  /**
+   * Builds the honest sender signature & compliance footer (physical address + one-click unsubscribe link)
+   */
+  public buildFooter(leadId?: string, leadEmail?: string): string {
+    const appUrl = process.env.APP_URL || 'http://localhost:5001';
+    const unsubUrl = leadId
+      ? `${appUrl}/api/unsubscribe?leadId=${encodeURIComponent(leadId)}&email=${encodeURIComponent(leadEmail || '')}`
+      : `${appUrl}/api/unsubscribe`;
+
+    return `Best regards,\n${this.agencyName} Outbound Team\n${this.senderEmail}\n\n--\n${this.getPostalAddress()}\nTo unsubscribe or opt out of future technical checks: ${unsubUrl}`;
+  }
+
+  private compose(bodyLines: string[], leadId?: string, leadEmail?: string): string {
+    return `${bodyLines.join('\n')}\n\n${this.buildFooter(leadId, leadEmail)}`;
   }
 
   /**
@@ -256,29 +286,40 @@ export class HumanCopywriterService {
       ? 'As a quick reminder, here was the primary technical observation noted on the site:'
       : 'As a quick reminder, here were the primary items noted on the site:';
 
+    const greeting = this.buildGreeting(lead.businessName, lead.primaryContactName);
+    const hasCwv = rawFindings.some((f) =>
+      /LCP|CLS|FID|INP|Largest Contentful Paint|Cumulative Layout Shift|First Input Delay|Interaction to Next Paint/i.test(f)
+    );
+
+    const cwvSpeedContext = hasCwv
+      ? 'When mobile visitors experience loading delays or Core Web Vitals benchmark gaps, bounce rates climb quickly.'
+      : 'When mobile visitors experience loading delays or missing metadata, bounce rates climb quickly.';
+
+    const scoreClause = scoreVal ? ` (Lighthouse mobile test score: ${scoreVal}/100)` : '';
+
     if (stage === 'initial') {
       const subjects = [
-        `Quick technical diagnostic on ${domain} (notes attached)`,
-        `Reviewing ${domain} – brief technical audit summary`,
-        `Diagnostic observations regarding ${domain}`,
+        `Automated technical check summary: ${domain} (report attached)`,
+        `Technical diagnostic notes for ${domain}`,
+        `Routine technical check regarding ${domain}`,
       ];
 
       return {
         subject: this.pick(subjects),
         body: this.compose([
-          `Hi ${salutation},`,
+          greeting,
           ``,
-          `I was reviewing ${domain} earlier today and ran a technical diagnostic on your mobile speed, Core Web Vitals, and local Google search positioning. I put together a 1-page Technical Audit Report and attached it here (${pdfName}) for your web team.`,
+          `Our automated diagnostic system recently performed a routine technical check on ${domain}${scoreClause}. We compiled the diagnostic observations into a 1-page summary report and attached it here (${pdfName}) for your web team.`,
           ``,
           findingsIntro,
           findingsBullets,
           ``,
-          `When mobile visitors experience loading delays or missing metadata, bounce rates climb quickly and Google actively prioritizes faster nearby competitors in search rankings.`,
+          cwvSpeedContext,
           ``,
-          `The attached document outlines the exact line-item findings and the step-by-step recommendations we usually implement to resolve them.`,
+          `The attached document outlines the exact line-item findings and the recommended fixes we typically implement.`,
           ``,
           `Happy to answer any questions or share how we usually resolve these if useful for your team.`,
-        ]),
+        ], lead.id, lead.email || undefined),
         stage: 'initial',
         stageLabel: '1st Email (Audit Findings & PDF Enclosed)',
         delayFromStartDays: 0,
@@ -288,25 +329,25 @@ export class HumanCopywriterService {
     // 2. Follow-up 1 (Day 2.5)
     if (stage === 'followup_1') {
       const subjects = [
-        `Following up: ${domain} technical audit summary`,
+        `Following up: ${domain} technical diagnostic summary`,
         `Following up regarding ${business} (${domain})`,
-        `Quick check-in: ${domain}`,
+        `Quick check-in: ${domain} technical notes`,
       ];
 
       return {
         subject: this.pick(subjects),
         body: this.compose([
-          `Hi ${salutation},`,
+          greeting,
           ``,
-          `Following up briefly on the technical audit notes I sent over regarding ${domain}.`,
+          `Following up briefly on the automated technical check we sent over regarding ${domain}.`,
           ``,
           fu1FindingsIntro,
           rawFindings.slice(0, 3).map((f) => (f.startsWith('•') ? f : `• ${f}`)).join('\n'),
           ``,
-          `I've re-attached the audit summary (${pdfName}) for quick reference. Did your web team have a chance to look over these points?`,
+          `I have re-attached the diagnostic summary (${pdfName}) for quick reference. Did your web team have a chance to review these points?`,
           ``,
           `Happy to answer any questions or walk through the specific fixes if useful.`,
-        ]),
+        ], lead.id, lead.email || undefined),
         stage: 'followup_1',
         stageLabel: '2nd Email (Day 2.5 Follow-up with Findings & PDF)',
         delayFromStartDays: 2.5,
@@ -316,20 +357,22 @@ export class HumanCopywriterService {
     // 3. Follow-up 2 (Day 5.5)
     if (stage === 'followup_2') {
       const subjects = [
-        `Observation regarding ${business} web speed`,
-        `Quick note: ${domain} SEO & speed fixes`,
-        `${business} website performance`,
+        `Final check-in: ${business} (${domain}) technical report`,
+        `Quick note: ${domain} technical observations`,
+        `${business} website technical notes`,
       ];
 
       return {
         subject: this.pick(subjects),
         body: this.compose([
-          `Hi ${salutation},`,
+          greeting,
           ``,
-          `Checking in once more regarding ${business}'s website performance and Google ranking.`,
+          `Following up one final time regarding the automated technical check for ${domain} (${pdfName}).`,
           ``,
-          `If resolving the technical items highlighted in the audit (mobile speed, meta descriptions, and core vitals) is on your radar this quarter, let me know and I can share a straightforward implementation plan. If the timing isn't right, no worries at all.`,
-        ]),
+          `If resolving the technical items highlighted in the diagnostic report is on your roadmap this quarter, feel free to reply and I'll share our recommended implementation approach.`,
+          ``,
+          `If the timing isn't right or you already have this handled, no worries at all. Wishing you and the team continued success.`,
+        ], lead.id, lead.email || undefined),
         stage: 'followup_2',
         stageLabel: '3rd Email (Day 5.5 Follow-up)',
         delayFromStartDays: 5.5,
@@ -346,12 +389,12 @@ export class HumanCopywriterService {
     return {
       subject: this.pick(subjects),
       body: this.compose([
-        `Hi ${salutation},`,
+        greeting,
         ``,
-        `I assume you're busy at the moment, so I won't follow up further. If you ever need a hand with ${business}'s web performance, Google ranking, or technical fixes down the road, feel free to reach out anytime.`,
+        `I assume you're busy at the moment, so I won't follow up further. If you ever need a hand with ${business}'s web performance, Lighthouse metrics, or technical fixes down the road, feel free to reach out anytime.`,
         ``,
         `Wishing you and the ${business} team continued success.`,
-      ]),
+      ], lead.id, lead.email || undefined),
       stage: 'followup_3',
       stageLabel: '4th Email (Day 10 Final Message)',
       delayFromStartDays: 10,

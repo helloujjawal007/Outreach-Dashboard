@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS send_queue (
     channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram')),
     message_preview TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'sent', 'discarded')),
+    error_details TEXT,
     scheduled_for TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -91,6 +91,7 @@ function renderUnsubscribeHtml(title: string, message: string, email?: string): 
 unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const emailParam = typeof req.query.email === 'string' ? req.query.email.trim() : '';
   const tokenParam = typeof req.query.t === 'string' ? req.query.t.trim() : '';
+  const leadIdParam = typeof req.query.leadId === 'string' ? req.query.leadId.trim() : '';
 
   let targetEmail = emailParam;
   if (!targetEmail && tokenParam) {
@@ -98,6 +99,15 @@ unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> =>
       const decoded = Buffer.from(tokenParam, 'base64url').toString('utf8');
       if (validator.isEmail(decoded)) {
         targetEmail = decoded;
+      }
+    } catch {}
+  }
+
+  if (!targetEmail && leadIdParam) {
+    try {
+      const leadRes = await query<{ email: string }>(`SELECT email FROM leads WHERE id = $1`, [leadIdParam]);
+      if (leadRes.rows.length > 0 && leadRes.rows[0].email) {
+        targetEmail = leadRes.rows[0].email;
       }
     } catch {}
   }

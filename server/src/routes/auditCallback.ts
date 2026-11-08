@@ -42,23 +42,25 @@ export function timingSafeEqualStr(a: string, b: string): boolean {
 }
 
 /**
- * Cleanup routine for audit PDFs older than 28 days
+ * Cleanup routine for audit PDFs keyed to the lead's last touch or completion (>28 days)
+ * Leads still active in drip retain their PDFs regardless of creation age.
  */
-export function cleanupOldAuditPdfs(auditsDir: string, maxAgeDays = 28) {
+export async function cleanupOldAuditPdfs(auditsDir: string, maxAgeDays = 28) {
   try {
     if (!fs.existsSync(auditsDir)) return;
-    const files = fs.readdirSync(auditsDir);
-    const now = Date.now();
-    const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
 
-    for (const file of files) {
-      if (file.endsWith('.pdf')) {
-        const filePath = path.join(auditsDir, file);
-        const stats = fs.statSync(filePath);
-        if (now - stats.mtimeMs > maxAgeMs) {
-          fs.unlinkSync(filePath);
-          console.log(`[AuditCallback] Cleaned up expired audit PDF (>28 days): ${file}`);
-        }
+    const eligibleLeads = await query<{ audit_pdf_path: string }>(
+      `SELECT audit_pdf_path FROM leads 
+       WHERE audit_pdf_path IS NOT NULL 
+         AND (status IN ('completed', 'manual_review', 'duplicate', 'skipped_no_opportunity') OR outreach_stage = 'completed')
+         AND COALESCE(last_contacted_at, updated_at) <= NOW() - ($1 || ' days')::interval`,
+      [maxAgeDays.toString()]
+    );
+
+    for (const row of eligibleLeads.rows) {
+      if (row.audit_pdf_path && fs.existsSync(row.audit_pdf_path)) {
+        fs.unlinkSync(row.audit_pdf_path);
+        console.log(`[AuditCallback] Cleaned up audit PDF for completed lead (>28 days): ${row.audit_pdf_path}`);
       }
     }
   } catch (err: any) {
@@ -133,10 +135,11 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
       manual_review_reason: string | null;
       slot_id: string | null;
       outreach_stage: string | null;
+      audit_status: string | null;
       audit_ready_at: string | null;
       audit_requested_at: string | null;
     }>(
-      `SELECT id, business_name, website, status, consent_status, email, phone, manual_review_reason, slot_id, outreach_stage, audit_ready_at, audit_requested_at FROM leads WHERE id = $1`,
+      `SELECT id, business_name, website, status, consent_status, email, phone, manual_review_reason, slot_id, outreach_stage, audit_status, audit_ready_at, audit_requested_at FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -146,30 +149,31 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
 
     const lead = leadCheck.rows[0];
 
-    // Item 10: Out-of-order callback protection
-    // Out-of-order callbacks must not replace a newer audit with an older one (compare timestamp / jobId)
+    // Item 9 & 10: Out-of-order & duplicate callback protection
+    // Duplicate or out-of-order callbacks: Return HTTP 200 { ignored: true } so TD does not retry!
     const incomingTimestamp = req.body.completedAt || req.body.timestamp || req.body.createdAt;
-    if (lead.audit_ready_at && incomingTimestamp) {
-      const existingReadyMs = new Date(lead.audit_ready_at).getTime();
-      const incomingMs = new Date(incomingTimestamp).getTime();
-      if (incomingMs < existingReadyMs) {
-        console.warn(`[AuditCallback] ⚠️ Out-of-order callback rejected for lead ${leadId}: timestamp ${incomingTimestamp} is older than ready audit at ${lead.audit_ready_at}.`);
-        return res.status(409).json({
-          success: false,
-          error: 'Out-of-order audit callback ignored: existing audit is newer',
+    if (lead.audit_status === 'ready') {
+      const existingReadyMs = lead.audit_ready_at ? new Date(lead.audit_ready_at).getTime() : 0;
+      const incomingMs = incomingTimestamp ? new Date(incomingTimestamp).getTime() : 0;
+      if (!incomingTimestamp || incomingMs <= existingReadyMs) {
+        console.warn(`[AuditCallback] ⚠️ Duplicate callback ignored for lead ${leadId}: lead already has a ready audit.`);
+        return res.status(200).json({
+          success: true,
+          ignored: true,
+          reason: 'Duplicate callback ignored: lead audit is already ready',
           leadId,
           audit_ready_at: lead.audit_ready_at,
         });
       }
     }
 
-    // Item 9: Max attachment size check (10 MB maximum)
+    // Attachment size limit: 2 MB maximum
     if (rawPdfBase64) {
       const estimatedBytes = (rawPdfBase64.length * 3) / 4;
-      if (estimatedBytes > 10 * 1024 * 1024) {
+      if (estimatedBytes > 2 * 1024 * 1024) {
         return res.status(400).json({
           success: false,
-          error: 'PDF payload exceeds maximum attachment size limit of 10 MB',
+          error: 'PDF payload exceeds maximum attachment size limit of 2 MB',
           leadId,
         });
       }
@@ -234,7 +238,7 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     if (!fs.existsSync(auditsDir)) {
       fs.mkdirSync(auditsDir, { recursive: true });
     }
-    cleanupOldAuditPdfs(auditsDir, 28);
+    await cleanupOldAuditPdfs(auditsDir, 28);
 
     // 4. PDF Storage & Magic Byte Validation
     let finalPdfPath = incomingPdfPath && typeof incomingPdfPath === 'string' ? incomingPdfPath : null;

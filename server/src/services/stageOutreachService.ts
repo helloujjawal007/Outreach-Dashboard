@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { humanCopywriterService } from './humanCopywriterService';
@@ -249,6 +250,22 @@ export class StageOutreachService {
     const lead = leadRes.rows[0];
 
     // Atomic claim if not pre-claimed by caller
+    // Item 13: Claim must expect the correct stage (never resend a completed lead)
+    if (lead.outreach_stage === 'completed') {
+      return {
+        leadId,
+        businessName: lead.business_name,
+        email: lead.email,
+        phone: lead.phone,
+        stage: 'completed',
+        stageLabel: 'Completed',
+        subject: '',
+        success: false,
+        skipped: true,
+        reason: 'Outreach already completed for this lead. Never resend a completed lead.',
+      };
+    }
+
     const activeStage = preClaimedStage || lead.outreach_stage || 'initial';
     if (!preClaimedStage) {
       if (lead.outreach_stage === 'sending') {
@@ -291,6 +308,35 @@ export class StageOutreachService {
           reason: 'Conflict: Dispatch already claimed by concurrent worker or stage changed.',
         };
       }
+    }
+
+    // Suppression Check: Re-verify global suppression at send time
+    const { suppressionService } = await import('./suppressionService');
+    const supCheck = await suppressionService.isSuppressed({
+      email: lead.email,
+      phone: lead.phone,
+      domain: lead.website ? lead.website.replace(/^https?:\/\//i, '').split('/')[0] : null,
+    });
+
+    if (supCheck.suppressed) {
+      if (!preClaimedStage) {
+        await query(
+          `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
+          [activeStage, leadId]
+        );
+      }
+      return {
+        leadId,
+        businessName: lead.business_name,
+        email: lead.email,
+        phone: lead.phone,
+        stage: activeStage as any,
+        stageLabel: 'Suppressed',
+        subject: '',
+        success: false,
+        skipped: true,
+        reason: `Pre-send suppression check blocked: ${supCheck.reason || 'Address is suppressed'}. Outreach halted.`,
+      };
     }
 
     // Safeguards
@@ -501,11 +547,21 @@ export class StageOutreachService {
         if (lead.audit_pdf_path) {
           try {
             const stats = fs.statSync(lead.audit_pdf_path);
-            if (stats.size > 10 * 1024 * 1024) {
-              console.warn(`[StageOutreachService] Attachment exceeds max allowed size (10 MB): ${stats.size} bytes`);
+            if (stats.size > 2 * 1024 * 1024) {
+              console.warn(`[StageOutreachService] Attachment exceeds max allowed size (2 MB): ${stats.size} bytes`);
             } else {
               const pdfCheck = workflowRoutingService.validateAuditPdf(lead.audit_pdf_path, lead.website);
               if (pdfCheck.isValid) {
+                // Item 15: Keep an archived copy of the exact PDF actually sent
+                const archiveDir = path.resolve(process.cwd(), 'server', 'data', 'audits', 'sent_archive');
+                if (!fs.existsSync(archiveDir)) {
+                  fs.mkdirSync(archiveDir, { recursive: true });
+                }
+                const archivePath = path.join(archiveDir, `sent_${lead.id}_${path.basename(lead.audit_pdf_path)}`);
+                if (!fs.existsSync(archivePath)) {
+                  fs.copyFileSync(lead.audit_pdf_path, archivePath);
+                }
+
                 attachments = [{
                   filename: lead.audit_pdf_name || pdfCheck.filename || 'Technical_Audit_Report.pdf',
                   path: lead.audit_pdf_path,

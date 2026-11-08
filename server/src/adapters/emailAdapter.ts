@@ -585,9 +585,11 @@ export class EmailAdapter {
       }
 
       const messageStatus = isPermanentBounce ? 'bounced' : liveDelivery === 'smtp_failed' ? 'failed' : 'sent';
-      const msgMetadata = finalAttachments.length > 0
-        ? { attachments: finalAttachments.map((a) => ({ filename: a.filename, path: a.path })) }
-        : {};
+      const isMockSend = this.isMock() || process.env.MOCK_SMTP === 'true';
+      const msgMetadata = {
+        ...(finalAttachments.length > 0 ? { attachments: finalAttachments.map((a) => ({ filename: a.filename, path: a.path })) } : {}),
+        is_mock: isMockSend ? 'true' : 'false',
+      };
       const msgRes = await query<{ id: string }>(
         `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_id, inbox_email, metadata)
          VALUES ($1, 'email', 'outbound', $2, $3, NOW(), $4, $5, $6)

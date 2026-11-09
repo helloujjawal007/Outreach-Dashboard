@@ -64,7 +64,7 @@ interface Props {
   inboundRepliesCount?: number;
 }
 
-type ActiveChannelTab = 'email' | 'whatsapp' | 'website_form' | 'instagram' | 'linkedin';
+type ActiveChannelTab = 'email' | 'whatsapp';
 type WhatsAppFilter = 'all' | 'eligible' | 'ineligible';
 
 export function ChannelOutreachHub({
@@ -222,17 +222,12 @@ export function ChannelOutreachHub({
     };
   }, [leads]);
 
-  // Active Channel Base Leads
+  // Active Channel Base Leads (WA & Email Only)
   const activeTabBaseLeads = useMemo(() => {
     if (activeTab === 'email') return segregated.email;
-    if (activeTab === 'whatsapp') {
-      if (waFilter === 'eligible') return segregated.whatsappEligible;
-      if (waFilter === 'ineligible') return segregated.whatsappIneligible;
-      return segregated.whatsapp;
-    }
-    if (activeTab === 'website_form') return segregated.website_form;
-    if (activeTab === 'instagram') return segregated.instagram;
-    return segregated.linkedin;
+    if (waFilter === 'eligible') return segregated.whatsappEligible;
+    if (waFilter === 'ineligible') return segregated.whatsappIneligible;
+    return segregated.whatsapp;
   }, [activeTab, segregated, waFilter]);
 
   // Unique countries for the current active channel whose leads are listed
@@ -1085,9 +1080,9 @@ export function ChannelOutreachHub({
 
   return (
     <div className="space-y-6">
-      {/* CHANNEL NAVIGATION TABS */}
+      {/* CHANNEL NAVIGATION TABS (WhatsApp & Email Only) */}
       <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 max-w-2xl">
           {/* 1. WhatsApp Tab */}
           <button
             type="button"
@@ -1138,94 +1133,13 @@ export function ChannelOutreachHub({
             </div>
             <div>
               <div className="text-sm font-bold text-ink-900">Email Leads</div>
-              <div className="text-[11px] font-medium text-blue-700">Verified Email Addresses</div>
-            </div>
-          </button>
-
-          {/* 3. Website Form Tab */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('website_form');
-              setSearch('');
-            }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'website_form'
-              ? 'border-teal-400 bg-gradient-to-br from-teal-50 to-emerald-50/60 shadow-sm ring-2 ring-teal-300/60'
-              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-              }`}
-          >
-            <div className="flex w-full items-center justify-between">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
-                <Globe size={18} />
-              </div>
-              <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-800">
-                {segregated.website_form?.length || 0}
-              </span>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-ink-900">Website Forms</div>
-              <div className="text-[11px] font-medium text-teal-700">Site Contact Form Delivery</div>
-            </div>
-          </button>
-
-          {/* 4. Instagram Tab */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('instagram');
-              setSearch('');
-            }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'instagram'
-              ? 'border-pink-300 bg-gradient-to-br from-pink-50 to-rose-50/50 shadow-sm ring-2 ring-pink-200/60'
-              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-              }`}
-          >
-            <div className="flex w-full items-center justify-between">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm">
-                <Instagram size={18} />
-              </div>
-              <span className="rounded-full bg-pink-100 px-2 py-0.5 text-xs font-bold text-pink-800">
-                {segregated.instagram.length}
-              </span>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-ink-900">Instagram Leads</div>
-              <div className="text-[11px] font-medium text-pink-700">Direct DM Deep-Link Ready</div>
-            </div>
-          </button>
-
-          {/* 6. LinkedIn Tab */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('linkedin');
-              setSearch('');
-            }}
-            className={`group relative flex flex-col items-start gap-1.5 rounded-xl border p-3.5 text-left transition-all ${activeTab === 'linkedin'
-              ? 'border-sky-400 bg-gradient-to-br from-sky-50 to-blue-50/60 shadow-sm ring-2 ring-sky-300/60'
-              : 'border-slate-200 bg-slate-50/60 hover:bg-slate-100/80'
-              }`}
-          >
-            <div className="flex w-full items-center justify-between">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0a66c2] text-white shadow-sm">
-                <Linkedin size={18} />
-              </div>
-              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-bold text-sky-800">
-                {segregated.linkedin.length}
-              </span>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-ink-900">LinkedIn Engine</div>
-              <div className="text-[11px] font-medium text-sky-700">Auto-Reply & Post Creator</div>
+              <div className="text-[11px] font-medium text-blue-700">Verified Email Addresses (5-Slot Grid Ready)</div>
             </div>
           </button>
         </div>
       </div>
 
-      {activeTab === 'linkedin' ? (
-        <LinkedInOutreachHub leads={leads} />
-      ) : (
-        <>
+      <>
 
           {/* OPTION 1: WHATSAPP DIRECT PHONE LINK STATUS BANNER (shown only in WhatsApp tab) */}
           {activeTab === 'whatsapp' && (
@@ -1384,52 +1298,6 @@ export function ChannelOutreachHub({
                   ⚡ Safe Cap: 30–50/day/inbox
                 </span>
               </div>
-            </div>
-          )}
-
-          {/* INSTAGRAM SENDER PROFILE BANNER (shown only in Instagram tab) */}
-          {activeTab === 'instagram' && (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-pink-300 bg-gradient-to-r from-pink-50 via-rose-50/60 to-purple-50/60 p-4 shadow-sm animate-fade-in">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white shadow-sm shrink-0 mt-0.5">
-                  <Instagram size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-sm font-bold text-pink-950">
-                      Instagram Direct Outreach Engine
-                    </h4>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-pink-100 text-pink-800 border border-pink-300">
-                      <span className="h-2 w-2 rounded-full bg-pink-500 animate-pulse" />
-                      Sender: @anupam_kumar_seo
-                    </span>
-                  </div>
-                  <p className="text-xs text-pink-900 mt-1">
-                    Direct Instagram DMs and social touchpoints are initiated from{' '}
-                    <a
-                      href="https://www.instagram.com/anupam_kumar_seo/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-bold underline hover:text-pink-950"
-                    >
-                      @anupam_kumar_seo (Anupam Kumar)
-                    </a>
-                    . All outreach drafts are pre-screened to avoid automated shadowbans.
-                  </p>
-                </div>
-              </div>
-
-              <a
-                href="https://www.instagram.com/anupam_kumar_seo/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary text-xs flex items-center gap-1.5 border-pink-300 text-pink-800 bg-white hover:bg-pink-50 shadow-2xs"
-                title="Open Instagram profile"
-              >
-                <Instagram size={14} className="text-pink-600" />
-                <span>View Instagram Profile</span>
-                <ExternalLink size={12} />
-              </a>
             </div>
           )}
 
@@ -1882,12 +1750,6 @@ export function ChannelOutreachHub({
                                 </div>
                               </div>
                             )}
-                            {activeTab === 'instagram' && (
-                              <div className="font-medium text-pink-700 flex items-center gap-1">
-                                <Instagram size={13} />
-                                <span>@{lead.instagram.replace(/^@/, '')}</span>
-                              </div>
-                            )}
                           </td>
 
                           {/* 3. Eligibility Decision */}
@@ -2037,19 +1899,6 @@ export function ChannelOutreachHub({
                                   <span>Mail</span>
                                 </a>
                               )}
-
-                              {activeTab === 'instagram' && lead.instagram && (
-                                <a
-                                  href={`https://instagram.com/${lead.instagram.replace(/^@/, '')}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="btn-secondary py-1 px-2 text-xs flex items-center gap-1 text-pink-700 hover:bg-pink-50 border-pink-200 shadow-2xs"
-                                  title="Open Instagram Profile"
-                                >
-                                  <ExternalLink size={13} />
-                                  <span>IG</span>
-                                </a>
-                              )}
                             </div>
                           </td>
                         </tr>
@@ -2147,7 +1996,6 @@ export function ChannelOutreachHub({
             )}
           </div>
         </>
-      )}
 
       {/* AI RESEARCH & PERSONALIZED COPYWRITER MODAL */}
       {selectedLeadForAi && (

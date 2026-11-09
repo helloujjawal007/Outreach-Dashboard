@@ -564,7 +564,7 @@ export class FiveSlotSenderService {
     }
     if (listId) {
       params.push(listId);
-      whereConditions.push(`list_id = $${params.length}`);
+      whereConditions.push(`id IN (SELECT lead_id FROM lead_list_memberships WHERE list_id = $${params.length})`);
     }
 
     const unassignedRes = await query<{ id: string }>(

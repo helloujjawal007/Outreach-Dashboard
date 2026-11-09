@@ -14,7 +14,6 @@ import {
   Users,
   Mail,
   MessageSquare,
-  Linkedin,
   Split,
   Smartphone,
   CheckSquare,
@@ -27,7 +26,6 @@ import type { Store } from '@/store';
 import type {
   HumanizerPreviewResponse,
   ConnectedInbox,
-  LinkedInAccountStatus,
 } from '@/types';
 
 interface Props {
@@ -43,7 +41,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
 
   // Form Configuration
   const [selectedListId, setSelectedListId] = useState<string>('');
-  const [channel, setChannel] = useState<'email' | 'whatsapp' | 'linkedin'>('email');
+  const [channel, setChannel] = useState<'email' | 'whatsapp'>('email');
   const [sendMode, setSendMode] = useState<'now' | 'later'>('later');
   const [scheduledDateTime, setScheduledDateTime] = useState<string>('');
   const [intervalSeconds, setIntervalSeconds] = useState<number>(120);
@@ -56,11 +54,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
   const [inboxes, setInboxes] = useState<ConnectedInbox[]>([]);
   const [selectedInboxIds, setSelectedInboxIds] = useState<string[]>([]);
   const [isLoadingInboxes, setIsLoadingInboxes] = useState(false);
-
-  // LinkedIn Multi-Account State
-  const [linkedInAccounts, setLinkedInAccounts] = useState<LinkedInAccountStatus[]>([]);
-  const [selectedLinkedInAccountId, setSelectedLinkedInAccountId] = useState<string>('');
-  const [isLoadingLinkedIn, setIsLoadingLinkedIn] = useState(false);
 
   // Execution & Preview State
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -78,7 +71,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
   const [isDeletingFailed, setIsDeletingFailed] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Initialize list, inboxes, linkedin accounts, and default date-time (1 hour from now)
+  // Initialize list, inboxes, and default date-time (1 hour from now)
   useEffect(() => {
     if (open) {
       const initialListId =
@@ -158,27 +151,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
           setSelectedInboxIds(fallbackInboxes.map((i) => i.id));
         })
         .finally(() => setIsLoadingInboxes(false));
-
-      // Fetch LinkedIn Accounts
-      setIsLoadingLinkedIn(true);
-      api.getLinkedInAccounts()
-        .then((accounts) => {
-          if (accounts && accounts.length > 0) {
-            setLinkedInAccounts(accounts);
-            setSelectedLinkedInAccountId(accounts[0].id);
-          } else {
-            api.getLinkedInStatus()
-              .then((status) => {
-                if (status) {
-                  setLinkedInAccounts([status]);
-                  setSelectedLinkedInAccountId(status.id);
-                }
-              })
-              .catch(() => {});
-          }
-        })
-        .catch(() => {})
-        .finally(() => setIsLoadingLinkedIn(false));
     }
   }, [open, defaultListId, store.lists]);
 
@@ -232,21 +204,12 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
     }).length;
   }, [listMembers]);
 
-  // Total leads with LinkedIn capability in target list
-  const leadsWithLinkedInCount = useMemo(() => {
-    return listMembers.filter((l) => {
-      if (l.consentStatus === 'opted_out') return false;
-      return Boolean(l.linkedin || l.businessName || l.primaryContactName);
-    }).length;
-  }, [listMembers]);
-
   // Count eligible leads matching the chosen channel strictly
   const eligibleLeadsCount = useMemo(() => {
     if (channel === 'email') return leadsWithEmailCount;
     if (channel === 'whatsapp') return leadsWithPhoneCount;
-    if (channel === 'linkedin') return leadsWithLinkedInCount;
     return 0;
-  }, [channel, leadsWithEmailCount, leadsWithPhoneCount, leadsWithLinkedInCount]);
+  }, [channel, leadsWithEmailCount, leadsWithPhoneCount]);
 
   // Selected inboxes calculation
   const selectedInboxes = useMemo(() => {
@@ -282,7 +245,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
   };
 
   // Channel change handler with safe default intervals
-  const handleSelectChannel = (newChannel: 'email' | 'whatsapp' | 'linkedin') => {
+  const handleSelectChannel = (newChannel: 'email' | 'whatsapp') => {
     setChannel(newChannel);
     if (newChannel === 'email') {
       setIntervalSeconds(120);
@@ -290,9 +253,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
     } else if (newChannel === 'whatsapp') {
       setIntervalSeconds(45);
       setIntervalPreset('45s');
-    } else {
-      setIntervalSeconds(60);
-      setIntervalPreset('60s');
     }
   };
 
@@ -354,43 +314,50 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
       return;
     }
 
-    if (channel === 'email' && selectedInboxIds.length === 0) {
-      setSubmitFeedback({ type: 'error', message: 'Please select at least one sender inbox for email dispatch.' });
-      return;
-    }
-
-    if (channel === 'linkedin' && linkedInAccounts.length === 0) {
-      setSubmitFeedback({ type: 'error', message: 'Please connect at least one LinkedIn account to schedule LinkedIn messages.' });
-      return;
-    }
-
     try {
       setIsSubmitting(true);
       setSubmitFeedback(null);
 
-      // Mass outreach to entire database
-      if (selectedListId === 'all' && sendMode === 'now' && channel === 'email' && selectedInboxIds.length === 1) {
-        const result = await api.executeAiCommand({
-          commandText: 'shoot msg to all',
-          actionType: 'shoot_all_outreach',
+      // Email channel routes strictly via 5-Agent Virtual Slot Method
+      if (channel === 'email') {
+        const distRes = await api.distributeLeadsToSlots({
+          listId: selectedListId === 'all' ? undefined : selectedListId,
+          rebalanceAll: false,
         });
+
+        // Set first send to dispatch in 10 minutes from now (staggered 10m cycle, 2m slot offset)
+        const tenMinsFromNow = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        await api.updateSlotsSettings({
+          anchor_timestamp: tenMinsFromNow,
+          slot_cycle_min: 10,
+          slot_offset_min: 2,
+          is_active: true,
+        });
+
         setSubmitFeedback({
           type: 'success',
-          message: `${result.summary} All messages dispatched live.`,
+          message: `✓ Allocated ${distRes.assignedCount || eligibleLeadsCount} leads to 5-Slot Sender Engine. First email sends in 10 mins! Redirecting to 5-Slot Sender...`,
         });
+
         await store.fetchLeads();
         await store.refreshAll();
+        if (window.location.hash !== '#crm') {
+          window.location.hash = '#crm';
+        }
+        onScheduled?.();
+        setTimeout(() => {
+          onClose();
+        }, 400);
         return;
       }
 
+      // WhatsApp channel dispatch
       const targetScheduleTime =
         sendMode === 'now' ? 'now' : new Date(scheduledDateTime).toISOString();
 
       const result = await store.scheduleListDispatch({
         listId: selectedListId,
-        channel,
-        inboxIds: channel === 'email' ? selectedInboxIds : undefined,
-        linkedinAccountId: channel === 'linkedin' ? (selectedLinkedInAccountId || linkedInAccounts[0]?.id) : undefined,
+        channel: 'whatsapp',
         scheduledFor: targetScheduleTime,
         intervalSeconds,
         style,
@@ -404,52 +371,25 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
             ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m`
             : `${intervalSeconds}s`;
 
-        const channelLabel =
-          channel === 'email'
-            ? selectedInboxIds.length > 1
-              ? `Split evenly across ${selectedInboxIds.length} inboxes (${intervalDesc} intervals & background TA audits)`
-              : `Email (${intervalDesc} intervals & background TA audits)`
-            : channel === 'whatsapp'
-            ? `WhatsApp (${intervalDesc} anti-ban pacing)`
-            : `LinkedIn (${intervalDesc} pacing)`;
-
-        if (channel === 'email') {
-          setSubmitFeedback({
-            type: 'success',
-            message: `${result.message} Allocated to the 5-Slot Staggered Scheduler. Redirecting to 5-Slot Sender...`,
-          });
-          await store.fetchLeads();
-          await store.refreshAll();
-          if (window.location.hash !== '#crm') {
-            window.location.hash = '#crm';
-          }
-          onScheduled?.();
-          setTimeout(() => {
-            onClose();
-          }, 400);
-        } else {
-          setSubmitFeedback({
-            type: 'success',
-            message: `${result.message} [Channel: ${channelLabel}]. Check the Dispatches tab to monitor live progress.`,
-          });
-          // Refresh store lists and queue
-          await store.fetchDispatches();
-          // Automatically switch to dispatches tab after 1.2s to show queued/sent records
-          setTimeout(() => {
-            setActiveTab('dispatches');
-          }, 1200);
-        }
+        setSubmitFeedback({
+          type: 'success',
+          message: `${result.message} [Channel: WhatsApp (${intervalDesc} anti-ban pacing)]. Check the Dispatches tab to monitor live progress.`,
+        });
+        await store.fetchDispatches();
+        setTimeout(() => {
+          setActiveTab('dispatches');
+        }, 1200);
       } else {
         setSubmitFeedback({
           type: 'error',
-          message: result.message || 'Failed to schedule list dispatch.',
+          message: result.message || 'Failed to schedule WhatsApp list outreach.',
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Schedule submit failed:', err);
       setSubmitFeedback({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to schedule messages.',
+        message: err?.message || 'Failed to schedule messages.',
       });
     } finally {
       setIsSubmitting(false);
@@ -628,8 +568,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                               <span>
                                 {leadsWithEmailCount === 1 ? 'The 1 contact in this list has' : `${leadsWithEmailCount} contacts in this list have`} a valid email address ready.
                               </span>
-                            ) : channel === 'linkedin' && leadsWithPhoneCount > 0 ? (
-                              <span>Phone and WhatsApp contacts are available for direct messaging.</span>
                             ) : (
                               <span>Please enrich or add contact details before scheduling outreach.</span>
                             )}
@@ -664,11 +602,12 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
               </div>
 
               {/* 2. Choose Outreach Channel */}
+              {/* 2. Outreach Channel (WA & Email Only) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  2. Outreach Channel (WhatsApp & Email Focused)
+                  2. Outreach Channel (Email &amp; WhatsApp Focused)
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => handleSelectChannel('email')}
@@ -681,18 +620,14 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-1.5 font-bold text-xs text-brand-900">
                         <Mail size={14} className="text-brand-600" />
-                        <span>Email</span>
+                        <span>Email (5-Agent Method)</span>
                       </div>
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-brand-100 text-brand-700">
-                        {selectedInboxes.length <= 1
-                          ? '100% Load'
-                          : selectedInboxes.length === 2
-                          ? '50/50 Split'
-                          : `${selectedInboxes.length}-Way Split`}
+                        100% Load
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      Multi-inbox rotation & Google warm-up safe.
+                      5-Slot staggered delivery &amp; Google warm-up safe.
                     </p>
                   </button>
 
@@ -715,30 +650,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      Anti-ban 45s pacing & direct mobile messaging.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectChannel('linkedin')}
-                    className={`p-2.5 rounded-lg border text-left transition-all ${
-                      channel === 'linkedin'
-                        ? 'border-sky-600 bg-sky-50/80 ring-2 ring-sky-500/20 shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1.5 font-bold text-xs text-sky-900">
-                        <Linkedin size={14} className="text-sky-600" />
-                        <span>LinkedIn</span>
-                      </div>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">
-                        Synced
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">
-                      Multi-account synced DM & invite scheduling.
+                      Anti-ban 45s pacing &amp; direct mobile messaging.
                     </p>
                   </button>
                 </div>
@@ -762,11 +674,12 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                   <p className="text-[11px] text-slate-600 leading-relaxed">
                     Selected leads will be automatically divided equally across all 5 virtual sending agents on a deterministic staggered schedule.
                     Sending will route via <strong>cloudconsultancy.ad@gmail.com</strong> with audit-first protection and zero send conflicts.
+                    First email will be sent after <strong>10 minutes</strong>.
                   </p>
 
                   <div className="pt-1 flex items-center justify-between text-[10px] text-slate-500 font-medium border-t border-indigo-100">
                     <span>Target: {eligibleLeadsCount} Leads to Partition</span>
-                    <span className="text-emerald-700 font-bold">✓ Audit Gate Enabled</span>
+                    <span className="text-emerald-700 font-bold">✓ Audit Gate Enabled • First Send in 10m</span>
                   </div>
                 </div>
               )}
@@ -776,7 +689,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                   <div className="flex items-center justify-between text-xs font-bold text-emerald-900">
                     <span className="flex items-center gap-1.5">
                       <Smartphone size={14} className="text-emerald-600" />
-                      <span>Direct WhatsApp Outreach & Anti-Ban Pacing</span>
+                      <span>Direct WhatsApp Outreach &amp; Anti-Ban Pacing</span>
                     </span>
                     <span className="text-[10px] bg-emerald-200/60 px-1.5 py-0.5 rounded">
                       {leadsWithPhoneCount} of {store.leads.length} leads have phone
@@ -787,56 +700,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                   </p>
                   <div className="flex items-center gap-2 text-[10px] text-emerald-700 bg-white/70 p-2 rounded border border-emerald-100 font-medium">
                     <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
-                    <span>Auto-formats international country codes & verifies mobile format before dispatch.</span>
+                    <span>Auto-formats international country codes &amp; verifies mobile format before dispatch.</span>
                   </div>
-                </div>
-              )}
-
-              {channel === 'linkedin' && (
-                <div className="p-3 rounded-lg border border-sky-200 bg-sky-50/50 space-y-2 animate-in fade-in">
-                  <div className="flex items-center justify-between text-xs font-bold text-sky-900">
-                    <span className="flex items-center gap-1.5">
-                      <Linkedin size={14} className="text-sky-600" />
-                      <span>Synced LinkedIn Accounts</span>
-                    </span>
-                    <span className="text-[10px] bg-sky-200/60 px-1.5 py-0.5 rounded">
-                      {linkedInAccounts.length} Connected
-                    </span>
-                  </div>
-
-                  {isLoadingLinkedIn ? (
-                    <div className="flex items-center justify-center p-3 text-xs text-slate-500 bg-white rounded border border-sky-100">
-                      <RefreshCw size={12} className="animate-spin text-sky-600 mr-1.5" />
-                      <span>Loading synced LinkedIn accounts...</span>
-                    </div>
-                  ) : linkedInAccounts.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-sky-900">
-                        Choose sender LinkedIn profile:
-                      </label>
-                      <select
-                        value={selectedLinkedInAccountId}
-                        onChange={(e) => setSelectedLinkedInAccountId(e.target.value)}
-                        className="input w-full text-xs font-semibold py-1.5 bg-white"
-                      >
-                        {linkedInAccounts.map((acc) => (
-                          <option key={acc.id} value={acc.id}>
-                            💼 {acc.accountName} {acc.headline ? `(${acc.headline.slice(0, 30)}...)` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-[10px] text-sky-700">
-                        Dispatches direct connection messages and personalized pitches adhering to LinkedIn daily safe limits (max 20 DMs/day).
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-2.5 rounded bg-white border border-sky-200 text-xs text-slate-700 space-y-1">
-                      <p className="font-semibold text-sky-900">No LinkedIn Accounts Synced Yet</p>
-                      <p className="text-[11px] text-slate-500">
-                        Connect a LinkedIn account via Social Hub to enable scheduled automated direct messages.
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -845,189 +710,151 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   3. Dispatch Timing
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setSendMode('now')}
-                    className={`p-3 rounded-lg border text-left transition-all ${
-                      sendMode === 'now'
-                        ? 'border-brand-600 bg-brand-50/70 text-brand-900 ring-2 ring-brand-500/20 shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 font-bold text-xs">
-                      <Zap size={14} className={sendMode === 'now' ? 'text-brand-600' : 'text-slate-400'} />
-                      <span>Shoot Automatically Now</span>
+                {channel === 'email' ? (
+                  <div className="p-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 via-white to-indigo-50/50 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <Clock size={16} className="text-indigo-600 shrink-0" />
+                      <div>
+                        <span className="text-xs font-bold text-indigo-950 block">
+                          5-Slot Staggered Pacing (Starts in 10 mins)
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          10-minute cycle • 2-minute offset between slots • Zero send conflicts
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      {channel === 'email'
-                        ? 'Rotates across selected inboxes with 2-3s anti-burst pacing.'
-                        : channel === 'whatsapp'
-                        ? 'Starts sending via WhatsApp with 45s anti-ban pacing.'
-                        : 'Dispatches via selected LinkedIn profile.'}
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSendMode('later')}
-                    className={`p-3 rounded-lg border text-left transition-all ${
-                      sendMode === 'later'
-                        ? 'border-brand-600 bg-brand-50/70 text-brand-900 ring-2 ring-brand-500/20 shadow-sm'
-                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 font-bold text-xs">
-                      <Calendar size={14} className={sendMode === 'later' ? 'text-brand-600' : 'text-slate-400'} />
-                      <span>Schedule for Specific Time</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Background scheduler automatically triggers at the chosen time.
-                    </p>
-                  </button>
-                </div>
-
-                {sendMode === 'later' && (
-                  <div className="mt-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 animate-in fade-in">
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      Choose Date & Time for Automated Dispatch:
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={scheduledDateTime}
-                      onChange={(e) => setScheduledDateTime(e.target.value)}
-                      className="input w-full text-xs py-1.5 font-medium"
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Local machine time. The background scheduler will automatically pick up and fire the messages.
-                    </p>
+                    <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
+                      First Send: ~10m
+                    </span>
                   </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setSendMode('now')}
+                        className={`p-3 rounded-lg border text-left transition-all ${
+                          sendMode === 'now'
+                            ? 'border-brand-600 bg-brand-50/70 text-brand-900 ring-2 ring-brand-500/20 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 font-bold text-xs">
+                          <Zap size={14} className={sendMode === 'now' ? 'text-brand-600' : 'text-slate-400'} />
+                          <span>Shoot Automatically Now</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Starts sending via WhatsApp with 45s anti-ban pacing.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSendMode('later')}
+                        className={`p-3 rounded-lg border text-left transition-all ${
+                          sendMode === 'later'
+                            ? 'border-brand-600 bg-brand-50/70 text-brand-900 ring-2 ring-brand-500/20 shadow-sm'
+                            : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 font-bold text-xs">
+                          <Calendar size={14} className={sendMode === 'later' ? 'text-brand-600' : 'text-slate-400'} />
+                          <span>Schedule for Specific Time</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Background scheduler automatically triggers at the chosen time.
+                        </p>
+                      </button>
+                    </div>
+
+                    {sendMode === 'later' && (
+                      <div className="mt-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 animate-in fade-in">
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Choose Date &amp; Time for Automated Dispatch:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={scheduledDateTime}
+                          onChange={(e) => setScheduledDateTime(e.target.value)}
+                          className="input w-full text-xs py-1.5 font-medium"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Local machine time. The background scheduler will automatically pick up and fire the messages.
+                        </p>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
-              {/* 4. Pacing Interval: Send Each Message After */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Clock size={13} className="text-brand-600" />
-                    <span>4. Send Each {channel === 'email' ? 'Email' : channel === 'whatsapp' ? 'WhatsApp' : 'Message'} After</span>
-                  </label>
-                  <span className="text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200/70 px-2 py-0.5 rounded-full">
-                    {intervalSeconds >= 60
-                      ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)} min${intervalSeconds > 60 ? 's' : ''} (${intervalSeconds}s delay)`
-                      : `${intervalSeconds} seconds delay`}
-                  </span>
-                </div>
+              {/* 4. Pacing Interval: Only for WhatsApp (Email uses 5-Agent Method) */}
+              {channel === 'whatsapp' && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Clock size={13} className="text-brand-600" />
+                      <span>4. Send Each WhatsApp Message After</span>
+                    </label>
+                    <span className="text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200/70 px-2 py-0.5 rounded-full">
+                      {intervalSeconds} seconds delay
+                    </span>
+                  </div>
 
-                {/* Quick Presets */}
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                  {[
-                    { id: '30s', seconds: 30, label: '30s', badge: 'Fast' },
-                    { id: '60s', seconds: 60, label: '1 min', badge: 'Standard' },
-                    { id: '120s', seconds: 120, label: '2 mins', badge: 'TA Safe', recommended: channel === 'email' },
-                    { id: '180s', seconds: 180, label: '3 mins', badge: 'Safe' },
-                    { id: '300s', seconds: 300, label: '5 mins', badge: 'Paced' },
-                    { id: '600s', seconds: 600, label: '10 mins', badge: 'Relaxed' },
-                  ].map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => {
-                        setIntervalSeconds(preset.seconds);
-                        setIntervalPreset(preset.id);
-                      }}
-                      className={`p-2 rounded-lg border text-center transition-all ${
-                        intervalPreset === preset.id || intervalSeconds === preset.seconds
-                          ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/20 text-brand-900 font-bold shadow-2xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{preset.label}</div>
-                      <div className={`text-[9px] mt-0.5 font-semibold ${preset.recommended ? 'text-emerald-600' : 'text-slate-400'}`}>
-                        {preset.badge}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Interactive Slider + Exact Second Input */}
-                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
-                    <span className="text-[11px] font-semibold text-slate-700">Fine-tune Delay (Slider):</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-slate-500">Exact delay:</span>
-                      <input
-                        type="number"
-                        min="5"
-                        max="3600"
-                        step="5"
-                        value={intervalSeconds}
-                        onChange={(e) => {
-                          const val = Math.max(5, Math.min(3600, Number(e.target.value) || 0));
-                          setIntervalSeconds(val);
-                          setIntervalPreset('custom');
+                  {/* Quick Presets */}
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                    {[
+                      { id: '30s', seconds: 30, label: '30s', badge: 'Fast' },
+                      { id: '45s', seconds: 45, label: '45s', badge: 'WA Safe', recommended: true },
+                      { id: '60s', seconds: 60, label: '1 min', badge: 'Standard' },
+                      { id: '90s', seconds: 90, label: '1.5 min', badge: 'Safe' },
+                      { id: '120s', seconds: 120, label: '2 mins', badge: 'Paced' },
+                      { id: '300s', seconds: 300, label: '5 mins', badge: 'Relaxed' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setIntervalSeconds(preset.seconds);
+                          setIntervalPreset(preset.id);
                         }}
-                        className="input w-20 py-0.5 px-2 text-xs font-bold text-center bg-white border-slate-300"
-                      />
-                      <span className="text-xs text-slate-500 font-semibold">sec</span>
-                    </div>
+                        className={`p-2 rounded-lg border text-center transition-all ${
+                          intervalPreset === preset.id || intervalSeconds === preset.seconds
+                            ? 'border-brand-600 bg-brand-50/80 ring-2 ring-brand-500/20 text-brand-900 font-bold shadow-2xs'
+                            : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="text-xs font-bold">{preset.label}</div>
+                        <div className={`text-[9px] mt-0.5 font-semibold ${preset.recommended ? 'text-emerald-600' : 'text-slate-400'}`}>
+                          {preset.badge}
+                        </div>
+                      </button>
+                    ))}
                   </div>
 
-                  <input
-                    type="range"
-                    min="15"
-                    max="600"
-                    step="15"
-                    value={Math.min(intervalSeconds, 600)}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setIntervalSeconds(val);
-                      setIntervalPreset('custom');
-                    }}
-                    className="w-full accent-brand-600 cursor-pointer"
-                  />
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
+                    <input
+                      type="range"
+                      min="15"
+                      max="180"
+                      step="15"
+                      value={Math.min(intervalSeconds, 180)}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setIntervalSeconds(val);
+                        setIntervalPreset('custom');
+                      }}
+                      className="w-full accent-brand-600 cursor-pointer"
+                    />
 
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                    <span>15s (Rapid)</span>
-                    <span>60s (1m)</span>
-                    <span className="text-emerald-700 font-bold">120s (2m • TA Safe)</span>
-                    <span>300s (5m)</span>
-                    <span>600s (10m)</span>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                      <span>15s (Rapid)</span>
+                      <span className="text-emerald-700 font-bold">45s (WA Safe)</span>
+                      <span>90s (Safe)</span>
+                      <span>180s (3m)</span>
+                    </div>
                   </div>
-
-                  {/* Dynamic Timeline Calculation */}
-                  {scheduleTimeline && (
-                    <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-700">
-                      <span className="flex items-center gap-1">
-                        🚀 Starts: <strong>{scheduleTimeline.startTime}</strong>
-                      </span>
-                      <span className="flex items-center gap-1">
-                        🏁 Completes: <strong>{scheduleTimeline.endTime}</strong>
-                      </span>
-                      <span className="text-brand-700 font-bold bg-brand-50 px-2 py-0.5 rounded border border-brand-200/60">
-                        ⏱️ Total: ~{scheduleTimeline.totalMinutes} mins ({eligibleLeadsCount} {channel === 'email' ? 'emails' : 'messages'})
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Contextual guidance */}
-                  {channel === 'email' && (
-                    <div className="text-[10px] text-slate-500 leading-relaxed pt-0.5">
-                      {intervalSeconds >= 120 ? (
-                        <span className="text-emerald-700 font-medium flex items-center gap-1">
-                          <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />
-                          <span>Optimal 2+ min pacing: Gives our Technical Audit engine sufficient time to crawl & audit each site, generate the branded PDF, and attach findings before dispatch.</span>
-                        </span>
-                      ) : (
-                        <span className="text-amber-700 font-medium flex items-center gap-1">
-                          <AlertCircle size={12} className="shrink-0 text-amber-600" />
-                          <span>Fast pacing ({intervalSeconds}s): Emails will fire quickly. Background TA audits run concurrently, but 2+ minutes gives the best guarantee for every audit PDF to finish compiling before dispatch.</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
                 </div>
-              </div>
+              )}
 
               {/* 5. Anti-AI Humanizer Tone & Style */}
               <div>
@@ -1129,80 +956,85 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
               </div>
 
               {/* Deliverability & Compliance Safe Pacing Banner */}
-              <div className="p-3 rounded-lg bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-2.5">
-                <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
-                <div className="text-[11px] text-emerald-900 space-y-0.5">
-                  <p className="font-bold">
-                    {channel === 'email'
-                      ? `Automated ${intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}-Minute` : `${intervalSeconds}-Second`} Email Pacing & Background TA Audits Active`
-                      : channel === 'whatsapp'
-                      ? `WhatsApp Anti-Ban ${intervalSeconds}s Randomized Pacing Active`
-                      : `LinkedIn Safe Daily Limits & ${intervalSeconds}s Pacing Active`}
-                  </p>
-                  <p className="text-emerald-700">
-                    {channel === 'email'
-                      ? `${intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}-minute` : `${intervalSeconds}-second`} intervals between emails (${intervalSeconds}s pacing • TA automatically audits each website in the background, extracts health scores & critical takeaways, and attaches the PDF report before sending).`
-                      : channel === 'whatsapp'
-                      ? `${intervalSeconds}-second randomized intervals between mobile messages • Respects WhatsApp anti-spam policies.`
-                      : `Humanized message dispatch with ${intervalSeconds}s pacing prevents profile restrictions • Automatically respects daily connection limits.`}
-                  </p>
+              {channel === 'email' ? (
+                <div className="p-3 rounded-lg bg-indigo-50/80 border border-indigo-200/80 flex items-start gap-2.5">
+                  <Clock size={18} className="text-indigo-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-indigo-950 space-y-0.5">
+                    <p className="font-bold">
+                      ⏱️ 5-Agent Virtual Slot Method Active
+                    </p>
+                    <p className="text-indigo-700">
+                      Deterministic 10-minute cycle with 2-minute slot offsets across Slots A–E. First email dispatches in 10 minutes. Zero send conflicts &amp; Google warm-up compliant.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-2.5">
+                  <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-emerald-900 space-y-0.5">
+                    <p className="font-bold">
+                      WhatsApp Anti-Ban {intervalSeconds}s Randomized Pacing Active
+                    </p>
+                    <p className="text-emerald-700">
+                      Randomized intervals between mobile messages respect WhatsApp anti-spam policies.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Action Submit Button */}
               <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={handleScheduleSubmit}
-                  disabled={
-                    isSubmitting ||
-                    eligibleLeadsCount === 0 ||
-                    (channel === 'email' && selectedInboxIds.length === 0) ||
-                    (channel === 'linkedin' && linkedInAccounts.length === 0)
-                  }
-                  className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <RefreshCw size={14} className="animate-spin" />
-                      <span>Processing & Enqueuing Dispatches...</span>
-                    </>
-                  ) : eligibleLeadsCount === 0 ? (
-                    <span>
-                      No Contacts Eligible for {channel.toUpperCase()} in {targetList?.name ? `"${targetList.name}"` : 'Selected List'}
-                    </span>
-                  ) : sendMode === 'now' ? (
-                    <>
-                      <Zap size={14} />
+                {channel === 'email' ? (
+                  <button
+                    type="button"
+                    onClick={handleScheduleSubmit}
+                    disabled={isSubmitting || eligibleLeadsCount === 0}
+                    className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Partitioning Leads &amp; Scheduling 5 Slots...</span>
+                      </>
+                    ) : eligibleLeadsCount === 0 ? (
                       <span>
-                        Shoot {eligibleLeadsCount} {channel === 'email' ? 'Emails' : channel === 'whatsapp' ? 'WhatsApp Messages' : 'LinkedIn Messages'} Now
-                        {channel === 'email' && (
-                          selectedInboxes.length === 2
-                            ? ' (50/50 Split)'
-                            : selectedInboxes.length > 2
-                            ? ` (${selectedInboxes.length}-Way Split)`
-                            : ' (100% Single Inbox)'
-                        )}
-                        {' '}({intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m` : `${intervalSeconds}s`} intervals)
+                        No Contacts Eligible for EMAIL in {targetList?.name ? `"${targetList.name}"` : 'Selected List'}
                       </span>
-                    </>
-                  ) : (
-                    <>
-                      <Calendar size={14} />
+                    ) : (
+                      <>
+                        <Clock size={14} />
+                        <span>
+                          Schedule {eligibleLeadsCount} Leads via 5-Slot Sender Engine (First Send in 10 mins)
+                        </span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleScheduleSubmit}
+                    disabled={isSubmitting || eligibleLeadsCount === 0}
+                    className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Processing &amp; Enqueuing WhatsApp Dispatches...</span>
+                      </>
+                    ) : eligibleLeadsCount === 0 ? (
                       <span>
-                        Schedule {eligibleLeadsCount} {channel === 'email' ? 'Emails' : channel === 'whatsapp' ? 'WhatsApp Messages' : 'LinkedIn Messages'} for {scheduledDateTime || 'Selected Time'}
-                        {channel === 'email' && (
-                          selectedInboxes.length === 2
-                            ? ' (50/50 Split)'
-                            : selectedInboxes.length > 2
-                            ? ` (${selectedInboxes.length}-Way Split)`
-                            : ' (100% Single Inbox)'
-                        )}
-                        {' '}({intervalSeconds >= 60 ? `${intervalSeconds % 60 === 0 ? intervalSeconds / 60 : (intervalSeconds / 60).toFixed(1)}m` : `${intervalSeconds}s`} intervals)
+                        No Contacts Eligible for WHATSAPP in {targetList?.name ? `"${targetList.name}"` : 'Selected List'}
                       </span>
-                    </>
-                  )}
-                </button>
+                    ) : (
+                      <>
+                        <MessageSquare size={14} />
+                        <span>
+                          Schedule {eligibleLeadsCount} WhatsApp Messages ({sendMode === 'now' ? 'Immediate' : scheduledDateTime || 'Scheduled'})
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1265,7 +1097,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                     {/* Email Subject */}
                     <div className="bg-white rounded-lg p-2.5 border border-slate-200 text-xs shadow-2xs">
                       <span className="text-[10px] font-bold text-slate-400 block mb-0.5">
-                        {channel === 'whatsapp' ? 'OPENING HOOK' : channel === 'linkedin' ? 'MESSAGE TITLE / HOOK' : 'SUBJECT LINE'}
+                        {channel === 'whatsapp' ? 'OPENING HOOK' : 'SUBJECT LINE'}
                       </span>
                       <p className="font-semibold text-slate-900">{previewData.preview.subject}</p>
                     </div>
@@ -1377,10 +1209,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                             {dispatch.channel === 'whatsapp' ? (
                               <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
                                 💬 WhatsApp
-                              </span>
-                            ) : dispatch.channel === 'linkedin' ? (
-                              <span className="px-1.5 py-0.2 rounded bg-sky-100 text-sky-800 text-[9px] font-bold">
-                                💼 LinkedIn
                               </span>
                             ) : (
                               <span className="px-1.5 py-0.2 rounded bg-brand-100 text-brand-800 text-[9px] font-bold">

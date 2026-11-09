@@ -48,7 +48,7 @@ interface InboundRepliesModalProps {
   onDeleteLead?: (leadId: string) => Promise<void>;
 }
 
-type ChannelFilter = 'all' | 'whatsapp' | 'email' | 'instagram' | 'linkedin';
+type ChannelFilter = 'all' | 'whatsapp' | 'email';
 type ViewTab = 'recent' | 'unread' | 'pending' | 'inbound' | 'outbound' | 'unmatched';
 type DateFilter = 'all' | 'today' | '7d' | '30d';
 type LayoutMode = 'messenger' | 'feed';
@@ -1564,20 +1564,6 @@ export function InboundRepliesModal({
                           <Mail size={12} />
                           <span>Email</span>
                         </button>
-
-                        {/* LinkedIn pill */}
-                        <button
-                          type="button"
-                          onClick={() => setComposerChannel('linkedin')}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            composerChannel === 'linkedin'
-                              ? 'bg-[#0a66c2] text-white shadow-2xs'
-                              : 'bg-slate-100 text-slate-700 hover:bg-sky-50'
-                          }`}
-                        >
-                          <Linkedin size={12} />
-                          <span>LinkedIn</span>
-                        </button>
                       </div>
 
                       {/* Quick AI consultative reply generator button */}
@@ -1634,7 +1620,7 @@ export function InboundRepliesModal({
                   <MessageSquare size={48} className="text-slate-300 mb-3" />
                   <h3 className="text-sm font-bold text-slate-700">Select a Conversation</h3>
                   <p className="text-xs text-slate-500 max-w-sm mt-1">
-                    Choose a contact from the list on the left to start messaging in real-time across WhatsApp, Email, or LinkedIn.
+                    Choose a contact from the list on the left to start messaging in real-time across WhatsApp or Email.
                   </p>
                 </div>
               )}

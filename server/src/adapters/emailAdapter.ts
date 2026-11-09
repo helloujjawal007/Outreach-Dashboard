@@ -57,33 +57,113 @@ export function buildHumanoidHtml(bodyText: string): string {
   const blocks = bodyText.trim().split(/\n\s*\n/);
   const htmlElements = blocks.map((block) => {
     const trimmed = block.trim();
-    // Detect signature block
+
+    // 1. Detect signature block
     if (/^best regards,?\n/i.test(trimmed)) {
       const lines = trimmed.split('\n');
       const greeting = escapeHtml(lines[0] || 'Best regards,');
-      const name = escapeHtml(lines[1] || 'Cloud Consultancy');
-      const contact = lines.slice(2).map(escapeHtml).join('<br/>');
-      return `<p style="margin: 20px 0 0 0; line-height: 1.5; color: #1e293b;">${greeting}<br/><strong>${name}</strong>${
-        contact ? `<br/><span style="color: #64748b; font-size: 14px;">${contact}</span>` : ''
-      }</p>`;
+      const teamName = escapeHtml(lines[1] || 'Cloud Consultancy Team');
+      const addressLines = lines.slice(3).filter((l) => l.trim().length > 0);
+
+      return `
+        <table cellpadding="0" cellspacing="0" border="0" style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 14px; width: 100%;">
+          <tr>
+            <td style="vertical-align: top; padding-right: 12px; width: 36px;">
+              <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; font-weight: 700; font-size: 15px; line-height: 36px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">
+                C
+              </div>
+            </td>
+            <td style="vertical-align: top; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px;">
+              <div style="color: #64748b; font-size: 11px; line-height: 1.4;">${greeting}</div>
+              <div style="font-weight: 700; font-size: 12px; color: #0f172a; margin-top: 1px;">${teamName}</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Growth &amp; Technical SEO Practice</div>
+              <div style="font-size: 11px; margin-top: 3px;">
+                <a href="mailto:cloudconsultancy.ad@gmail.com" style="color: #2563eb; text-decoration: none; font-weight: 500;">cloudconsultancy.ad@gmail.com</a>
+                <span style="color: #cbd5e1; margin: 0 4px;">&bull;</span>
+                <a href="https://cloudconsultancy.in" style="color: #2563eb; text-decoration: none; font-weight: 500;">cloudconsultancy.in</a>
+              </div>
+              ${
+                addressLines.length > 0
+                  ? `<div style="font-size: 10.5px; color: #94a3b8; margin-top: 8px; line-height: 1.4;">${escapeHtml(addressLines.join(' '))}</div>`
+                  : ''
+              }
+            </td>
+          </tr>
+        </table>
+      `.trim();
     }
 
-    // Detect bullet list block
+    // 2. Detect bullet list block
     const lines = trimmed.split('\n');
     const isBulletBlock = lines.length > 0 && lines.every((l) => /^\s*[•\-*]\s+/.test(l));
     if (isBulletBlock) {
       const lis = lines
-        .map((l) => `<li style="margin-bottom: 6px;">${escapeHtml(l.replace(/^\s*[•\-*]\s+/, ''))}</li>`)
+        .map((l) => {
+          const cleanText = l.replace(/^\s*[•\-*]\s+/, '').trim();
+          const colonIdx = cleanText.indexOf(':');
+          if (colonIdx > 0 && colonIdx < 35) {
+            const label = escapeHtml(cleanText.slice(0, colonIdx));
+            const desc = escapeHtml(cleanText.slice(colonIdx + 1).trim());
+            return `<li style="margin-bottom: 7px; line-height: 1.55; font-size: 11px;"><strong style="color: #0f172a;">${label}:</strong> ${desc}</li>`;
+          }
+          return `<li style="margin-bottom: 7px; line-height: 1.55; font-size: 11px;">${escapeHtml(cleanText)}</li>`;
+        })
         .join('');
-      return `<ul style="margin: 0 0 16px 0; padding-left: 20px; line-height: 1.6; color: #1e293b;">${lis}</ul>`;
+
+      return `
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #2563eb; border-radius: 6px; padding: 12px 16px 6px 16px; margin: 14px 0 16px 0; width: 100%; box-sizing: border-box;">
+          <div style="font-size: 11px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+            🔍 Key Technical &amp; Speed Findings
+          </div>
+          <ul style="margin: 0; padding-left: 16px; line-height: 1.6; color: #334155; font-size: 11px;">
+            ${lis}
+          </ul>
+        </div>
+      `.trim();
     }
 
-    const escapedLines = trimmed.split('\n').map(escapeHtml).join('<br/>');
-    return `<p style="margin: 0 0 16px 0; line-height: 1.6; color: #1e293b;">${escapedLines}</p>`;
+    // 3. Greeting line highlight
+    if (/^(?:Hi|Hello)\s+[A-Za-z0-9\s]+,$/i.test(trimmed)) {
+      return `<p style="margin: 0 0 12px 0; font-size: 11px; font-weight: 600; color: #0f172a; line-height: 1.5;">${escapeHtml(trimmed)}</p>`;
+    }
+
+    // 4. CTA / Walkthrough invitation box
+    if (/5-minute|walkthrough|quick chat/i.test(trimmed) && /would you be open/i.test(trimmed)) {
+      return `
+        <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px 14px; margin: 14px 0 14px 0; width: 100%; box-sizing: border-box;">
+          <p style="margin: 0; color: #1e40af; font-size: 11px; font-weight: 600; line-height: 1.55;">
+            ${escapeHtml(trimmed)}
+          </p>
+        </div>
+      `.trim();
+    }
+
+    // 5. Standalone postal address check
+    if (/Sector V|Kolkata|West Bengal|700091/i.test(trimmed) && trimmed.length < 150) {
+      return `<p style="margin: 8px 0 0 0; font-size: 10.5px; color: #94a3b8; line-height: 1.4;">${escapeHtml(trimmed)}</p>`;
+    }
+
+    // 6. Regular paragraph styling with subtle badge highlights
+    let escaped = escapeHtml(trimmed);
+
+    // Style attachment mention into a clean, modern pill
+    escaped = escaped.replace(
+      /\((?:attached(?::| as))\s*([^)]+\.pdf)\)/gi,
+      '<span style="display: inline-block; background-color: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 4px; border: 1px solid #bfdbfe; margin: 0 2px;">📎 $1</span>'
+    );
+
+    // Subtle highlight for diagnostic score
+    escaped = escaped.replace(
+      /\(((?:Diagnostic|PageSpeed mobile) performance score: \d+\/100)\)/gi,
+      '<strong style="color: #0f172a; background-color: #f1f5f9; padding: 1px 5px; border-radius: 4px; border: 1px solid #e2e8f0; font-size: 11px;">($1)</strong>'
+    );
+
+    const escapedLines = escaped.split('\n').join('<br/>');
+    return `<p style="margin: 0 0 12px 0; line-height: 1.65; font-size: 11px; color: #1e293b;">${escapedLines}</p>`;
   });
 
   return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1e293b; line-height: 1.6; max-width: 600px; padding: 4px 0;">
+    <div style="width: 90%; max-width: 90%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px; color: #1e293b; line-height: 1.65; padding: 4px 0;">
       ${htmlElements.join('\n')}
     </div>
   `.trim();

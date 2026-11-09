@@ -35,6 +35,7 @@ import { slotsRouter } from './routes/slots';
 import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
 import { fiveSlotSenderService } from './services/fiveSlotSenderService';
+import { startDevMockDaemons } from './services/devMockDaemons';
 // Prevent unhandled errors or socket drops from crashing the Express API server
 process.on('uncaughtException', (err) => {
   console.error('[Server UncaughtException Handled]', err?.message || err);
@@ -339,6 +340,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Start Server & Check Infrastructure
 async function startServer() {
   console.log('--- Initializing Cloud Consultancy Omni-Channel Engine ---');
+
+  // Start internal mock daemons for TD (:5055) and Ollama (:11434) if external services are not running
+  startDevMockDaemons();
 
   // Test PostgreSQL Connection & Auto-Run Schema Migrations
   const dbConnected = await testConnection();

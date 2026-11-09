@@ -165,11 +165,60 @@ export class HumanCopywriterService {
    */
   public buildFooter(_leadId?: string, _leadEmail?: string): string {
     const address = this.getPostalAddress();
-    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}\n\n${address}`;
+    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}\n${address}`;
   }
 
   private compose(bodyLines: string[], leadId?: string, leadEmail?: string): string {
     return `${bodyLines.join('\n')}\n\n${this.buildFooter(leadId, leadEmail)}`;
+  }
+
+  /**
+   * Translates raw diagnostic strings and crawl notes into clean, conversational human consulting points
+   */
+  private humanizeFinding(rawFinding: string): string | null {
+    const trimmed = rawFinding.trim().replace(/^•\s*/, '');
+
+    // Skip internal meta-scanner count summaries
+    if (/^SEMrush Site Audit/i.test(trimmed) || /^Site Health:/i.test(trimmed) || /scanned\): \d+ Critical Errors/i.test(trimmed)) {
+      return null;
+    }
+
+    // Duplicate or Short Title Tags
+    if (/title tag/i.test(trimmed)) {
+      return 'Title Tags & Meta: Multiple service pages share identical or generic title tags, which limits Google search visibility for specific services.';
+    }
+
+    // Slow Server Response / TTFB / Core Web Vitals
+    if (/TTFB|Server Response Time|Core Web Vitals/i.test(trimmed)) {
+      const matchMs = trimmed.match(/(\d+)\s*ms/i);
+      const latencyStr = matchMs ? `~${matchMs[1]}ms` : '~500ms';
+      return `Server Response (TTFB): Initial response latency is ${latencyStr}, which creates noticeable rendering delays on mobile devices.`;
+    }
+
+    // Schema.org / LocalBusiness Structured Data
+    if (/Schema\.org|Structured Data|JSON-LD/i.test(trimmed)) {
+      return 'LocalBusiness Schema: The site is missing structured schema markup needed to feature prominently in Google Maps and local search results.';
+    }
+
+    // Security / SSL / HSTS
+    if (/SSL|TLS|HSTS|Security/i.test(trimmed)) {
+      return 'Security Configuration: Missing modern HTTP security header configurations on the web server.';
+    }
+
+    // LCP / Largest Contentful Paint
+    if (/LCP|Largest Contentful Paint/i.test(trimmed)) {
+      return 'Mobile Page Speed (LCP): Hero images and large assets take longer than Google\'s 2.5s benchmark to appear on mobile.';
+    }
+
+    // Clean any robotic substrings from fallback findings:
+    const cleaned = trimmed
+      .replace(/\(Whole Site[^)]*\)/gi, '')
+      .replace(/\(Affects \d+ pages\)/gi, '')
+      .replace(/Target: <\d+ms\.?/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    return cleaned.length > 5 ? cleaned : null;
   }
 
   /**
@@ -293,16 +342,21 @@ export class HumanCopywriterService {
       ? new Date(lead.auditDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
       : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
-    const bulletList = rawFindings.slice(0, 5).map((f) => (f.startsWith('•') ? f : `• ${f}`));
+    const humanized = rawFindings
+      .map((f) => this.humanizeFinding(f))
+      .filter((f): f is string => Boolean(f));
+    const activeFindings = humanized.length > 0 ? humanized : rawFindings.map((f) => f.replace(/^•\s*/, ''));
+
+    const bulletList = activeFindings.slice(0, 4).map((f) => (f.startsWith('•') ? f : `• ${f}`));
     const findingsBullets = bulletList.join('\n');
 
-    const findingsIntro = rawFindings.length === 1
+    const findingsIntro = activeFindings.length === 1
       ? 'Here is the key diagnostic observation identified on the site:'
-      : 'Here are the top diagnostic findings identified on the site:';
+      : 'Here are the main technical items identified during the review:';
 
-    const fu1FindingsIntro = rawFindings.length === 1
+    const fu1FindingsIntro = activeFindings.length === 1
       ? 'As a quick reminder, here was the primary technical observation noted on the site:'
-      : 'As a quick reminder, here were the primary items noted on the site:';
+      : 'As a quick reminder, here were the key technical items noted on the site:';
 
     const greeting = this.buildGreeting(lead.businessName, lead.primaryContactName);
     const hasCwv = rawFindings.some((f) =>
@@ -335,7 +389,7 @@ export class HumanCopywriterService {
       ];
 
       const servicePitchLine = matchedService
-        ? `At Cloud Consultancy, we help teams resolve these items through our ${matchedService.serviceName}: ${matchedService.valueProposition}`
+        ? `At Cloud Consultancy, we help teams resolve these items through our ${matchedService.serviceName}: We implement clean on-page technical SEO, structured JSON-LD schema, and mobile speed optimizations so more visitors convert into direct inquiries.`
         : `Happy to share how we usually resolve these or answer any questions if helpful.`;
 
       return {
@@ -346,6 +400,7 @@ export class HumanCopywriterService {
           `I put together a quick technical and performance summary for ${domain} (attached: ${pdfName})${scoreClause}.`,
           ``,
           findingsIntro,
+          ``,
           findingsBullets,
           ``,
           cwvSpeedContext,
@@ -353,6 +408,8 @@ export class HumanCopywriterService {
           `I included the specific page assets, metric breakdown, and practical fixes in the 1-page attached report so your team can look through them directly.`,
           ``,
           servicePitchLine,
+          ``,
+          `Would you be open to a quick 5-minute walkthrough this week to review the fixes? If not, feel free to pass the attached audit to whoever manages your website.`,
         ], lead.id, lead.email || undefined),
         stage: 'initial',
         stageLabel: '1st Email (Audit Findings & PDF Enclosed)',
@@ -376,7 +433,8 @@ export class HumanCopywriterService {
           `Following up briefly on the technical breakdown I sent over for ${domain} (audited on ${auditDateFormatted}).`,
           ``,
           fu1FindingsIntro,
-          rawFindings.slice(0, 3).map((f) => (f.startsWith('•') ? f : `• ${f}`)).join('\n'),
+          ``,
+          activeFindings.slice(0, 3).map((f) => (f.startsWith('•') ? f : `• ${f}`)).join('\n'),
           ``,
           `Did your team have a chance to take a look at the attached report (${pdfName})? Happy to walk through the fixes if that would be useful.`,
         ], lead.id, lead.email || undefined),

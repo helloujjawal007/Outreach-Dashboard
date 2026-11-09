@@ -5165,19 +5165,13 @@ export function CrmPage({
                 </button>
               </div>
 
-              {/* Channel Switcher — All Channels Supported */}
+              {/* Channel Switcher — Email & WhatsApp Only */}
               <div className="flex flex-wrap gap-2 mb-2">
-                {(['email', 'whatsapp', 'website_form', 'instagram', 'linkedin'] as Channel[]).map((ch) => {
+                {(['email', 'whatsapp'] as Channel[]).map((ch) => {
                   const isAvailable =
                     ch === 'email'
                       ? !!selectedLead.email
-                      : ch === 'whatsapp'
-                      ? !!selectedLead.whatsapp || !!selectedLead.phone
-                      : ch === 'website_form'
-                      ? !!(selectedLead.website || selectedLead.googleProfile?.website)
-                      : ch === 'instagram'
-                      ? !!selectedLead.instagram
-                      : !!selectedLead.linkedin;
+                      : !!selectedLead.whatsapp || !!selectedLead.phone;
                   return (
                     <button
                       key={ch}

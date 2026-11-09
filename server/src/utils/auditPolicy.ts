@@ -54,7 +54,8 @@ export function isValidPdfBuffer(buf: Buffer): boolean {
 export function validateAuditAsset(
   findingsRaw: any,
   pdfPath: string | null | undefined,
-  scoreRaw?: number | null
+  scoreRaw?: number | null,
+  keyTakeawaysRaw?: string | null
 ): AuditValidationResult {
   // 1. Normalize findings
   let findings: string[] = [];
@@ -63,8 +64,25 @@ export function validateAuditAsset(
       .map((f) => (typeof f === 'string' ? f.trim() : typeof f?.title === 'string' ? f.title.trim() : ''))
       .filter(Boolean);
   } else if (typeof findingsRaw === 'string') {
-    findings = findingsRaw
-      .split(/;|\n|•/)
+    try {
+      const parsed = JSON.parse(findingsRaw);
+      if (Array.isArray(parsed)) {
+        findings = parsed
+          .map((f: any) => (typeof f === 'string' ? f.trim() : typeof f?.title === 'string' ? f.title.trim() : ''))
+          .filter(Boolean);
+      }
+    } catch {
+      findings = findingsRaw
+        .split(/;|\n|•/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 5);
+    }
+  }
+
+  // Fallback to key takeaways if findings array is empty
+  if (findings.length === 0 && keyTakeawaysRaw) {
+    findings = keyTakeawaysRaw
+      .split(/;|\n|•| and /i)
       .map((s) => s.trim())
       .filter((s) => s.length > 5);
   }

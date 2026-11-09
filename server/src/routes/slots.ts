@@ -39,14 +39,43 @@ slotsRouter.post('/settings', async (req: Request, res: Response) => {
 /**
  * POST /api/slots/trigger-tick
  * Manually fire a global scheduler tick for testing / verification
+ * Supports { force: true } to bypass window/cap guards for instant manual send testing
  */
-slotsRouter.post('/trigger-tick', async (_req: Request, res: Response) => {
+slotsRouter.post('/trigger-tick', async (req: Request, res: Response) => {
   try {
-    const result = await fiveSlotSenderService.processGlobalTick();
+    const force = req.body?.force === true;
+    const result = await fiveSlotSenderService.processGlobalTick(
+      undefined,
+      undefined,
+      force
+        ? {
+            bypassWindow: true,
+            bypassMinGap: true,
+            bypassDailyCap: true,
+            forceSend: true,
+          }
+        : undefined
+    );
     res.json({ success: true, ...result });
   } catch (err: any) {
     console.error('[slotsRouter.trigger-tick] Error:', err);
     res.status(500).json({ success: false, error: err?.message || 'Failed to trigger slot tick' });
+  }
+});
+
+/**
+ * POST /api/slots/distribute-leads
+ * Explicitly partitions and splits active unassigned leads across Slots A-E round-robin
+ * Supports { rebalanceAll: true } to re-partition all active leads evenly
+ */
+slotsRouter.post('/distribute-leads', async (req: Request, res: Response) => {
+  try {
+    const { rebalanceAll, listId } = req.body || {};
+    const result = await fiveSlotSenderService.autoAssignUnassignedLeads({ rebalanceAll, listId });
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[slotsRouter.distribute-leads] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to distribute leads across slots' });
   }
 });
 

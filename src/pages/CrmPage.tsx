@@ -5960,6 +5960,9 @@ export function CrmPage({
       <ScheduleListModal
         open={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
+        onScheduled={() => {
+          setCrmViewMode('slots');
+        }}
         store={store}
         defaultListId={selectedListFilter}
       />

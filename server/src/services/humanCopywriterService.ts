@@ -1,4 +1,5 @@
 import { signUnsubscribeToken } from '../utils/tokenSigner';
+import { serviceRecommendationEngine, MatchedService } from './serviceRecommendationEngine';
 
 export interface LeadContext {
   id: string;
@@ -19,6 +20,7 @@ export interface LeadContext {
   auditDate?: string;
   gmbNotes?: string;
   industryLocation?: string;
+  matchedService?: MatchedService;
 }
 
 export interface HumanCopyResult {
@@ -143,7 +145,7 @@ export class HumanCopywriterService {
     const address = (
       process.env.COMPANY_POSTAL_ADDRESS ||
       process.env.OUTREACH_POSTAL_ADDRESS ||
-      ''
+      'Salt Lake Tech Hub, Sector V, Kolkata, West Bengal 700091, India'
     ).trim();
 
     if (
@@ -158,22 +160,12 @@ export class HumanCopywriterService {
   }
 
   /**
-   * Builds honest, professional humanoid signature with valid postal address and cryptographically signed unsubscribe token.
+   * Builds genuine humanoid signature with valid postal address.
+   * Free of robotic automated unsubscribe hyperlinks (RFC 8058 List-Unsubscribe is attached in email MIME headers).
    */
-  public buildFooter(leadId?: string, leadEmail?: string): string {
+  public buildFooter(_leadId?: string, _leadEmail?: string): string {
     const address = this.getPostalAddress();
-    let unsubText = '';
-    if (leadId && leadEmail) {
-      const publicBaseUrl = (
-        process.env.PUBLIC_APP_URL ||
-        process.env.APP_URL ||
-        'https://outreach.cloudconsultancy.in'
-      ).replace(/\/$/, '');
-      const token = signUnsubscribeToken(leadId, leadEmail);
-      const unsubUrl = `${publicBaseUrl}/api/unsubscribe?token=${token}`;
-      unsubText = `\n\nIf you prefer not to receive future updates, you can unsubscribe here: ${unsubUrl}`;
-    }
-    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}\n\n${address}${unsubText}`;
+    return `Best regards,\n${this.agencyName} Team\n${this.senderEmail}\n\n${address}`;
   }
 
   private compose(bodyLines: string[], leadId?: string, leadEmail?: string): string {
@@ -328,12 +320,23 @@ export class HumanCopywriterService {
       scoreClause = ` (Diagnostic performance score: ${scoreVal}/100)`;
     }
 
+    const serviceAnalysis = serviceRecommendationEngine.analyzeAudit(
+      rawFindings,
+      scoreVal,
+      { businessName: lead.businessName, website: lead.website || undefined }
+    );
+    const matchedService = lead.matchedService || serviceAnalysis.primaryService;
+
     if (stage === 'initial') {
       const subjects = [
         `Technical audit notes for ${domain} (report attached)`,
         `Website performance summary: ${domain}`,
         `Quick diagnostic breakdown regarding ${domain}`,
       ];
+
+      const servicePitchLine = matchedService
+        ? `At Cloud Consultancy, we help teams resolve these items through our ${matchedService.serviceName}: ${matchedService.valueProposition}`
+        : `Happy to share how we usually resolve these or answer any questions if helpful.`;
 
       return {
         subject: this.pick(subjects),
@@ -349,7 +352,7 @@ export class HumanCopywriterService {
           ``,
           `I included the specific page assets, metric breakdown, and practical fixes in the 1-page attached report so your team can look through them directly.`,
           ``,
-          `Happy to share how we usually resolve these or answer any questions if helpful.`,
+          servicePitchLine,
         ], lead.id, lead.email || undefined),
         stage: 'initial',
         stageLabel: '1st Email (Audit Findings & PDF Enclosed)',

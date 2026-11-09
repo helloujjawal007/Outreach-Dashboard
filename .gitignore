@@ -32,3 +32,4 @@ server/data/
 .whatsapp_session/
 *.tsbuildinfo
 scratch/
+graphify-out/cache/

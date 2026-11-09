@@ -183,6 +183,7 @@ export class StageOutreachService {
           auditScore: lead.audit_score ? Number(lead.audit_score) : undefined,
           auditFindings: parsedFindings,
           auditDate: lead.audit_ready_at || lead.created_at,
+          matchedService: (lead as any).metadata?.matched_service,
         },
         resolvedStage === 'completed' ? 'followup_3' : resolvedStage
       );

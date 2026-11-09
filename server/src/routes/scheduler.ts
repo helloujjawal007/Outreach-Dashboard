@@ -128,6 +128,31 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'listId is required' });
     }
 
+    if (channel === 'email') {
+      // Unified scheduling: route directly to the 5-Slot Sender Panel
+      const { fiveSlotSenderService } = await import('../services/fiveSlotSenderService');
+      const assignRes = await fiveSlotSenderService.autoAssignUnassignedLeads({
+        listId: listId !== 'all' && listId !== 'all-leads' ? listId : undefined,
+        rebalanceAll: false,
+      });
+
+      if (scheduledFor === 'now') {
+        fiveSlotSenderService.processGlobalTick(undefined, undefined, { forceSend: true }).catch((err) => {
+          console.warn('[schedulerRouter.scheduleList] Instant tick error:', err?.message);
+        });
+      }
+
+      return res.json({
+        success: true,
+        scheduledCount: assignRes.assignedCount,
+        listName: listId === 'all' ? 'All Leads' : listId,
+        channel: 'email',
+        scheduledFor: scheduledFor === 'now' ? new Date() : new Date(scheduledFor),
+        message: `Successfully allocated ${assignRes.assignedCount} leads across the 5-Slot Sender (Slots A-E).`,
+        distribution: assignRes.distribution,
+      });
+    }
+
     const result = await emailSchedulerService.scheduleListDispatch({
       listId,
       channel,

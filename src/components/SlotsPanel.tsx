@@ -12,6 +12,12 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  Split,
+  Globe,
+  FileJson,
+  FileText,
+  Send,
+  CheckCircle2,
 } from 'lucide-react';
 
 export function SlotsPanel() {
@@ -20,7 +26,9 @@ export function SlotsPanel() {
   const [activeSlotNow, setActiveSlotNow] = useState<SlotId | null>(null);
   const [loading, setLoading] = useState(true);
   const [isTickRunning, setIsTickRunning] = useState(false);
+  const [isDistributing, setIsDistributing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [expandedSlot, setExpandedSlot] = useState<SlotId | null>(null);
   const [cycleMinInput, setCycleMinInput] = useState('10');
   const [offsetMinInput, setOffsetMinInput] = useState('2');
   const [tdUrlInput, setTdUrlInput] = useState('');
@@ -82,11 +90,11 @@ export function SlotsPanel() {
     };
   }, [fetchStatus]);
 
-  const handleTriggerTick = async () => {
+  const handleTriggerTick = async (force: boolean = true) => {
     setIsTickRunning(true);
     setFeedback(null);
     try {
-      const res = await api.triggerSlotTick();
+      const res = await api.triggerSlotTick(force);
       if (res.success) {
         if (res.dispatched) {
           setFeedback(`⚡ Slot ${res.activeSlot || ''} dispatched send successfully!`);
@@ -99,6 +107,25 @@ export function SlotsPanel() {
       setFeedback(`❌ Tick error: ${err?.message}`);
     } finally {
       setIsTickRunning(false);
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+  const handleDistributeLeads = async (rebalanceAll: boolean = false) => {
+    setIsDistributing(true);
+    setFeedback(null);
+    try {
+      const res = await api.distributeLeadsToSlots({ rebalanceAll });
+      if (res.success) {
+        setFeedback(`✓ ${rebalanceAll ? 'Rebalanced' : 'Divided'} ${res.assignedCount} leads across Slots A-E`);
+        await fetchStatus();
+      } else {
+        setFeedback(`⚠️ ${(res as any).error || 'Failed to divide leads'}`);
+      }
+    } catch (err: any) {
+      setFeedback(`❌ Error dividing leads: ${err?.message}`);
+    } finally {
+      setIsDistributing(false);
       setTimeout(() => setFeedback(null), 6000);
     }
   };
@@ -176,10 +203,19 @@ export function SlotsPanel() {
             </span>
           )}
           <button
-            onClick={handleTriggerTick}
+            onClick={() => handleDistributeLeads(false)}
+            disabled={isDistributing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+            title="Automatically split active leads across the 5 slots round-robin"
+          >
+            <Split size={13} className={isDistributing ? 'animate-spin text-emerald-600' : 'text-emerald-600'} />
+            <span>{isDistributing ? 'Dividing...' : '⚡ Divide Leads to 5 Slots'}</span>
+          </button>
+          <button
+            onClick={() => handleTriggerTick(true)}
             disabled={isTickRunning}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors disabled:opacity-50 cursor-pointer"
-            title="Fire a manual scheduler tick"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+            title="Fire a manual scheduler tick (forces send if active slot has due leads)"
           >
             <Play size={13} className={isTickRunning ? 'animate-spin' : ''} />
             <span>Trigger Tick</span>
@@ -336,27 +372,45 @@ export function SlotsPanel() {
               </div>
 
               {/* Counts & Pipeline status */}
-              <div className="space-y-1 text-xs">
+              <div className="space-y-1.5 text-xs bg-white/60 p-2 rounded-lg border border-slate-200/60 mb-2">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">Queued:</span>
-                  <span className="font-bold text-slate-900">{s.queuedCount}</span>
+                  <span className="text-slate-500 flex items-center gap-1 font-medium">
+                    <Send size={11} className="text-blue-500" /> Sent:
+                  </span>
+                  <span className="font-bold text-blue-700">{s.sentCount ?? 0}</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 flex items-center gap-1 font-medium">
+                    <FileJson size={11} className="text-purple-500" /> Received JSON:
+                  </span>
+                  <span className="font-bold text-purple-700">{s.receivedJsonCount ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-500 flex items-center gap-1 font-medium" title="Waiting leads in queue. When emails send successfully, this number decreases!">
+                    <Clock size={11} className="text-amber-500" /> Waiting:
+                  </span>
+                  <span className="font-bold text-amber-700">{s.waitingCount ?? s.queuedCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
                   <span className="text-slate-500 flex items-center gap-1">
                     <CheckCircle size={11} className="text-emerald-500" /> Ready to Send:
                   </span>
                   <span className="font-bold text-emerald-700">{s.readyToSendCount}</span>
                 </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500 flex items-center gap-1">
-                    <AlertCircle size={11} className="text-amber-500" /> Awaiting Audit:
-                  </span>
-                  <span className="font-bold text-amber-700">{s.waitingAuditCount}</span>
-                </div>
               </div>
 
+              {/* Toggle Live Pipeline Drawer */}
+              <button
+                type="button"
+                onClick={() => setExpandedSlot(expandedSlot === s.slotId ? null : s.slotId)}
+                className="w-full flex items-center justify-between px-2 py-1.5 rounded bg-white hover:bg-slate-100 text-[10px] font-semibold text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+              >
+                <span>Pipeline ({s.leads?.length ?? 0} leads)</span>
+                {expandedSlot === s.slotId ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+
               {/* Next turn timestamp */}
-              <div className="mt-3 pt-2 border-t border-slate-200/60 text-[10px] text-slate-400 flex items-center justify-between">
+              <div className="mt-2.5 pt-1.5 border-t border-slate-200/60 text-[10px] text-slate-400 flex items-center justify-between">
                 <span>Next turn:</span>
                 <span className="font-mono font-medium text-slate-600">
                   {new Date(s.nextSendTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -366,6 +420,121 @@ export function SlotsPanel() {
           );
         })}
       </div>
+
+      {/* Expanded Slot Detail Drawer */}
+      {expandedSlot && (
+        <div className="px-4 pb-4 animate-in fade-in">
+          {(() => {
+            const slot = slots.find((sl) => sl.slotId === expandedSlot);
+            if (!slot) return null;
+            const leads = slot.leads || [];
+
+            return (
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs text-slate-800">
+                      Slot {slot.slotId} Live Pipeline Tracking
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-bold">
+                      {leads.length} Active Leads
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500">
+                    4 Milestones: Website Sent ➔ Received JSON ➔ Created PDF ➔ Drafted & Sent
+                  </span>
+                </div>
+
+                {leads.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-2 text-center">
+                    No active leads assigned to Slot {slot.slotId}. Click "Divide Leads to 5 Slots" above to populate.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {leads.map((lead) => (
+                      <div
+                        key={lead.leadId}
+                        className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs"
+                      >
+                        <div className="min-w-[180px]">
+                          <p className="font-bold text-slate-900 truncate">{lead.businessName}</p>
+                          <p className="text-[10px] text-slate-500 truncate" title={lead.website}>
+                            {lead.website || 'No website'}
+                          </p>
+                          {lead.matchedService && (
+                            <span className="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 truncate max-w-[200px]">
+                              {lead.matchedService}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* 4 Pipeline Milestones */}
+                        <div className="flex items-center gap-2 text-[10px]">
+                          {/* 1. Website Sent to TD */}
+                          <div
+                            className={`flex items-center gap-1 px-2 py-1 rounded border font-semibold ${
+                              lead.websiteSentToTd
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-50 text-slate-400 border-slate-200'
+                            }`}
+                            title={lead.websiteSentToTd ? 'Website sent to Technical Dashboard' : 'Pending TD submission'}
+                          >
+                            <Globe size={11} />
+                            <span>1. Sent to TD</span>
+                            {lead.websiteSentToTd && <CheckCircle2 size={11} className="text-emerald-600" />}
+                          </div>
+
+                          {/* 2. Received JSON */}
+                          <div
+                            className={`flex items-center gap-1 px-2 py-1 rounded border font-semibold ${
+                              lead.receivedJson
+                                ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                : 'bg-slate-50 text-slate-400 border-slate-200'
+                            }`}
+                            title={lead.receivedJson ? 'Audit JSON received & parsed' : 'Awaiting audit JSON'}
+                          >
+                            <FileJson size={11} />
+                            <span>2. Received JSON</span>
+                            {lead.receivedJson && <CheckCircle2 size={11} className="text-purple-600" />}
+                          </div>
+
+                          {/* 3. Created PDF */}
+                          <div
+                            className={`flex items-center gap-1 px-2 py-1 rounded border font-semibold ${
+                              lead.createdPdf
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-slate-50 text-slate-400 border-slate-200'
+                            }`}
+                            title={lead.createdPdf ? 'Technical PDF report generated' : 'Pending PDF memo creation'}
+                          >
+                            <FileText size={11} />
+                            <span>3. Created PDF</span>
+                            {lead.createdPdf && <CheckCircle2 size={11} className="text-blue-600" />}
+                          </div>
+
+                          {/* 4. Drafted & Sent */}
+                          <div
+                            className={`flex items-center gap-1 px-2 py-1 rounded border font-semibold ${
+                              lead.emailDraftedAndSent
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-slate-50 text-slate-400 border-slate-200'
+                            }`}
+                            title={lead.emailDraftedAndSent ? 'Email drafted & sent' : 'Ready / in queue to send'}
+                          >
+                            <Send size={11} />
+                            <span>4. Drafted & Sent</span>
+                            {lead.emailDraftedAndSent && <CheckCircle2 size={11} className="text-emerald-600" />}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

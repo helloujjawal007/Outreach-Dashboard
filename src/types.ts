@@ -972,6 +972,18 @@ export interface SlotSenderSettings {
   is_active: boolean;
 }
 
+export interface SlotLeadMilestone {
+  leadId: string;
+  businessName: string;
+  website: string;
+  stage: string;
+  websiteSentToTd: boolean;
+  receivedJson: boolean;
+  createdPdf: boolean;
+  emailDraftedAndSent: boolean;
+  matchedService?: string;
+}
+
 export interface SlotStatus {
   slotId: SlotId;
   assignedMailbox: {
@@ -982,9 +994,13 @@ export interface SlotStatus {
   queuedCount: number;
   readyToSendCount: number;
   waitingAuditCount: number;
+  sentCount: number;
+  receivedJsonCount: number;
+  waitingCount: number;
   nextSendTime: string;
   lastSendTime: string | null;
   status: 'active' | 'waiting' | 'idle';
+  leads?: SlotLeadMilestone[];
 }
 
 export interface SlotsOverviewResponse {

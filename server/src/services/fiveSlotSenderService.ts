@@ -32,6 +32,18 @@ export interface SlotSenderSettings {
   whatsapp_daily_limit?: number;
 }
 
+export interface SlotLeadMilestone {
+  leadId: string;
+  businessName: string;
+  website: string;
+  stage: string;
+  websiteSentToTd: boolean;
+  receivedJson: boolean;
+  createdPdf: boolean;
+  emailDraftedAndSent: boolean;
+  matchedService?: string;
+}
+
 export interface SlotStatus {
   slotId: SlotId;
   assignedMailbox: {
@@ -42,9 +54,13 @@ export interface SlotStatus {
   queuedCount: number;
   readyToSendCount: number;
   waitingAuditCount: number;
+  sentCount: number;
+  receivedJsonCount: number;
+  waitingCount: number;
   nextSendTime: string;
   lastSendTime: string | null;
   status: 'active' | 'waiting' | 'idle';
+  leads?: SlotLeadMilestone[];
 }
 
 export class FiveSlotSenderService {
@@ -507,6 +523,95 @@ export class FiveSlotSenderService {
   }
 
   /**
+   * Distributes unassigned leads round-robin across the 5 slots (A, B, C, D, E)
+   * If rebalanceAll is true, rebalances all active leads across slots.
+   */
+  async autoAssignUnassignedLeads(options?: { rebalanceAll?: boolean; listId?: string }): Promise<{
+    assignedCount: number;
+    distribution: Record<SlotId, number>;
+  }> {
+    const rebalanceAll = options?.rebalanceAll === true;
+    const listId = options?.listId;
+
+    // 1. Get current lead counts per slot
+    const slotCountsRes = await query<{ slot_id: SlotId; count: string }>(
+      `SELECT slot_id, COUNT(*) as count 
+       FROM leads 
+       WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL) AND slot_id IS NOT NULL 
+       GROUP BY slot_id`
+    );
+
+    const countMap = new Map<SlotId, number>();
+    SLOTS.forEach((s) => countMap.set(s, 0));
+    if (!rebalanceAll) {
+      slotCountsRes.rows.forEach((r) => {
+        if (countMap.has(r.slot_id)) {
+          countMap.set(r.slot_id, parseInt(r.count, 10));
+        }
+      });
+    }
+
+    // 2. Fetch leads to assign
+    const whereConditions = [
+      `deleted_at IS NULL`,
+      `(status = 'active' OR status IS NULL)`,
+      `(consent_status = 'none' OR consent_status IS NULL)`,
+    ];
+
+    const params: any[] = [];
+    if (!rebalanceAll) {
+      whereConditions.push(`(slot_id IS NULL OR slot_id = '')`);
+    }
+    if (listId) {
+      params.push(listId);
+      whereConditions.push(`list_id = $${params.length}`);
+    }
+
+    const unassignedRes = await query<{ id: string }>(
+      `SELECT id FROM leads 
+       WHERE ${whereConditions.join(' AND ')}
+       ORDER BY created_at ASC`,
+      params
+    );
+
+    if (unassignedRes.rows.length === 0) {
+      const dist: Record<SlotId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+      countMap.forEach((v, k) => { dist[k] = v; });
+      return { assignedCount: 0, distribution: dist };
+    }
+
+    // 3. Assign leads round-robin to slot with fewest leads
+    for (const lead of unassignedRes.rows) {
+      let minSlot: SlotId = 'A';
+      let minCount = Infinity;
+      for (const s of SLOTS) {
+        const c = countMap.get(s) ?? 0;
+        if (c < minCount) {
+          minCount = c;
+          minSlot = s;
+        }
+      }
+      await query(
+        `UPDATE leads SET slot_id = $1, slot_assigned_at = NOW(), updated_at = NOW() WHERE id = $2`,
+        [minSlot, lead.id]
+      );
+      countMap.set(minSlot, minCount + 1);
+    }
+
+    console.log(
+      `[FiveSlotSenderService] 🎯 Assigned ${unassignedRes.rows.length} leads across 5 slots: ` +
+      SLOTS.map((s) => `Slot ${s}: ${countMap.get(s)}`).join(', ')
+    );
+
+    // 4. Trigger rolling audits for the top leads in each slot
+    await this.dispatchRollingAudits();
+
+    const distribution: Record<SlotId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+    countMap.forEach((v, k) => { distribution[k] = v; });
+    return { assignedCount: unassignedRes.rows.length, distribution };
+  }
+
+  /**
    * Just-In-Time (JIT) Rolling Audit Dispatcher
    * Dispatches audits to TD only for the top 2 queued leads per slot (~10 leads in flight max)
    * Prevents TD queue overload and eliminates premature timeout failures.
@@ -840,6 +945,7 @@ export class FiveSlotSenderService {
       bypassMinGap?: boolean;
       bypassDailyCap?: boolean;
       bypassLeaderLock?: boolean;
+      forceSend?: boolean;
     }
   ): Promise<{
     activeSlot: SlotId | null;
@@ -851,6 +957,16 @@ export class FiveSlotSenderService {
     if (this.isTickRunning) {
       return { activeSlot: null, dispatched: false, reason: 'Tick already in progress (re-entrancy guard)' };
     }
+
+    // Auto-assign unassigned active leads so all 5 slots have leads in their queue
+    await this.autoAssignUnassignedLeads().catch((err) => {
+      console.warn('[FiveSlotSenderService] Auto-assign error during tick:', err?.message);
+    });
+
+    const isForced = testOptions?.forceSend === true;
+    const bypassWindow = Boolean(isForced || testOptions?.bypassWindow);
+    const bypassMinGap = Boolean(isForced || testOptions?.bypassMinGap);
+    const bypassDailyCap = Boolean(isForced || testOptions?.bypassDailyCap);
 
     const now = overrideDate || new Date();
 
@@ -920,7 +1036,7 @@ export class FiveSlotSenderService {
       const globalMinGapMs = globalMinGapSec * 1000;
 
       if (
-        !testOptions?.bypassMinGap &&
+        !bypassMinGap &&
         this.lastGlobalSentEpochMs > 0 &&
         now.getTime() >= this.lastGlobalSentEpochMs &&
         now.getTime() - this.lastGlobalSentEpochMs < globalMinGapMs
@@ -957,7 +1073,7 @@ export class FiveSlotSenderService {
         currentDay = tzDate.getDay();
       } catch {}
 
-      if (!testOptions?.bypassWindow) {
+      if (!bypassWindow) {
         if (settings.weekdays_only && (currentDay === 0 || currentDay === 6)) {
           return { activeSlot, dispatched: false, reason: `Outside send window: Weekend resting (${marketTz})` };
         }
@@ -972,7 +1088,7 @@ export class FiveSlotSenderService {
       }
 
       // Check daily mailbox cap in configured send-window timezone (excluding mock sends)
-      if (!testOptions?.bypassDailyCap) {
+      if (!bypassDailyCap) {
         const metricRes = await query<{ count: string }>(
           `SELECT COUNT(*) as count FROM messages 
            WHERE direction = 'outbound' 
@@ -998,8 +1114,9 @@ export class FiveSlotSenderService {
       console.log(`[FiveSlotSenderService] ⏱️ Slot ${activeSlot} active in Cycle ${grid.cycleIndex} (deterministic grid). Scanning for queued leads...`);
 
       // 5. Query candidate leads for this slot (LIMIT 25 so unready or running leads do not block ready ones)
-      const testFilterClause = filterTestBatch ? `AND notes = $2` : '';
-      const queryParams: any[] = [activeSlot];
+      const testFilterClause = filterTestBatch ? `AND notes = $3` : '';
+      const bypassCooldown = Boolean(bypassWindow || isForced);
+      const queryParams: any[] = [activeSlot, bypassCooldown];
       if (filterTestBatch) {
         queryParams.push(filterTestBatch);
       }
@@ -1013,14 +1130,17 @@ export class FiveSlotSenderService {
         outreach_stage: string;
         audit_status: string;
         audit_findings: any;
+        audit_key_takeaways?: string | null;
         audit_pdf_path: string;
+        audit_pdf_name?: string | null;
+        audit_score?: number | null;
         audit_retry_count: number;
         audit_requested_at: string | null;
         location?: string | null;
         country?: string | null;
         metadata?: any;
       }>(
-        `SELECT id, business_name, website, email, slot_id, outreach_stage, audit_status, audit_findings, audit_pdf_path, audit_retry_count, audit_requested_at, location, country, metadata
+        `SELECT id, business_name, website, email, slot_id, outreach_stage, audit_status, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name, audit_score, audit_retry_count, audit_requested_at, location, country, metadata
          FROM leads
          WHERE deleted_at IS NULL
            AND status = 'active'
@@ -1028,9 +1148,10 @@ export class FiveSlotSenderService {
            AND (slot_id = $1 OR (slot_id IS NULL AND $1 = 'A'))
            AND (outreach_stage IS NULL OR (outreach_stage != 'sending' AND outreach_stage != 'completed' AND outreach_stage != 'skipped_no_opportunity'))
            AND (
-             (last_contacted_at IS NULL AND (outreach_stage IS NULL OR outreach_stage = 'initial'))
-             OR (outreach_stage = 'followup_1' AND last_contacted_at <= NOW() - INTERVAL '48 hours')
-             OR (outreach_stage = 'followup_2' AND last_contacted_at <= NOW() - INTERVAL '72 hours')
+             ((outreach_stage IS NULL OR outreach_stage = 'initial') AND (last_contacted_at IS NULL OR last_contacted_at <= NOW() - INTERVAL '24 hours' OR $2 = true))
+             OR (outreach_stage = 'followup_1' AND (last_contacted_at <= NOW() - INTERVAL '48 hours' OR $2 = true))
+             OR (outreach_stage = 'followup_2' AND (last_contacted_at <= NOW() - INTERVAL '72 hours' OR $2 = true))
+             OR (outreach_stage = 'followup_3' AND (last_contacted_at <= NOW() - INTERVAL '96 hours' OR $2 = true))
            )
            ${testFilterClause}
            AND NOT EXISTS (
@@ -1041,6 +1162,16 @@ export class FiveSlotSenderService {
              WHEN outreach_stage = 'followup_2' THEN 1
              WHEN outreach_stage = 'followup_1' THEN 2
              ELSE 3
+           END ASC,
+           -- Prioritize leads whose audit is ready (0); leads awaiting audit go to waiting list and are sent last (1)
+           CASE 
+             WHEN (outreach_stage = 'followup_1' OR outreach_stage = 'followup_2') THEN 0
+             WHEN audit_status IN ('ready', 'audit_completed') AND (
+               (audit_pdf_path IS NOT NULL AND audit_pdf_path != '') 
+               OR (audit_findings IS NOT NULL AND audit_findings::text != '[]') 
+               OR (audit_key_takeaways IS NOT NULL AND audit_key_takeaways != '')
+             ) THEN 0
+             ELSE 1
            END ASC,
            created_at ASC
          LIMIT 25`,
@@ -1064,7 +1195,7 @@ export class FiveSlotSenderService {
           settings.send_window_timezone || 'UTC'
         );
 
-        if (!testOptions?.bypassWindow) {
+        if (!bypassWindow) {
           const windowCheck = isWithinRecipientWindow(
             now,
             recipientTz,
@@ -1080,11 +1211,31 @@ export class FiveSlotSenderService {
           }
         }
 
-        const validation = validateAuditAsset(candidate.audit_findings, candidate.audit_pdf_path);
+        // Auto-ensure valid PDF file on disk if lead has completed audit and stored findings/takeaways
+        if (!isValidPdfFile(candidate.audit_pdf_path) && (candidate.audit_findings || candidate.audit_key_takeaways)) {
+          try {
+            const ensured = await technicalAuditPdfService.ensurePdfForLead(candidate);
+            if (ensured) {
+              candidate.audit_pdf_path = ensured.pdfPath;
+              candidate.audit_pdf_name = ensured.pdfName;
+            }
+          } catch (ensureErr: any) {
+            console.warn(`[FiveSlotSenderService] PDF ensure error for lead ${candidate.id}:`, ensureErr?.message);
+          }
+        }
 
-        // Item 12: Clean sites: honor noOpportunity ONLY for complete audits (candidate.audit_status === 'ready')
+        const validation = validateAuditAsset(
+          candidate.audit_findings,
+          candidate.audit_pdf_path,
+          candidate.audit_score,
+          candidate.audit_key_takeaways
+        );
+
+        const isAuditComplete = candidate.audit_status === 'ready' || candidate.audit_status === 'audit_completed';
+
+        // Item 12: Clean sites: honor noOpportunity ONLY for complete audits
         // Use separate status 'skipped_no_opportunity' AND outreach_stage 'skipped_no_opportunity'; 0 failure_log rows, 0 emails sent.
-        if (candidate.audit_status === 'ready' && validation.noOpportunity) {
+        if (isAuditComplete && validation.noOpportunity) {
           console.log(`[FiveSlotSenderService] 🟢 Clean site detected for "${candidate.business_name}": Complete audit found 0 flaws. Marking status = 'skipped_no_opportunity', outreach_stage = 'skipped_no_opportunity'.`);
           await query(
             `UPDATE leads 
@@ -1100,14 +1251,18 @@ export class FiveSlotSenderService {
         }
 
         const isFollowUp = candidate.outreach_stage === 'followup_1' || candidate.outreach_stage === 'followup_2';
-        if (!isFollowUp && (candidate.audit_status !== 'ready' || !validation.ready)) {
+        if (!isFollowUp && (!isAuditComplete || !validation.ready)) {
           const requestedAtMs = candidate.audit_requested_at ? new Date(candidate.audit_requested_at).getTime() : 0;
           const isTimedOut = !requestedAtMs || Date.now() - requestedAtMs > 15 * 60 * 1000;
           const isAuditRunning = candidate.audit_status === 'pending' && !isTimedOut;
 
           // Head-of-line: if audit is still actively running, DO NOT count as a retry!
           if (isAuditRunning) {
-            // Audit still in progress within timeout window: advance to next candidate without penalty
+            console.log(
+              `[FiveSlotSenderService] ⏳ Slot ${activeSlot} lead "${candidate.business_name}" (${candidate.id}) audit is in progress (pending). Added to waiting list (will be sent in last).`
+            );
+            // Move to end of waiting queue
+            await query(`UPDATE leads SET created_at = NOW(), updated_at = NOW() WHERE id = $1`, [candidate.id]);
             continue;
           }
 
@@ -1157,7 +1312,7 @@ export class FiveSlotSenderService {
             );
 
             const failureType: 'AUDIT_FAILED' | 'AUDIT_TIMEOUT' | 'PDF_MISSING' =
-              !isValidPdfFile(candidate.audit_pdf_path) && candidate.audit_status === 'ready'
+              !isValidPdfFile(candidate.audit_pdf_path) && isAuditComplete
                 ? 'PDF_MISSING'
                 : candidate.audit_status === 'failed'
                 ? 'AUDIT_FAILED'
@@ -1175,7 +1330,18 @@ export class FiveSlotSenderService {
               attempts: retries,
             });
           } else {
-            await query(`UPDATE leads SET audit_retry_count = $1, updated_at = NOW() WHERE id = $2`, [retries, candidate.id]);
+            console.log(
+              `[FiveSlotSenderService] ⏳ Slot ${activeSlot} lead "${candidate.business_name}" (${candidate.id}) audit not ready. Added to waiting list (will be sent in last).`
+            );
+            // Move to end of waiting queue
+            await query(
+              `UPDATE leads 
+               SET audit_retry_count = $1, 
+                   created_at = NOW(), 
+                   updated_at = NOW() 
+               WHERE id = $2`,
+              [retries, candidate.id]
+            );
             this.triggerAuditForLead(candidate.id).catch(() => {});
           }
 
@@ -1204,7 +1370,7 @@ export class FiveSlotSenderService {
         return {
           activeSlot,
           dispatched: false,
-          reason: `Slot ${activeSlot} candidates are awaiting audit completion; slot will send on next ready candidate.`,
+          reason: `Slot ${activeSlot} candidates are awaiting audit completion (added to waiting list; will be sent in last).`,
         };
       }
 
@@ -1561,6 +1727,11 @@ export class FiveSlotSenderService {
       alert: string | null;
     };
   }> {
+    // Auto-assign any unassigned leads across 5 slots so counts immediately reflect in the UI
+    await this.autoAssignUnassignedLeads().catch((err) => {
+      console.warn('[FiveSlotSenderService] Auto-assign error in getSlotsStatus:', err?.message);
+    });
+
     const rawSettings = await this.getSettings();
     const grid = this.computeGridState(new Date(), rawSettings);
 
@@ -1569,28 +1740,94 @@ export class FiveSlotSenderService {
       total_queued: string;
       ready_count: string;
       waiting_audit_count: string;
+      sent_count: string;
+      received_json_count: string;
+      waiting_count: string;
       last_sent_at: string | null;
     }>(
       `SELECT
          slot_id,
-         COUNT(*) as total_queued,
-         COUNT(*) FILTER (WHERE audit_status = 'ready' AND audit_pdf_path IS NOT NULL AND audit_pdf_path != '') as ready_count,
-         COUNT(*) FILTER (WHERE audit_status = 'pending' OR audit_status = 'none' OR audit_status IS NULL) as waiting_audit_count,
+         -- Total active remaining to be sent (decreases as leads reach completed)
+         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed')) as total_queued,
+         -- Ready to send with audit
+         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed') AND audit_status IN ('ready', 'audit_completed') AND audit_pdf_path IS NOT NULL AND audit_pdf_path != '') as ready_count,
+         -- Waiting for audit
+         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed') AND (audit_status = 'pending' OR audit_status = 'none' OR audit_status IS NULL)) as waiting_audit_count,
+         -- Total emails sent successfully by this slot
+         COUNT(*) FILTER (WHERE last_sent_at IS NOT NULL OR last_contacted_at IS NOT NULL OR outreach_stage IN ('followup_1', 'followup_2', 'followup_3', 'completed')) as sent_count,
+         -- Total received JSON
+         COUNT(*) FILTER (WHERE audit_status IN ('ready', 'audit_completed') OR (audit_findings IS NOT NULL AND audit_findings::text != '[]')) as received_json_count,
+         -- Waiting count (decreases when sent/completed)
+         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed')) as waiting_count,
          MAX(last_contacted_at) as last_sent_at
        FROM leads
        WHERE deleted_at IS NULL
-         AND status = 'active'
          AND consent_status = 'none'
          AND slot_id IS NOT NULL
        GROUP BY slot_id`
     );
 
-    const countMap = new Map<SlotId, { total: number; ready: number; waiting: number; lastSent: string | null }>();
+    // Fetch up to 5 recent leads per slot with detailed 4-step pipeline status
+    const slotLeadsRes = await query<{
+      id: string;
+      business_name: string;
+      website: string;
+      slot_id: SlotId;
+      status: string;
+      outreach_stage: string;
+      audit_status: string;
+      audit_requested_at: string | null;
+      audit_ready_at: string | null;
+      audit_findings: any;
+      audit_pdf_path: string | null;
+      last_sent_at: string | null;
+      metadata: any;
+    }>(
+      `SELECT id, business_name, website, slot_id, status, outreach_stage, audit_status,
+              audit_requested_at, audit_ready_at, audit_findings, audit_pdf_path, last_sent_at, metadata
+       FROM leads
+       WHERE deleted_at IS NULL
+         AND slot_id IS NOT NULL
+       ORDER BY updated_at DESC`
+    );
+
+    const slotLeadsMap = new Map<SlotId, SlotLeadMilestone[]>();
+    slotLeadsRes.rows.forEach((row) => {
+      const existing = slotLeadsMap.get(row.slot_id) || [];
+      if (existing.length < 5) {
+        existing.push({
+          leadId: row.id,
+          businessName: row.business_name,
+          website: row.website,
+          stage: row.outreach_stage || 'initial',
+          websiteSentToTd: Boolean(row.audit_requested_at || (row.audit_status && row.audit_status !== 'none')),
+          receivedJson: Boolean(row.audit_status === 'ready' || row.audit_status === 'audit_completed' || (row.audit_findings && JSON.stringify(row.audit_findings) !== '[]')),
+          createdPdf: Boolean(row.audit_pdf_path && row.audit_pdf_path.trim().length > 0),
+          emailDraftedAndSent: Boolean(row.last_sent_at || ['followup_1', 'followup_2', 'followup_3', 'completed'].includes(row.outreach_stage)),
+          matchedService: row.metadata?.matched_service?.serviceName || 'Core Web Vitals & Performance',
+        });
+        slotLeadsMap.set(row.slot_id, existing);
+      }
+    });
+
+    const countMap = new Map<SlotId, {
+      total: number;
+      ready: number;
+      waiting: number;
+      sent: number;
+      receivedJson: number;
+      waitingCount: number;
+      lastSent: string | null;
+    }>();
+
     countsRes.rows.forEach((r) => {
       countMap.set(r.slot_id, {
         total: parseInt(r.total_queued, 10),
         ready: parseInt(r.ready_count, 10),
         waiting: parseInt(r.waiting_audit_count, 10),
+        sent: parseInt(r.sent_count, 10),
+        receivedJson: parseInt(r.received_json_count, 10),
+        waitingCount: parseInt(r.waiting_count, 10),
         lastSent: r.last_sent_at,
       });
     });
@@ -1599,7 +1836,15 @@ export class FiveSlotSenderService {
     for (let i = 0; i < SLOTS.length; i++) {
       const slotId = SLOTS[i];
       const mailbox = await this.getMailboxForSlot(i);
-      const data = countMap.get(slotId) || { total: 0, ready: 0, waiting: 0, lastSent: null };
+      const data = countMap.get(slotId) || {
+        total: 0,
+        ready: 0,
+        waiting: 0,
+        sent: 0,
+        receivedJson: 0,
+        waitingCount: 0,
+        lastSent: null,
+      };
       const nextTime = grid.slotTimes[slotId].nextDate.toISOString();
 
       slots.push({
@@ -1612,9 +1857,13 @@ export class FiveSlotSenderService {
         queuedCount: data.total,
         readyToSendCount: data.ready,
         waitingAuditCount: data.waiting,
+        sentCount: data.sent,
+        receivedJsonCount: data.receivedJson,
+        waitingCount: data.waitingCount,
         nextSendTime: nextTime,
         lastSendTime: data.lastSent,
         status: grid.currentActiveSlot === slotId ? 'active' : 'waiting',
+        leads: slotLeadsMap.get(slotId) || [],
       });
     }
 

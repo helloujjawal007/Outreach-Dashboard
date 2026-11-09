@@ -35,9 +35,10 @@ interface Props {
   onClose: () => void;
   store: Store;
   defaultListId?: string;
+  onScheduled?: () => void;
 }
 
-export function ScheduleListModal({ open, onClose, store, defaultListId }: Props) {
+export function ScheduleListModal({ open, onClose, store, defaultListId, onScheduled }: Props) {
   const [activeTab, setActiveTab] = useState<'schedule' | 'dispatches'>('schedule');
 
   // Form Configuration
@@ -412,16 +413,32 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
             ? `WhatsApp (${intervalDesc} anti-ban pacing)`
             : `LinkedIn (${intervalDesc} pacing)`;
 
-        setSubmitFeedback({
-          type: 'success',
-          message: `${result.message} [Channel: ${channelLabel}]. Check the Dispatches tab to monitor live progress.`,
-        });
-        // Refresh store lists and queue
-        await store.fetchDispatches();
-        // Automatically switch to dispatches tab after 1.2s to show queued/sent records
-        setTimeout(() => {
-          setActiveTab('dispatches');
-        }, 1200);
+        if (channel === 'email') {
+          setSubmitFeedback({
+            type: 'success',
+            message: `${result.message} Allocated to the 5-Slot Staggered Scheduler. Redirecting to 5-Slot Sender...`,
+          });
+          await store.fetchLeads();
+          await store.refreshAll();
+          if (window.location.hash !== '#crm') {
+            window.location.hash = '#crm';
+          }
+          onScheduled?.();
+          setTimeout(() => {
+            onClose();
+          }, 400);
+        } else {
+          setSubmitFeedback({
+            type: 'success',
+            message: `${result.message} [Channel: ${channelLabel}]. Check the Dispatches tab to monitor live progress.`,
+          });
+          // Refresh store lists and queue
+          await store.fetchDispatches();
+          // Automatically switch to dispatches tab after 1.2s to show queued/sent records
+          setTimeout(() => {
+            setActiveTab('dispatches');
+          }, 1200);
+        }
       } else {
         setSubmitFeedback({
           type: 'error',
@@ -727,126 +744,30 @@ export function ScheduleListModal({ open, onClose, store, defaultListId }: Props
                 </div>
               </div>
 
-              {/* Channel-Specific Configuration Card */}
+              {/* Streamlined 5-Slot Engine Delivery Card */}
               {channel === 'email' && (
-                <div className="p-3 rounded-lg border border-brand-200 bg-brand-50/40 space-y-2.5 animate-in fade-in">
+                <div className="p-3.5 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-indigo-50/50 space-y-2 animate-in fade-in shadow-2xs">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Split size={14} className="text-brand-600" />
-                      <span className="text-xs font-bold text-slate-800">
-                        {selectedInboxes.length <= 1
-                          ? 'Sender Inbox & Delivery Load (100% via Single Account)'
-                          : selectedInboxes.length === 2
-                          ? 'Sender Inboxes & 50/50 Equal Split'
-                          : `Sender Inboxes & ${selectedInboxes.length}-Way Dynamic Split`}
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span className="text-xs font-bold text-indigo-950">
+                        5-Agent Virtual Slot Method Active
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={selectAllInboxes}
-                      className="text-[11px] font-semibold text-brand-600 hover:text-brand-700 hover:underline"
-                    >
-                      Select All Inboxes
-                    </button>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
+                      Slots A • B • C • D • E
+                    </span>
                   </div>
 
-                  <p className="text-[11px] text-slate-600 leading-tight">
-                    {selectedInboxes.length <= 1
-                      ? `Single inbox connected/selected. All ${eligibleLeadsCount} emails will route through this account (100% load). When 2 or more inboxes are connected, workload automatically balances evenly across them (e.g. 50/50 for 2, 33% each for 3).`
-                      : selectedInboxes.length === 2
-                      ? `2 inboxes selected: dispatches are automatically split 50/50 (${splitBreakdown[0]?.assignedCount || 0} & ${splitBreakdown[1]?.assignedCount || 0} emails) across both inboxes.`
-                      : `${selectedInboxes.length} inboxes selected: dispatches are split evenly across all accounts (~${Math.round(100 / selectedInboxes.length)}% each) to safeguard sending reputation.`}
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Selected leads will be automatically divided equally across all 5 virtual sending agents on a deterministic staggered schedule.
+                    Sending will route via <strong>cloudconsultancy.ad@gmail.com</strong> with audit-first protection and zero send conflicts.
                   </p>
 
-                  {/* Inboxes Checkbox List */}
-                  <div className="space-y-1.5 max-h-36 overflow-y-auto">
-                    {isLoadingInboxes ? (
-                      <div className="flex items-center justify-center p-3 text-xs text-slate-500">
-                        <RefreshCw size={12} className="animate-spin text-brand-600 mr-1.5" />
-                        <span>Loading sender inboxes...</span>
-                      </div>
-                    ) : inboxes.map((inbox) => {
-                      const isSelected = selectedInboxIds.includes(inbox.id);
-                      return (
-                        <div
-                          key={inbox.id}
-                          onClick={() => toggleInboxSelection(inbox.id)}
-                          className={`flex items-center justify-between p-2 rounded-md border text-xs cursor-pointer transition-all ${
-                            isSelected
-                              ? 'bg-white border-brand-400 shadow-2xs'
-                              : 'bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-100'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {isSelected ? (
-                              <CheckSquare size={14} className="text-brand-600 shrink-0" />
-                            ) : (
-                              <Square size={14} className="text-slate-400 shrink-0" />
-                            )}
-                            <div>
-                              <p className="font-semibold text-slate-800 leading-tight">
-                                {inbox.email}
-                              </p>
-                              <p className="text-[10px] text-slate-500">
-                                {inbox.sender_name} • {inbox.provider.replace('_', ' ')}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            Health {inbox.health_score || 98}%
-                          </span>
-                        </div>
-                      );
-                    })}
+                  <div className="pt-1 flex items-center justify-between text-[10px] text-slate-500 font-medium border-t border-indigo-100">
+                    <span>Target: {eligibleLeadsCount} Leads to Partition</span>
+                    <span className="text-emerald-700 font-bold">✓ Audit Gate Enabled</span>
                   </div>
-
-                  {/* Live Rotational Split Indicator */}
-                  {selectedInboxes.length >= 2 ? (
-                    <div className="p-2.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs space-y-1">
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="flex items-center gap-1.5">
-                          <Split size={13} className="text-emerald-700" />
-                          <span>
-                            {selectedInboxes.length === 2 ? '⚖️ 50 / 50 Equal Split Active' : `⚖️ ${selectedInboxes.length}-Way Rotational Split Active`}
-                          </span>
-                        </span>
-                        <span className="text-[10px] bg-emerald-200/60 px-1.5 py-0.5 rounded font-bold">
-                          {eligibleLeadsCount} Total Emails
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-emerald-800 space-y-0.5">
-                        {splitBreakdown.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between">
-                            <span className="truncate max-w-[220px]">
-                              • <strong className="font-semibold">{item.email}</strong>:
-                            </span>
-                            <span className="font-bold">
-                              {item.assignedCount} emails ({item.percentage}%)
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : selectedInboxes.length === 1 ? (
-                    <div className="p-2.5 rounded-lg bg-amber-50/90 border border-amber-200 text-amber-900 text-[11px] space-y-1">
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.2 rounded bg-amber-200/70 text-amber-900 text-[10px]">100% Load</span>
-                          <span>Single Sender Active</span>
-                        </span>
-                        <span className="text-[10px] text-amber-800">
-                          {eligibleLeadsCount} Emails
-                        </span>
-                      </div>
-                      <p className="text-slate-700 leading-relaxed">
-                        All {eligibleLeadsCount} emails will route via <strong>{selectedInboxes[0]?.email}</strong>. When two or more inboxes are connected, the sending load is automatically distributed evenly (50/50 for 2 inboxes, 33% each for 3).
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="p-2 rounded bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">
-                      ⚠️ Please select at least one sender inbox.
-                    </div>
-                  )}
                 </div>
               )}
 

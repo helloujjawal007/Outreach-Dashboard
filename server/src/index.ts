@@ -34,8 +34,6 @@ import { failuresRouter } from './routes/failures';
 import { slotsRouter } from './routes/slots';
 import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
-import { emailSchedulerService } from './services/emailSchedulerService';
-import { autonomousDripEngine } from './services/autonomousDripEngine';
 import { fiveSlotSenderService } from './services/fiveSlotSenderService';
 // Prevent unhandled errors or socket drops from crashing the Express API server
 process.on('uncaughtException', (err) => {
@@ -374,10 +372,7 @@ async function startServer() {
   // 1. Email Channel: Automated Gmail IMAP polling for inbound replies (every 30s)
   emailInboundService.startPolling(30000);
 
-  // 2. Email Channel: Automated Email Scheduler for timed follow-ups (every 30s)
-  emailSchedulerService.startScheduler(30000);
-
-  // 3. WhatsApp Channel: Auto-restore persistent WhatsApp session from PostgreSQL
+  // 2. WhatsApp Channel: Auto-restore persistent WhatsApp session from PostgreSQL
   try {
     const { whatsappSessionService } = await import('./services/whatsappSessionService');
     await whatsappSessionService.autoRestoreSession();
@@ -385,14 +380,7 @@ async function startServer() {
     console.warn('[WhatsApp Warning] Failed to auto-restore WhatsApp session:', err);
   }
 
-  // 4. Cadence: Follow-up cadence engine (every 60s, lightweight)
-  try {
-    autonomousDripEngine.startScheduler(60000);
-  } catch (err) {
-    console.warn('[Cadence Warning] Autonomous drip engine notice:', err);
-  }
-
-  // 5. 5-Slot Staggered Sender: Deterministic Grid Scheduler (every 10s tick)
+  // 3. 5-Slot Staggered Sender: Deterministic Grid Scheduler (every 10s tick) - Unified Outbound Scheduler
   try {
     fiveSlotSenderService.startScheduler(10000);
   } catch (err) {

@@ -411,6 +411,9 @@ function App() {
       <ScheduleListModal
         open={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
+        onScheduled={() => {
+          window.location.hash = '#crm';
+        }}
         store={store}
       />
 

@@ -1,0 +1,36 @@
+{
+  "hotspots": [
+    {
+      "label": "EmailSchedulerService",
+      "risk": 0.812,
+      "type": "CLASS"
+    },
+    {
+      "label": "GmbScraperService",
+      "risk": 0.657,
+      "type": "CLASS"
+    },
+    {
+      "label": "FiveSlotSenderService",
+      "risk": 0.579,
+      "type": "CLASS"
+    },
+    {
+      "label": "ClientAuditIntelligenceService",
+      "risk": 0.469,
+      "type": "CLASS"
+    },
+    {
+      "label": "StageOutreachService",
+      "risk": 0.456,
+      "type": "CLASS"
+    }
+  ],
+  "blast_radius": {
+    "query()": 126,
+    "map": 47,
+    "test": 44,
+    "FiveSlotSenderService": 29,
+    "LinkedInService": 27
+  }
+}

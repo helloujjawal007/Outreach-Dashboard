@@ -783,6 +783,17 @@ export class EmailSchedulerService {
 
     let insertedCount = 0;
 
+    // Automatically partition email leads across the 5 slots (A-E)
+    if (channel === 'email') {
+      import('./fiveSlotSenderService').then(({ fiveSlotSenderService }) => {
+        fiveSlotSenderService.autoAssignUnassignedLeads({
+          listId: listId !== 'all' && listId !== 'all-leads' ? listId : undefined,
+        }).catch((err) => {
+          console.warn('[Scheduler] Auto-assign to 5 slots error:', err?.message);
+        });
+      });
+    }
+
     for (let i = 0; i < deduplicatedLeads.length; i++) {
       const lead = deduplicatedLeads[i];
       const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
@@ -1214,8 +1225,9 @@ export class EmailSchedulerService {
           if (channel === 'whatsapp') {
             await this.executeWhatsAppDispatch(dispatch);
           } else if (channel === 'email') {
-            const shouldBreak = await this.executeEmailDispatch(dispatch);
-            if (shouldBreak) break;
+            // Unified into 5-Slot Staggered Sender; legacy queue records are marked completed
+            console.log(`[Scheduler] Email dispatch ${dispatch.id} delegated to 5-Slot Staggered Sender.`);
+            await query(`UPDATE scheduled_dispatches SET status = 'completed', updated_at = NOW() WHERE id = $1`, [dispatch.id]);
           } else if (channel === 'facebook') {
             await this.executeFacebookDispatch(dispatch);
           } else if (channel === 'instagram') {

@@ -6,6 +6,7 @@ import { query } from '../config/db';
 import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
 import { suppressionService } from '../services/suppressionService';
 import { isValidPdfBuffer, validateAuditAsset } from '../utils/auditPolicy';
+import { serviceRecommendationEngine } from '../services/serviceRecommendationEngine';
 
 export const auditCallbackRouter = Router();
 
@@ -304,7 +305,45 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    // 5.1 Cloud Consultancy Service Matcher & Confusion Gate (https://cloudconsultancy.in/)
+    const serviceAnalysis = serviceRecommendationEngine.analyzeAudit(
+      validation.findings,
+      validation.score,
+      { businessName: lead.business_name, website: lead.website }
+    );
+
+    if (serviceAnalysis.isConfused) {
+      console.warn(`[AuditCallback] ⚠️ Confusion in TD audit analysis for "${lead.business_name}" (${leadId}): ${serviceAnalysis.confusionReason}`);
+      await query(
+        `UPDATE leads SET 
+          status = 'manual_review', 
+          manual_review_reason = $1, 
+          audit_status = 'failed',
+          updated_at = NOW() 
+         WHERE id = $2`,
+        [`Audit analysis confusion: ${serviceAnalysis.confusionReason}`, leadId]
+      );
+      const { failureLogService } = await import('../services/failureLogService');
+      await failureLogService.logFailure({
+        leadId,
+        company: lead.business_name,
+        website: lead.website,
+        email: lead.email,
+        slotId: (lead.slot_id as any) || 'A',
+        stage: lead.outreach_stage || 'initial',
+        type: 'AUDIT_CONFUSION' as any,
+        errorMessage: serviceAnalysis.confusionReason || 'Ambiguous audit findings; moved to manual review',
+      });
+      return res.status(200).json({
+        success: true,
+        quarantined: true,
+        reason: serviceAnalysis.confusionReason,
+        leadId,
+      });
+    }
+
     // 6. Database Update
+    const primaryServiceJson = JSON.stringify(serviceAnalysis.primaryService || null);
     await query(
       `UPDATE leads SET
         audit_status = 'ready',
@@ -313,15 +352,17 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
         audit_score = $3,
         audit_pdf_name = $4,
         audit_pdf_path = $5,
+        metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{matched_service}', $6::jsonb),
         audit_ready_at = NOW(),
         updated_at = NOW()
-       WHERE id = $6`,
+       WHERE id = $7`,
       [
         JSON.stringify(validation.findings),
         finalTakeaways || validation.findings.slice(0, 3).join('; '),
         validation.score,
         finalPdfName || (finalPdfPath ? path.basename(finalPdfPath) : null),
         finalPdfPath,
+        primaryServiceJson,
         leadId,
       ]
     );

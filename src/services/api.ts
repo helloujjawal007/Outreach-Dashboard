@@ -2194,9 +2194,21 @@ export const api = {
     });
   },
 
-  async triggerSlotTick(): Promise<{ success: boolean; activeSlot: string | null; dispatched: boolean; reason?: string }> {
-    return request<{ success: boolean; activeSlot: string | null; dispatched: boolean; reason?: string }>('/slots/trigger-tick', {
+  async triggerSlotTick(force: boolean = false): Promise<{ success: boolean; activeSlot: string | null; dispatched: boolean; leadId?: string; reason?: string }> {
+    return request<{ success: boolean; activeSlot: string | null; dispatched: boolean; leadId?: string; reason?: string }>('/slots/trigger-tick', {
       method: 'POST',
+      body: JSON.stringify({ force }),
+    });
+  },
+
+  async distributeLeadsToSlots(options?: { rebalanceAll?: boolean; listId?: string }): Promise<{
+    success: boolean;
+    assignedCount: number;
+    distribution: Record<string, number>;
+  }> {
+    return request<{ success: boolean; assignedCount: number; distribution: Record<string, number> }>('/slots/distribute-leads', {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
     });
   },
 

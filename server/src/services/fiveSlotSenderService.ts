@@ -189,6 +189,136 @@ export class FiveSlotSenderService {
     console.log('[FiveSlotSenderService] 🟢 Circuit breaker successfully resumed. Scheduler unpaused.');
   }
 
+  /**
+   * Toggles pause / resume state for 5-slot sending
+   */
+  async togglePause(pause?: boolean): Promise<{ is_active: boolean; message: string }> {
+    const current = await this.getSettings();
+    const targetActiveState = pause !== undefined ? !pause : !current.is_active;
+
+    if (targetActiveState) {
+      this.resetCircuitBreaker();
+      await query(
+        `UPDATE slot_sender_settings 
+         SET is_active = true, circuit_breaker_tripped = false, consecutive_auth_failures = 0, updated_at = NOW() 
+         WHERE id = 'default'`
+      );
+      console.log('[FiveSlotSenderService] 🟢 5-Slot sender resumed (24/7 sending enabled)');
+      return { is_active: true, message: '5-Slot sender resumed. Automated 24/7 sending active.' };
+    } else {
+      await query(
+        `UPDATE slot_sender_settings 
+         SET is_active = false, updated_at = NOW() 
+         WHERE id = 'default'`
+      );
+      console.log('[FiveSlotSenderService] ⏸️ 5-Slot sender paused');
+      return { is_active: false, message: '5-Slot sender paused. Sending halted across all slots.' };
+    }
+  }
+
+  /**
+   * Terminates active email sending schedule:
+   * - Unassigns leads from the selected slot (or all slots)
+   * - Resets outreach_stage back to NULL
+   * - Cancels any pending scheduled dispatches
+   * - Optionally pauses sender
+   * Crucially: Preserves all lead data and contacts in CRM!
+   */
+  async terminateSlotSchedule(options?: {
+    slotId?: SlotId | 'all';
+    pauseSender?: boolean;
+  }): Promise<{
+    success: boolean;
+    slotId: SlotId | 'all';
+    terminatedLeadsCount: number;
+    cancelledDispatchesCount: number;
+    message: string;
+  }> {
+    const targetSlot = options?.slotId || 'all';
+    const pauseSender = options?.pauseSender ?? (targetSlot === 'all');
+
+    let terminatedLeadsCount = 0;
+    let cancelledDispatchesCount = 0;
+
+    if (targetSlot === 'all') {
+      if (pauseSender) {
+        await query(
+          `UPDATE slot_sender_settings SET is_active = false, updated_at = NOW() WHERE id = 'default'`
+        );
+      }
+
+      const leadRes = await query<{ id: string }>(
+        `UPDATE leads 
+         SET slot_id = NULL, 
+             slot_assigned_at = NULL, 
+             outreach_stage = CASE WHEN outreach_stage IN ('initial', 'sending') THEN NULL ELSE outreach_stage END,
+             claimed_stage = NULL, 
+             claimed_at = NULL,
+             updated_at = NOW()
+         WHERE slot_id IS NOT NULL 
+           AND (outreach_stage IS NULL OR outreach_stage IN ('initial', 'sending'))
+         RETURNING id`
+      );
+      terminatedLeadsCount = leadRes.rowCount || 0;
+
+      const dispRes = await query<{ id: string }>(
+        `UPDATE scheduled_dispatches 
+         SET status = 'cancelled', 
+             error_message = 'Schedule terminated by user', 
+             updated_at = NOW()
+         WHERE status = 'pending'
+         RETURNING id`
+      );
+      cancelledDispatchesCount = dispRes.rowCount || 0;
+
+      console.log(`[FiveSlotSenderService] 🛑 Terminated entire 5-slot sending schedule (${terminatedLeadsCount} leads unassigned, ${cancelledDispatchesCount} dispatches cancelled). Leads preserved in CRM.`);
+
+      return {
+        success: true,
+        slotId: 'all',
+        terminatedLeadsCount,
+        cancelledDispatchesCount,
+        message: `Successfully terminated sending schedule across all slots (${terminatedLeadsCount} leads unassigned, ${cancelledDispatchesCount} pending dispatches cancelled). Leads remain safely in CRM.`,
+      };
+    } else {
+      const leadRes = await query<{ id: string }>(
+        `UPDATE leads 
+         SET slot_id = NULL, 
+             slot_assigned_at = NULL, 
+             outreach_stage = CASE WHEN outreach_stage IN ('initial', 'sending') THEN NULL ELSE outreach_stage END,
+             claimed_stage = NULL, 
+             claimed_at = NULL,
+             updated_at = NOW()
+         WHERE slot_id = $1 
+           AND (outreach_stage IS NULL OR outreach_stage IN ('initial', 'sending'))
+         RETURNING id`,
+        [targetSlot]
+      );
+      terminatedLeadsCount = leadRes.rowCount || 0;
+
+      const dispRes = await query<{ id: string }>(
+        `UPDATE scheduled_dispatches 
+         SET status = 'cancelled', 
+             error_message = 'Slot ' || $1 || ' schedule terminated by user', 
+             updated_at = NOW()
+         WHERE status = 'pending' AND metadata->>'slot_id' = $1
+         RETURNING id`,
+        [targetSlot]
+      );
+      cancelledDispatchesCount = dispRes.rowCount || 0;
+
+      console.log(`[FiveSlotSenderService] 🛑 Terminated Slot ${targetSlot} schedule (${terminatedLeadsCount} leads unassigned, ${cancelledDispatchesCount} dispatches cancelled). Leads preserved in CRM.`);
+
+      return {
+        success: true,
+        slotId: targetSlot,
+        terminatedLeadsCount,
+        cancelledDispatchesCount,
+        message: `Successfully terminated Slot ${targetSlot} schedule (${terminatedLeadsCount} leads unassigned, ${cancelledDispatchesCount} pending dispatches cancelled). Leads remain safely in CRM.`,
+      };
+    }
+  }
+
   tripCircuitBreaker(reason: string): void {
     this.isCircuitBreakerTripped = true;
     this.circuitBreakerAlert = reason;
@@ -217,8 +347,9 @@ export class FiveSlotSenderService {
           slot_cycle_min: parseFloat(row.slot_cycle_min as any) || 10,
           slot_offset_min: parseFloat(row.slot_offset_min as any) || 2,
           daily_send_limit: row.daily_send_limit !== null && row.daily_send_limit !== undefined ? parseInt(row.daily_send_limit as any, 10) : 150,
-          send_window_start_hour: row.send_window_start_hour !== null && row.send_window_start_hour !== undefined ? parseInt(row.send_window_start_hour as any, 10) : 8,
-          send_window_end_hour: parseInt(row.send_window_end_hour as any, 10) || 19,
+          send_window_start_hour: row.send_window_start_hour !== null && row.send_window_start_hour !== undefined ? parseInt(row.send_window_start_hour as any, 10) : 0,
+          send_window_end_hour: row.send_window_end_hour !== null && row.send_window_end_hour !== undefined ? parseInt(row.send_window_end_hour as any, 10) : 24,
+          weekdays_only: row.weekdays_only ?? false,
           global_min_gap_sec: parseInt(row.global_min_gap_sec as any, 10) || 90,
           td_endpoint_url: row.td_endpoint_url || 'http://127.0.0.1:5055/api/od/audit-request',
           whatsapp_cold_outreach_enabled: row.whatsapp_cold_outreach_enabled ?? false,
@@ -237,9 +368,9 @@ export class FiveSlotSenderService {
       td_shared_secret: 'td-secret-key-2026',
       max_audit_retries: 3,
       daily_send_limit: 150,
-      send_window_start_hour: 8,
-      send_window_end_hour: 19,
-      weekdays_only: true,
+      send_window_start_hour: 0,
+      send_window_end_hour: 24,
+      weekdays_only: false,
       is_active: true,
       send_window_timezone: 'UTC',
       global_min_gap_sec: 90,
@@ -1073,7 +1204,9 @@ export class FiveSlotSenderService {
         currentDay = tzDate.getDay();
       } catch {}
 
-      if (!bypassWindow) {
+      const is24_7 = settings.send_window_start_hour === 0 && settings.send_window_end_hour >= 24 && !settings.weekdays_only;
+
+      if (!bypassWindow && !is24_7) {
         if (settings.weekdays_only && (currentDay === 0 || currentDay === 6)) {
           return { activeSlot, dispatched: false, reason: `Outside send window: Weekend resting (${marketTz})` };
         }
@@ -1727,11 +1860,6 @@ export class FiveSlotSenderService {
       alert: string | null;
     };
   }> {
-    // Auto-assign any unassigned leads across 5 slots so counts immediately reflect in the UI
-    await this.autoAssignUnassignedLeads().catch((err) => {
-      console.warn('[FiveSlotSenderService] Auto-assign error in getSlotsStatus:', err?.message);
-    });
-
     const rawSettings = await this.getSettings();
     const grid = this.computeGridState(new Date(), rawSettings);
 

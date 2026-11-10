@@ -324,17 +324,17 @@ export async function runMigrations() {
           td_shared_secret TEXT DEFAULT 'td-secret-key-2026',
           max_audit_retries INT NOT NULL DEFAULT 3,
           daily_send_limit INT NOT NULL DEFAULT 150,
-          send_window_start_hour INT NOT NULL DEFAULT 8,
-          send_window_end_hour INT NOT NULL DEFAULT 19,
-          weekdays_only BOOLEAN NOT NULL DEFAULT true,
+          send_window_start_hour INT NOT NULL DEFAULT 0,
+          send_window_end_hour INT NOT NULL DEFAULT 24,
+          weekdays_only BOOLEAN NOT NULL DEFAULT false,
           is_active BOOLEAN NOT NULL DEFAULT true,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       ALTER TABLE slot_sender_settings
         ADD COLUMN IF NOT EXISTS daily_send_limit INT NOT NULL DEFAULT 150,
-        ADD COLUMN IF NOT EXISTS send_window_start_hour INT NOT NULL DEFAULT 8,
-        ADD COLUMN IF NOT EXISTS send_window_end_hour INT NOT NULL DEFAULT 19,
-        ADD COLUMN IF NOT EXISTS weekdays_only BOOLEAN NOT NULL DEFAULT true,
+        ADD COLUMN IF NOT EXISTS send_window_start_hour INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS send_window_end_hour INT NOT NULL DEFAULT 24,
+        ADD COLUMN IF NOT EXISTS weekdays_only BOOLEAN NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS circuit_breaker_tripped BOOLEAN NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS consecutive_auth_failures INT NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS send_window_timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
@@ -347,8 +347,13 @@ export async function runMigrations() {
         ALTER COLUMN slot_offset_min TYPE NUMERIC USING slot_offset_min::numeric;
 
       INSERT INTO slot_sender_settings (id, slot_cycle_min, slot_offset_min, anchor_timestamp, td_endpoint_url, td_shared_secret, max_audit_retries, daily_send_limit, send_window_start_hour, send_window_end_hour, weekdays_only, is_active)
-      VALUES ('default', 10, 2, '2026-01-01 00:00:00+00', '', 'td-secret-key-2026', 3, 150, 8, 19, true, true)
+      VALUES ('default', 10, 2, '2026-01-01 00:00:00+00', '', 'td-secret-key-2026', 3, 150, 0, 24, false, true)
       ON CONFLICT (id) DO NOTHING;
+
+      -- Ensure existing settings are updated to 24/7 send window across all days
+      UPDATE slot_sender_settings 
+      SET send_window_start_hour = 0, send_window_end_hour = 24, weekdays_only = false
+      WHERE id = 'default' AND (send_window_start_hour != 0 OR send_window_end_hour != 24 OR weekdays_only != false);
 
       -- Ensure cloudconsultancy.ad@gmail.com is configured as the active primary inbox for all 5 slots
       INSERT INTO connected_inboxes (

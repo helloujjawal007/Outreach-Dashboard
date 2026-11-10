@@ -6,9 +6,11 @@ import {
   Mail,
   Settings as SettingsIcon,
   Play,
+  Pause,
+  Square,
   RefreshCw,
   CheckCircle,
-  AlertCircle,
+  AlertTriangle,
   Layers,
   ChevronDown,
   ChevronUp,
@@ -27,12 +29,23 @@ export function SlotsPanel() {
   const [loading, setLoading] = useState(true);
   const [isTickRunning, setIsTickRunning] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
+  const [isPausing, setIsPausing] = useState(false);
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
+  const [terminatingSlotId, setTerminatingSlotId] = useState<'all' | SlotId>('all');
+  const [isTerminating, setIsTerminating] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [expandedSlot, setExpandedSlot] = useState<SlotId | null>(null);
+  
+  // Settings Form State
   const [cycleMinInput, setCycleMinInput] = useState('10');
   const [offsetMinInput, setOffsetMinInput] = useState('2');
   const [tdUrlInput, setTdUrlInput] = useState('');
   const [tdSecretInput, setTdSecretInput] = useState('');
+  const [is24_7Window, setIs24_7Window] = useState(true);
+  const [sendWindowStartInput, setSendWindowStartInput] = useState('0');
+  const [sendWindowEndInput, setSendWindowEndInput] = useState('24');
+  const [weekdaysOnlyInput, setWeekdaysOnlyInput] = useState(false);
+  const [sendWindowTzInput, setSendWindowTzInput] = useState('UTC');
   const [savingSettings, setSavingSettings] = useState(false);
   const [isTestingTd, setIsTestingTd] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -70,6 +83,16 @@ export function SlotsPanel() {
         setOffsetMinInput(String(res.settings.slot_offset_min));
         setTdUrlInput(res.settings.td_endpoint_url || '');
         setTdSecretInput(res.settings.td_shared_secret || '');
+        
+        const is24_7 =
+          (res.settings.send_window_start_hour === 0 || res.settings.send_window_start_hour === undefined) &&
+          (res.settings.send_window_end_hour === 24 || res.settings.send_window_end_hour === undefined) &&
+          !res.settings.weekdays_only;
+        setIs24_7Window(is24_7);
+        setSendWindowStartInput(String(res.settings.send_window_start_hour ?? 0));
+        setSendWindowEndInput(String(res.settings.send_window_end_hour ?? 24));
+        setWeekdaysOnlyInput(Boolean(res.settings.weekdays_only));
+        setSendWindowTzInput(res.settings.send_window_timezone || 'UTC');
       }
     } catch (err: any) {
       console.warn('[SlotsPanel] fetchStatus error:', err?.message);
@@ -89,6 +112,47 @@ export function SlotsPanel() {
       clearInterval(clockInterval);
     };
   }, [fetchStatus]);
+
+  const handleTogglePause = async () => {
+    setIsPausing(true);
+    setFeedback(null);
+    try {
+      const willPause = settings?.is_active !== false;
+      const res = await api.toggleSlotsPause(willPause);
+      if (res.success) {
+        setFeedback(res.message);
+        await fetchStatus();
+      }
+    } catch (err: any) {
+      setFeedback(`❌ Error toggling pause: ${err?.message}`);
+    } finally {
+      setIsPausing(false);
+      setTimeout(() => setFeedback(null), 6000);
+    }
+  };
+
+  const handleTerminateSchedule = async () => {
+    setIsTerminating(true);
+    setFeedback(null);
+    try {
+      const res = await api.terminateSlotSchedule({
+        slotId: terminatingSlotId === 'all' ? undefined : terminatingSlotId,
+        pauseSender: true,
+      });
+      if (res.success) {
+        setFeedback(`🛑 ${res.message}`);
+        setShowTerminateModal(false);
+        await fetchStatus();
+      } else {
+        setFeedback(`⚠️ ${(res as any).error || 'Failed to terminate schedule'}`);
+      }
+    } catch (err: any) {
+      setFeedback(`❌ Error terminating schedule: ${err?.message}`);
+    } finally {
+      setIsTerminating(false);
+      setTimeout(() => setFeedback(null), 7000);
+    }
+  };
 
   const handleTriggerTick = async (force: boolean = true) => {
     setIsTickRunning(true);
@@ -136,15 +200,29 @@ export function SlotsPanel() {
     try {
       const cycle = parseInt(cycleMinInput, 10) || 10;
       const offset = parseInt(offsetMinInput, 10) || Math.max(1, Math.floor(cycle / 5));
-      const res = await api.updateSlotsSettings({
+
+      const payload: Partial<SlotSenderSettings> = {
         slot_cycle_min: cycle,
         slot_offset_min: offset,
         td_endpoint_url: tdUrlInput.trim(),
         td_shared_secret: tdSecretInput.trim(),
-      });
+        send_window_timezone: sendWindowTzInput.trim() || 'UTC',
+      };
+
+      if (is24_7Window) {
+        payload.send_window_start_hour = 0;
+        payload.send_window_end_hour = 24;
+        payload.weekdays_only = false;
+      } else {
+        payload.send_window_start_hour = parseInt(sendWindowStartInput, 10) || 0;
+        payload.send_window_end_hour = parseInt(sendWindowEndInput, 10) || 24;
+        payload.weekdays_only = weekdaysOnlyInput;
+      }
+
+      const res = await api.updateSlotsSettings(payload);
       if (res.success) {
         setSettings(res.settings);
-        setFeedback('✓ Staggered slot settings updated successfully');
+        setFeedback('✓ Staggered slot & send-window settings updated successfully');
         setShowSettings(false);
         await fetchStatus();
       }
@@ -174,6 +252,8 @@ export function SlotsPanel() {
     E: { border: 'border-rose-200', bg: 'bg-rose-50/50', badge: 'bg-rose-600', text: 'text-rose-900' },
   };
 
+  const isSenderActive = settings?.is_active !== false;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs mb-6 overflow-hidden">
       {/* Header bar */}
@@ -183,25 +263,40 @@ export function SlotsPanel() {
             <Layers size={18} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm font-bold text-slate-900">5-Slot Staggered Scheduler</h3>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
                 Deterministic Grid (Cycle: {settings?.slot_cycle_min || 10}m, Offset: {settings?.slot_offset_min || 2}m)
               </span>
+
+              {/* Active / Paused Indicator */}
+              {isSenderActive ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Automated sending is active 24/7">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active 24/7
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="5-slot sending is paused. Automated emails are halted.">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  ⏸️ PAUSED
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
-              Zero send conflicts. Audit-first pipeline with sticky slot round-robin.
+              Zero send conflicts. 24/7 continuous outreach with sticky slot round-robin.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {feedback && (
-            <span className="text-xs font-medium px-2.5 py-1 rounded bg-slate-100 text-slate-800 border border-slate-200">
+            <span className="text-xs font-medium px-2.5 py-1 rounded bg-slate-100 text-slate-800 border border-slate-200 animate-in fade-in">
               {feedback}
             </span>
           )}
+
+          {/* Divide Leads Button */}
           <button
             onClick={() => handleDistributeLeads(false)}
             disabled={isDistributing}
@@ -211,6 +306,44 @@ export function SlotsPanel() {
             <Split size={13} className={isDistributing ? 'animate-spin text-emerald-600' : 'text-emerald-600'} />
             <span>{isDistributing ? 'Dividing...' : '⚡ Divide Leads to 5 Slots'}</span>
           </button>
+
+          {/* Pause / Resume Button */}
+          {isSenderActive ? (
+            <button
+              onClick={handleTogglePause}
+              disabled={isPausing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+              title="Pause 5-slot sending across all slots. Halts automated email dispatches."
+            >
+              <Pause size={13} className={isPausing ? 'animate-spin text-amber-700' : 'text-amber-700'} />
+              <span>{isPausing ? 'Pausing...' : '⏸️ Pause Sending'}</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleTogglePause}
+              disabled={isPausing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
+              title="Resume 24/7 automated email sending across all slots."
+            >
+              <Play size={13} className={isPausing ? 'animate-spin text-emerald-700' : 'text-emerald-700 fill-emerald-700'} />
+              <span>{isPausing ? 'Resuming...' : '▶️ Resume Sending'}</span>
+            </button>
+          )}
+
+          {/* Terminate Schedule Button */}
+          <button
+            onClick={() => {
+              setTerminatingSlotId('all');
+              setShowTerminateModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer shadow-2xs"
+            title="Terminate email schedule (clears active slot queue, cancels pending dispatches, keeps CRM leads intact)"
+          >
+            <Square size={12} className="text-rose-600 fill-rose-600" />
+            <span>🛑 Terminate Schedule</span>
+          </button>
+
+          {/* Manual Trigger Tick Button */}
           <button
             onClick={() => handleTriggerTick(true)}
             disabled={isTickRunning}
@@ -220,6 +353,8 @@ export function SlotsPanel() {
             <Play size={13} className={isTickRunning ? 'animate-spin' : ''} />
             <span>Trigger Tick</span>
           </button>
+
+          {/* Settings Drawer Toggle */}
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 transition-colors cursor-pointer"
@@ -228,6 +363,8 @@ export function SlotsPanel() {
             <span>Settings</span>
             {showSettings ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
+
+          {/* Refresh Button */}
           <button
             onClick={fetchStatus}
             disabled={loading}
@@ -241,7 +378,7 @@ export function SlotsPanel() {
 
       {/* Settings Panel Drawer */}
       {showSettings && (
-        <form onSubmit={handleSaveSettings} className="p-4 bg-slate-50/80 border-b border-slate-200 text-xs">
+        <form onSubmit={handleSaveSettings} className="p-4 bg-slate-50/80 border-b border-slate-200 text-xs space-y-3.5">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Slot Cycle Time (Min)</label>
@@ -290,26 +427,95 @@ export function SlotsPanel() {
               <span className="text-[10px] text-slate-500">Validated on callback webhook</span>
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-end gap-2">
+
+          {/* Send Window Timezone & 24/7 Controls */}
+          <div className="p-3 bg-white rounded-lg border border-slate-200">
+            <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={is24_7Window}
+                  onChange={(e) => setIs24_7Window(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                />
+                <span className="font-bold text-slate-900 text-xs">
+                  24/7 Send Window (Continuous Automated Outreach - All Hours & Weekends)
+                </span>
+              </label>
+              <span className="text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                {is24_7Window ? '✓ Configured for 24/7 Sending' : 'Custom Hours Mode'}
+              </span>
+            </div>
+
+            {!is24_7Window && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-slate-600 text-[11px] font-medium mb-1">Start Hour (0-23)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={sendWindowStartInput}
+                    onChange={(e) => setSendWindowStartInput(e.target.value)}
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 text-[11px] font-medium mb-1">End Hour (1-24)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={sendWindowEndInput}
+                    onChange={(e) => setSendWindowEndInput(e.target.value)}
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-600 text-[11px] font-medium mb-1">Timezone</label>
+                  <input
+                    type="text"
+                    value={sendWindowTzInput}
+                    onChange={(e) => setSendWindowTzInput(e.target.value)}
+                    placeholder="UTC"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs"
+                  />
+                </div>
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={weekdaysOnlyInput}
+                      onChange={(e) => setWeekdaysOnlyInput(e.target.checked)}
+                      className="rounded text-indigo-600 h-3.5 w-3.5"
+                    />
+                    <span className="text-[11px] text-slate-700">Weekdays Only (Mon-Fri)</span>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={handleTestTdConnection}
               disabled={isTestingTd}
-              className="px-3 py-1 rounded bg-amber-50 border border-amber-300 text-amber-800 font-semibold hover:bg-amber-100 disabled:opacity-50"
+              className="px-3 py-1 rounded bg-amber-50 border border-amber-300 text-amber-800 font-semibold hover:bg-amber-100 disabled:opacity-50 cursor-pointer"
             >
               {isTestingTd ? 'Testing TD...' : 'Test TD Connection'}
             </button>
             <button
               type="button"
               onClick={() => setShowSettings(false)}
-              className="px-3 py-1 rounded bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300"
+              className="px-3 py-1 rounded bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={savingSettings}
-              className="px-4 py-1 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-1 rounded bg-indigo-600 text-white font-semibold hover:bg-indigo-700 disabled:opacity-50 cursor-pointer"
             >
               {savingSettings ? 'Saving...' : 'Save Settings'}
             </button>
@@ -431,7 +637,7 @@ export function SlotsPanel() {
 
             return (
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2 flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-xs text-slate-800">
                       Slot {slot.slotId} Live Pipeline Tracking
@@ -440,9 +646,25 @@ export function SlotsPanel() {
                       {leads.length} Active Leads
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-500">
-                    4 Milestones: Website Sent ➔ Received JSON ➔ Created PDF ➔ Drafted & Sent
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500">
+                      4 Milestones: Website Sent ➔ Received JSON ➔ Created PDF ➔ Drafted & Sent
+                    </span>
+                    {leads.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTerminatingSlotId(slot.slotId);
+                          setShowTerminateModal(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer shadow-2xs"
+                        title={`Clear queue and terminate sending schedule for Slot ${slot.slotId}`}
+                      >
+                        <Square size={10} className="text-rose-600 fill-rose-600" />
+                        <span>Terminate Slot {slot.slotId} Schedule</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {leads.length === 0 ? (
@@ -535,7 +757,99 @@ export function SlotsPanel() {
           })()}
         </div>
       )}
+
+      {/* Terminate Schedule Confirmation Modal */}
+      {showTerminateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full overflow-hidden p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {terminatingSlotId === 'all'
+                    ? 'Terminate Outreach Schedule'
+                    : `Terminate Slot ${terminatingSlotId} Schedule`}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  This will immediately halt automated email sending and unassign scheduled leads from the active slot queue.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5 text-amber-800">
+                <CheckCircle2 size={13} className="text-amber-600 shrink-0" />
+                Leads and audit reports remain safe in CRM
+              </p>
+              <p className="text-[11px] text-amber-700 leading-relaxed">
+                No contacts, email addresses, or audit PDFs will be deleted. Only the automated sending queue schedule is cleared. You can re-divide and reschedule them at any time.
+              </p>
+            </div>
+
+            {/* Target Selection */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">Select Schedule Target:</label>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTerminatingSlotId('all')}
+                  className={`px-3 py-2 rounded-lg border text-left font-medium transition-all cursor-pointer ${
+                    terminatingSlotId === 'all'
+                      ? 'border-rose-500 bg-rose-50 text-rose-800 ring-1 ring-rose-500'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <span className="font-bold block">All 5 Slots (A–E)</span>
+                  <span className="text-[10px] text-slate-500">Terminate entire schedule & pause</span>
+                </button>
+                {(['A', 'B', 'C', 'D', 'E'] as SlotId[]).map((sId) => (
+                  <button
+                    key={sId}
+                    type="button"
+                    onClick={() => setTerminatingSlotId(sId)}
+                    className={`px-3 py-2 rounded-lg border text-left font-medium transition-all cursor-pointer ${
+                      terminatingSlotId === sId
+                        ? 'border-rose-500 bg-rose-50 text-rose-800 ring-1 ring-rose-500'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    }`}
+                  >
+                    <span className="font-bold block">Slot {sId} Only</span>
+                    <span className="text-[10px] text-slate-500">Unassign Slot {sId} queue</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowTerminateModal(false)}
+                disabled={isTerminating}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTerminateSchedule}
+                disabled={isTerminating}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Square size={13} className={isTerminating ? 'animate-spin' : 'fill-white'} />
+                <span>
+                  {isTerminating
+                    ? 'Terminating...'
+                    : terminatingSlotId === 'all'
+                    ? 'Terminate Entire Schedule'
+                    : `Terminate Slot ${terminatingSlotId}`}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

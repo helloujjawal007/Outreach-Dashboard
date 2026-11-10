@@ -2219,6 +2219,26 @@ export const api = {
     });
   },
 
+  async toggleSlotsPause(pause?: boolean): Promise<{ success: boolean; is_active: boolean; message: string }> {
+    return request<{ success: boolean; is_active: boolean; message: string }>('/slots/toggle-pause', {
+      method: 'POST',
+      body: JSON.stringify({ pause }),
+    });
+  },
+
+  async terminateSlotSchedule(options?: { slotId?: string; pauseSender?: boolean }): Promise<{
+    success: boolean;
+    slotId: string;
+    terminatedLeadsCount: number;
+    cancelledDispatchesCount: number;
+    message: string;
+  }> {
+    return request('/slots/terminate', {
+      method: 'POST',
+      body: JSON.stringify(options || {}),
+    });
+  },
+
   // Failures Log API
   async getFailures(params?: {
     type?: string;

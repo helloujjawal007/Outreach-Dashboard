@@ -94,6 +94,37 @@ slotsRouter.post('/reset-circuit-breaker', async (_req: Request, res: Response) 
 });
 
 /**
+ * POST /api/slots/toggle-pause
+ * Toggles pause or resumes 5-slot sending
+ */
+slotsRouter.post('/toggle-pause', async (req: Request, res: Response) => {
+  try {
+    const { pause } = req.body || {};
+    const result = await fiveSlotSenderService.togglePause(pause);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[slotsRouter.toggle-pause] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to toggle pause state' });
+  }
+});
+
+/**
+ * POST /api/slots/terminate
+ * Terminates active sending schedule (all slots or single selected slot)
+ * Unassigns leads from queue, cancels pending dispatches, and leaves CRM leads intact.
+ */
+slotsRouter.post('/terminate', async (req: Request, res: Response) => {
+  try {
+    const { slotId, pauseSender } = req.body || {};
+    const result = await fiveSlotSenderService.terminateSlotSchedule({ slotId, pauseSender });
+    res.json(result);
+  } catch (err: any) {
+    console.error('[slotsRouter.terminate] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to terminate slot schedule' });
+  }
+});
+
+/**
  * POST /api/slots/assign-lead
  * Assign a lead to a sticky round-robin slot and trigger audit
  */

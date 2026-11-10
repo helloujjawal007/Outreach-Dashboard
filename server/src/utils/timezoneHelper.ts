@@ -148,6 +148,17 @@ export function isWithinRecipientWindow(
   const isWeekend = localDay === 0 || localDay === 6;
   const localTimeStr = `${String(localHour).padStart(2, '0')}:${String(localMinute).padStart(2, '0')} ${weekdayPart || ''} (${recipientTz})`;
 
+  // 24/7 Send Window: When startHour=0, endHour>=24, and weekdaysOnly=false, sending is permitted at any time
+  if (startHour === 0 && endHour >= 24 && !weekdaysOnly) {
+    return {
+      inWindow: true,
+      recipientTz,
+      localHour,
+      localDay,
+      localTimeStr,
+    };
+  }
+
   if (weekdaysOnly && isWeekend) {
     return {
       inWindow: false,

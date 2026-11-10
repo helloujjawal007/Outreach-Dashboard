@@ -970,6 +970,12 @@ export interface SlotSenderSettings {
   td_shared_secret: string;
   max_audit_retries: number;
   is_active: boolean;
+  daily_send_limit?: number;
+  send_window_start_hour?: number;
+  send_window_end_hour?: number;
+  weekdays_only?: boolean;
+  send_window_timezone?: string;
+  circuit_breaker_tripped?: boolean;
 }
 
 export interface SlotLeadMilestone {

@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 export async function runMigrations() {
   console.log('[Migration] Starting comprehensive database migration...');
   const schemaPath = path.resolve(__dirname, 'schema.sql');
-  
+
   if (!fs.existsSync(schemaPath)) {
     throw new Error(`Schema file not found at: ${schemaPath}`);
   }
@@ -133,11 +133,13 @@ export async function runMigrations() {
           source VARCHAR(50) DEFAULT 'system',
           created_at TIMESTAMPTZ DEFAULT NOW()
       );
-      ALTER TABLE global_suppression_list 
-        ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'system',
-        ADD COLUMN IF NOT EXISTS domain VARCHAR(255),
-        ADD COLUMN IF NOT EXISTS reason VARCHAR(255) DEFAULT 'unsubscribed',
-        ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE global_suppression_list
+  ADD COLUMN IF NOT EXISTS email VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS phone VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'system',
+  ADD COLUMN IF NOT EXISTS domain VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS reason VARCHAR(255) DEFAULT 'unsubscribed',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
       CREATE INDEX IF NOT EXISTS idx_suppression_email ON global_suppression_list(LOWER(email));
       CREATE INDEX IF NOT EXISTS idx_suppression_phone ON global_suppression_list(phone);
       CREATE INDEX IF NOT EXISTS idx_suppression_domain ON global_suppression_list(LOWER(domain));

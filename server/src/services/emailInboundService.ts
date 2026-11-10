@@ -7,6 +7,7 @@ import { sequenceEnrollmentService } from './sequenceEnrollmentService';
 
 export interface InboundEmailResult {
   syncedCount: number;
+  syncedSentCount?: number;
   newReplies: Array<{
     senderEmail: string;
     businessName: string;
@@ -282,13 +283,18 @@ export class EmailInboundService {
     this.isSyncing = true;
     const newReplies: InboundEmailResult['newReplies'] = [];
     let bouncesRecorded = 0;
+    let syncedSentCount = 0;
 
     const client = new ImapFlow({
       host,
       port,
       secure: true,
+      disableCompression: true,
       auth: { user, pass },
       logger: false,
+      connectionTimeout: 35000,
+      greetingTimeout: 35000,
+      socketTimeout: 60000,
     });
 
     // Prevent unhandled EventEmitter errors from crashing Node process on network drops / idle resets
@@ -297,82 +303,81 @@ export class EmailInboundService {
     });
 
     try {
+      console.log(`[EmailInboundService] 🔄 Connecting to IMAP server ${host}:${port} as ${user}...`);
       await client.connect();
+      console.log('[EmailInboundService] Connected to IMAP. Checking INBOX...');
       const lock = await client.getMailboxLock('INBOX');
 
       try {
         const totalExists = (client.mailbox && typeof client.mailbox === 'object') ? client.mailbox.exists : 0;
-        if (totalExists === 0) {
-          return {
-            syncedCount: 0,
-            newReplies: [],
-            bouncesRecorded: 0,
-            message: 'INBOX is empty',
-          };
-        }
+        if (totalExists > 0) {
+          // Fetch up to the last 40 messages to catch recent replies and bounces
+          const startSeq = Math.max(1, totalExists - 40);
+          const fetchRange = `${startSeq}:*`;
 
-        // Fetch up to the last 40 messages to catch recent replies and bounces
-        const startSeq = Math.max(1, totalExists - 40);
-        const fetchRange = `${startSeq}:*`;
+          for await (const message of client.fetch(fetchRange, {
+            envelope: true,
+            uid: true,
+          })) {
+            try {
+              const messageId =
+                message.envelope?.messageId ||
+                `${message.uid}_${new Date(message.envelope?.date || Date.now()).getTime()}@imap.gmail.com`;
 
-        for await (const message of client.fetch(fetchRange, {
-          envelope: true,
-          source: true,
-          uid: true,
-        })) {
-          try {
-            if (!message.source) continue;
-            const parsed = await simpleParser(message.source);
-            const messageId =
-              parsed.messageId ||
-              message.envelope?.messageId ||
-              `${message.uid}_${new Date(message.envelope?.date || Date.now()).getTime()}@imap.gmail.com`;
-
-            // Check if already processed
-            const checkRes = await query<{
-              id: string;
-              matched_entity_id: string | null;
-            }>(
-              `SELECT id, matched_entity_id FROM processed_inbound_emails WHERE message_id = $1 LIMIT 1`,
-              [messageId]
-            );
-
-            const senderAddress =
-              parsed.from?.value?.[0]?.address?.toLowerCase().trim() ||
-              message.envelope?.from?.[0]?.address?.toLowerCase().trim() ||
-              '';
-
-            const lowerSubject = (parsed.subject || '').toLowerCase();
-            const rawBody = parsed.text || '';
-            const lowerBody = rawBody.toLowerCase();
-
-            // Check for delivery failure / bounce notifications
-            const isBounce =
-              senderAddress.includes('mailer-daemon') ||
-              senderAddress.includes('postmaster') ||
-              lowerSubject.includes('delivery status notification') ||
-              lowerSubject.includes('address not found') ||
-              lowerSubject.includes('undelivered mail') ||
-              lowerSubject.includes('failure notice') ||
-              lowerSubject.includes('returned mail') ||
-              lowerBody.includes('address not found') ||
-              lowerBody.includes('message wasn\'t delivered') ||
-              lowerBody.includes('the email account that you tried to reach does not exist');
-
-            // If already processed, skip to avoid duplicate or infinite bounce processing loops
-            if (checkRes.rows.length > 0) {
-              continue;
-            }
-
-            // Ignore messages sent by ourselves
-            if (senderAddress === user.toLowerCase().trim()) {
-              await query(
-                `INSERT INTO processed_inbound_emails (message_id, uid, sender_email, subject, processed_at)
-                 VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (message_id) DO NOTHING`,
-                [messageId, message.uid, senderAddress, parsed.subject || '']
+              // Check if already processed
+              const checkRes = await query<{
+                id: string;
+                matched_entity_id: string | null;
+              }>(
+                `SELECT id, matched_entity_id FROM processed_inbound_emails WHERE message_id = $1 LIMIT 1`,
+                [messageId]
               );
-              continue;
-            }
+
+              // If already processed, skip immediately without downloading body
+              if (checkRes.rows.length > 0) {
+                continue;
+              }
+
+              const senderAddress =
+                message.envelope?.from?.[0]?.address?.toLowerCase().trim() || '';
+
+              // Ignore messages sent by ourselves
+              if (senderAddress === user.toLowerCase().trim()) {
+                await query(
+                  `INSERT INTO processed_inbound_emails (message_id, uid, sender_email, subject, processed_at)
+                   VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (message_id) DO NOTHING`,
+                  [messageId, message.uid, senderAddress, message.envelope?.subject || '']
+                );
+                continue;
+              }
+
+              // Download and parse full email only for new unprocessed inbound messages
+              let parsed: any;
+              try {
+                const dl = await client.download(String(message.uid), undefined, { uid: true });
+                if (!dl || !dl.content) continue;
+                parsed = await simpleParser(dl.content);
+              } catch (dlErr) {
+                console.warn('[EmailInboundService] Failed to download message', message.uid, dlErr);
+                continue;
+              }
+
+              const lowerSubject = (parsed.subject || message.envelope?.subject || '').toLowerCase();
+              const rawBody = parsed.text || (typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '');
+              const lowerBody = rawBody.toLowerCase();
+
+              // Check for delivery failure / bounce notifications
+              const isBounce =
+                senderAddress.includes('mailer-daemon') ||
+                senderAddress.includes('postmaster') ||
+                lowerSubject.includes('delivery status notification') ||
+                lowerSubject.includes('address not found') ||
+                lowerSubject.includes('undelivered mail') ||
+                lowerSubject.includes('failure notice') ||
+                lowerSubject.includes('returned mail') ||
+                lowerBody.includes('address not found') ||
+                lowerBody.includes('message wasn\'t delivered') ||
+                lowerBody.includes('the email account that you tried to reach does not exist');
 
             if (isBounce) {
               // Track bounce in daily_send_metrics for email channel
@@ -830,14 +835,191 @@ export class EmailInboundService {
             console.error('[EmailInboundService] Error processing message item:', itemErr);
           }
         }
-      } finally {
+      }
+    } finally {
+      try {
+        lock.release();
+      } catch (_lockErr) {
+        // Ignore lock release error if connection already dropped
+      }
+    }
+
+      console.log('[EmailInboundService] 📬 INBOX sync finished. Now checking Sent Mailbox...');
+      // Step 2: Synchronize Sent Mail ([Gmail]/Sent Mail or Sent) so Sent tab & CRM reflect emails sent from Gmail / clients
+      syncedSentCount = 0;
+      try {
+        let sentMailboxPath: string | null = null;
         try {
-          lock.release();
-        } catch (_lockErr) {
-          // Ignore lock release error if connection already dropped
+          const mailboxes = await client.list();
+          const sentBox =
+            mailboxes.find((m) => m.specialUse === '\\Sent' || m.specialUse === '\\\\Sent') ||
+            mailboxes.find((m) => m.path === '[Gmail]/Sent Mail') ||
+            mailboxes.find((m) => /sent/i.test(m.path));
+          sentMailboxPath = sentBox ? sentBox.path : '[Gmail]/Sent Mail';
+        } catch {
+          sentMailboxPath = '[Gmail]/Sent Mail';
         }
+
+        if (sentMailboxPath && client.usable) {
+          const sentLock = await client.getMailboxLock(sentMailboxPath);
+          try {
+            const sentTotalExists = (client.mailbox && typeof client.mailbox === 'object') ? client.mailbox.exists : 0;
+            if (sentTotalExists > 0) {
+              const startSentSeq = Math.max(1, sentTotalExists - 40);
+              const fetchRange = `${startSentSeq}:*`;
+
+              for await (const message of client.fetch(fetchRange, {
+                envelope: true,
+                uid: true,
+              })) {
+                try {
+                  const toAddresses: string[] = [];
+                  if (message.envelope?.to) {
+                    message.envelope.to.forEach((t) => {
+                      if (t.address) toAddresses.push(t.address.toLowerCase().trim());
+                    });
+                  }
+                  if (toAddresses.length === 0) continue;
+
+                  const sentDate = message.envelope?.date || new Date();
+                  const subject = message.envelope?.subject || '(No Subject)';
+                  const messageId =
+                    message.envelope?.messageId ||
+                    `${message.uid}_${new Date(sentDate).getTime()}@sent.gmail.com`;
+
+                  for (const recipientEmail of toAddresses) {
+                    if (!recipientEmail || recipientEmail === user.toLowerCase()) continue;
+
+                    // Match with a lead or client in CRM
+                    const matchedLead = await query<{
+                      id: string;
+                      business_name: string;
+                      status: string;
+                      outreach_stage: string;
+                      slot_id: string;
+                    }>(
+                      `SELECT id, business_name, status, outreach_stage, slot_id 
+                       FROM leads 
+                       WHERE LOWER(email) = $1 AND deleted_at IS NULL 
+                       LIMIT 1`,
+                      [recipientEmail]
+                    );
+
+                    let entityType: 'lead' | 'client' = 'lead';
+                    let entityId: string | null = null;
+                    let businessName = '';
+
+                    if (matchedLead.rows.length > 0) {
+                      entityId = matchedLead.rows[0].id;
+                      businessName = matchedLead.rows[0].business_name;
+                    } else {
+                      const matchedClient = await query<{ id: string; business_name: string }>(
+                        `SELECT id, business_name FROM clients WHERE LOWER(email) = $1 AND deleted_at IS NULL LIMIT 1`,
+                        [recipientEmail]
+                      );
+                      if (matchedClient.rows.length > 0) {
+                        entityType = 'client';
+                        entityId = matchedClient.rows[0].id;
+                        businessName = matchedClient.rows[0].business_name;
+                      }
+                    }
+
+                    if (entityId) {
+                      // Check if already in messages table
+                      const existingMsg = await query<{ id: string }>(
+                        `SELECT m.id FROM messages m 
+                         JOIN conversations c ON c.id = m.conversation_id 
+                         WHERE (m.external_id = $1 OR (m.direction = 'outbound' AND m.sent_at >= $2::timestamptz - INTERVAL '2 minutes' AND m.sent_at <= $2::timestamptz + INTERVAL '2 minutes'))
+                           AND ((c.lead_id = $3) OR (c.client_id = $3))
+                         LIMIT 1`,
+                        [messageId, sentDate, entityId]
+                      );
+
+                      if (existingMsg.rows.length === 0) {
+                        // Download full text only for matched prospect emails
+                        let rawBody = subject;
+                        try {
+                          const dl = await client.download(String(message.uid), undefined, { uid: true });
+                          if (dl && dl.content) {
+                            const parsed = await simpleParser(dl.content);
+                            rawBody = parsed.text || (typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '') || subject;
+                          }
+                        } catch {
+                          rawBody = subject;
+                        }
+
+                        // Find or create conversation
+                        let convId: string;
+                        const convRes = await query<{ id: string }>(
+                          entityType === 'lead'
+                            ? `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'email' LIMIT 1`
+                            : `SELECT id FROM conversations WHERE entity_type = 'client' AND client_id = $1 AND channel = 'email' LIMIT 1`,
+                          [entityId]
+                        );
+
+                        if (convRes.rows.length > 0) {
+                          convId = convRes.rows[0].id;
+                        } else {
+                          const newConv = await query<{ id: string }>(
+                            entityType === 'lead'
+                              ? `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at, unread_count)
+                                 VALUES ('lead', $1, 'email', 'open', $2, 0) RETURNING id`
+                              : `INSERT INTO conversations (entity_type, client_id, channel, status, last_message_at, unread_count)
+                                 VALUES ('client', $1, 'email', 'open', $2, 0) RETURNING id`,
+                            [entityId, sentDate]
+                          );
+                          convId = newConv.rows[0].id;
+                        }
+
+                        // Insert into messages
+                        await query(
+                          `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, created_at, external_id, inbox_email, is_seen, is_read, metadata)
+                           VALUES ($1, 'email', 'outbound', $2, 'sent', $3, $3, $4, $5, true, true, $6)`,
+                          [
+                            convId,
+                            rawBody,
+                            sentDate,
+                            messageId,
+                            user,
+                            JSON.stringify({ subject, synced_from: 'imap_sent_folder' })
+                          ]
+                        );
+
+                        // Update lead's last_sent_at, outreach_stage
+                        if (entityType === 'lead') {
+                          await query(
+                            `UPDATE leads 
+                             SET last_sent_at = COALESCE(last_sent_at, $1),
+                                 last_contacted_at = COALESCE(last_contacted_at, $1),
+                                 outreach_stage = CASE 
+                                   WHEN outreach_stage IS NULL OR outreach_stage = 'initial' THEN 'followup_1' 
+                                   ELSE outreach_stage 
+                                 END,
+                                 updated_at = NOW() 
+                             WHERE id = $2`,
+                            [sentDate, entityId]
+                          );
+                        }
+
+                        syncedSentCount++;
+                        console.log(`[EmailInboundService] 📤 Synced outbound sent email for "${businessName}" (${recipientEmail}) - Subject: "${subject}"`);
+                      }
+                    }
+                  }
+                } catch (sentMsgErr: any) {
+                  console.warn('[EmailInboundService] Error parsing sent message:', sentMsgErr?.message);
+                }
+              }
+            }
+          } finally {
+            try { sentLock.release(); } catch {}
+          }
+        }
+      } catch (sentSyncErr: any) {
+        console.warn('[EmailInboundService] Sent mailbox sync warning (non-fatal):', sentSyncErr?.message || sentSyncErr);
       }
 
+      console.log('[EmailInboundService] 📤 Sent Mail sync finished. Logging out of IMAP...');
       try {
         if (client.usable) {
           await client.logout();
@@ -867,13 +1049,20 @@ export class EmailInboundService {
     }
 
     const count = newReplies.length;
-    const msg =
-      count > 0
-        ? `Synced ${count} new email ${count === 1 ? 'reply' : 'replies'} from Gmail inbox.`
-        : 'Gmail inbox checked — up to date (0 new replies).';
+    let msg = '';
+    if (count > 0 && (syncedSentCount || 0) > 0) {
+      msg = `Synced ${count} new email ${count === 1 ? 'reply' : 'replies'} and ${syncedSentCount} sent email(s) from Gmail.`;
+    } else if (count > 0) {
+      msg = `Synced ${count} new email ${count === 1 ? 'reply' : 'replies'} from Gmail inbox.`;
+    } else if ((syncedSentCount || 0) > 0) {
+      msg = `Synced ${syncedSentCount} sent email(s) from Gmail into Sent tab.`;
+    } else {
+      msg = 'Gmail inbox and sent mail up to date (0 new replies, 0 new sent).';
+    }
 
     return {
       syncedCount: count,
+      syncedSentCount,
       newReplies,
       bouncesRecorded,
       message: msg,
@@ -883,7 +1072,7 @@ export class EmailInboundService {
   /**
    * Starts background polling for new incoming email replies
    */
-  startPolling(intervalMs: number = 30000) {
+  startPolling(intervalMs: number = 60000) {
     if (this.pollIntervalTimer) {
       clearInterval(this.pollIntervalTimer);
     }

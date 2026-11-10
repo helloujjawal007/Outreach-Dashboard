@@ -558,7 +558,7 @@ export function useStore() {
       const updatedReplies = await api.getInboundReplies();
       setInboundReplies(updatedReplies);
 
-      if (res.syncedCount > 0 || (res.newReplies && res.newReplies.length > 0)) {
+      if (res.syncedCount > 0 || (res.newReplies && res.newReplies.length > 0) || ((res as any).syncedSentCount && (res as any).syncedSentCount > 0)) {
         await refreshAll();
         if (res.newReplies && res.newReplies.length > 0) {
           const newest = res.newReplies[0];
@@ -591,11 +591,11 @@ export function useStore() {
     }
   }, [refreshAll]);
 
-  // Periodically check for new Gmail replies (every 30s)
+  // Periodically check for new Gmail replies (every 60s)
   useEffect(() => {
     const timer = setInterval(() => {
       syncEmailReplies().catch(() => {});
-    }, 30000);
+    }, 60000);
     return () => clearInterval(timer);
   }, [syncEmailReplies]);
 

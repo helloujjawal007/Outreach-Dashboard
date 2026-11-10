@@ -402,14 +402,19 @@ export function CrmPage({
             .catch(() => {});
         }
       }
-      if (res.syncedCount > 0) {
-        const senders = res.newReplies.map((r) => r.senderEmail).join(', ');
-        setBulkActionSuccess(
-          `Synced ${res.syncedCount} new email reply from Gmail inbox: ${senders}`
-        );
+      if (res.syncedCount > 0 || (res as any).syncedSentCount > 0) {
+        const parts: string[] = [];
+        if (res.syncedCount > 0) {
+          const senders = res.newReplies.map((r) => r.senderEmail).join(', ');
+          parts.push(`${res.syncedCount} reply(ies) from: ${senders}`);
+        }
+        if ((res as any).syncedSentCount > 0) {
+          parts.push(`${(res as any).syncedSentCount} sent email(s) into Sent`);
+        }
+        setBulkActionSuccess(`Synced ${parts.join(' & ')} from Gmail.`);
         setTimeout(() => setBulkActionSuccess(null), 6000);
       } else {
-        setBulkActionSuccess('Gmail inbox is up to date (no new unread replies).');
+        setBulkActionSuccess('Gmail inbox & sent mail are up to date.');
         setTimeout(() => setBulkActionSuccess(null), 3500);
       }
     } catch (err) {

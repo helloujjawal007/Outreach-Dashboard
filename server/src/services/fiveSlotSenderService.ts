@@ -1276,8 +1276,8 @@ export class FiveSlotSenderService {
         `SELECT id, business_name, website, email, slot_id, outreach_stage, audit_status, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name, audit_score, audit_retry_count, audit_requested_at, location, country, metadata
          FROM leads
          WHERE deleted_at IS NULL
-           AND status = 'active'
-           AND consent_status = 'none'
+           AND (status = 'active' OR status = 'queued' OR status IS NULL)
+           AND (consent_status = 'none' OR consent_status IS NULL)
            AND (slot_id = $1 OR (slot_id IS NULL AND $1 = 'A'))
            AND (outreach_stage IS NULL OR (outreach_stage != 'sending' AND outreach_stage != 'completed' AND outreach_stage != 'skipped_no_opportunity'))
            AND (
@@ -1876,21 +1876,20 @@ export class FiveSlotSenderService {
       `SELECT
          slot_id,
          -- Total active remaining to be sent (decreases as leads reach completed)
-         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed')) as total_queued,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed'))) as total_queued,
          -- Ready to send with audit
-         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed') AND audit_status IN ('ready', 'audit_completed') AND audit_pdf_path IS NOT NULL AND audit_pdf_path != '') as ready_count,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed')) AND audit_status IN ('ready', 'audit_completed') AND audit_pdf_path IS NOT NULL AND audit_pdf_path != '') as ready_count,
          -- Waiting for audit
-         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed') AND (audit_status = 'pending' OR audit_status = 'none' OR audit_status IS NULL)) as waiting_audit_count,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed')) AND (audit_status = 'pending' OR audit_status = 'none' OR audit_status IS NULL)) as waiting_audit_count,
          -- Total emails sent successfully by this slot
          COUNT(*) FILTER (WHERE last_sent_at IS NOT NULL OR last_contacted_at IS NOT NULL OR outreach_stage IN ('followup_1', 'followup_2', 'followup_3', 'completed')) as sent_count,
          -- Total received JSON
          COUNT(*) FILTER (WHERE audit_status IN ('ready', 'audit_completed') OR (audit_findings IS NOT NULL AND audit_findings::text != '[]')) as received_json_count,
          -- Waiting count (decreases when sent/completed)
-         COUNT(*) FILTER (WHERE status = 'active' AND (outreach_stage IS NULL OR outreach_stage != 'completed')) as waiting_count,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed'))) as waiting_count,
          MAX(last_contacted_at) as last_sent_at
        FROM leads
        WHERE deleted_at IS NULL
-         AND consent_status = 'none'
          AND slot_id IS NOT NULL
        GROUP BY slot_id`
     );

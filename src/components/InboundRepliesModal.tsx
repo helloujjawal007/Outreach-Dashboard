@@ -603,8 +603,16 @@ export function InboundRepliesModal({
   const handleSyncClick = async () => {
     setSyncFeedback(null);
     try {
-      await onSyncInbox();
-      setSyncFeedback('Gmail inbox synced successfully');
+      const res = await onSyncInbox();
+      if ((res as any)?.syncedSentCount > 0 && res?.syncedCount > 0) {
+        setSyncFeedback(`Synced ${res.syncedCount} reply(ies) & ${(res as any).syncedSentCount} sent mail(s)`);
+      } else if ((res as any)?.syncedSentCount > 0) {
+        setSyncFeedback(`Synced ${(res as any).syncedSentCount} sent email(s) into Sent tab`);
+      } else if (res?.syncedCount > 0) {
+        setSyncFeedback(`Synced ${res.syncedCount} new email reply(ies)`);
+      } else {
+        setSyncFeedback('Gmail inbox & sent mail are up to date');
+      }
       await Promise.all([fetchRecentMessages(), fetchInboundHistory(), fetchUnmatched()]);
       setTimeout(() => setSyncFeedback(null), 4000);
     } catch {

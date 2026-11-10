@@ -1021,6 +1021,7 @@ export const api = {
   async syncEmailReplies(): Promise<{
     success: boolean;
     syncedCount: number;
+    syncedSentCount?: number;
     newReplies: Array<{
       senderEmail: string;
       businessName: string;
@@ -1035,6 +1036,7 @@ export const api = {
     return request<{
       success: boolean;
       syncedCount: number;
+      syncedSentCount?: number;
       newReplies: Array<{
         senderEmail: string;
         businessName: string;

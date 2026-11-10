@@ -58,8 +58,12 @@ export class EmailSentSyncService {
         host,
         port,
         secure: true,
+        disableCompression: true,
         auth: { user, pass },
         logger: false,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 30000,
       });
 
       await client.connect();

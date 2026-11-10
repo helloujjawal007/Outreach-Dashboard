@@ -61,40 +61,52 @@ export class EmailSentSyncService {
         disableCompression: true,
         auth: { user, pass },
         logger: false,
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 30000,
+        connectionTimeout: 35000,
+        greetingTimeout: 35000,
+        socketTimeout: 60000,
       });
 
-      await client.connect();
-
-      // Find the Sent Mail mailbox
-      const mailboxes = await client.list();
-      const sentMailbox =
-        mailboxes.find((m) => m.specialUse === '\\Sent' || m.specialUse === '\\\\Sent') ||
-        mailboxes.find((m) => m.path === '[Gmail]/Sent Mail') ||
-        mailboxes.find((m) => /sent/i.test(m.path));
-
-      const targetPath = sentMailbox ? sentMailbox.path : '[Gmail]/Sent Mail';
-
-      // Compile RFC 822 MIME message buffer using MailComposer
-      const composer = new MailComposer({
-        from: params.from,
-        to: params.to,
-        subject: params.subject,
-        text: params.text || '',
-        html: params.html || undefined,
-        attachments: params.attachments,
+      client.on('error', (err) => {
+        console.warn('[EmailSentSyncService] IMAP socket event warning (handled):', err?.message || err);
       });
 
-      const rawBuffer = await composer.compile().build();
+      try {
+        await client.connect();
 
-      // Append with \Seen flag so it shows as read in Sent Mail
-      await client.append(targetPath, rawBuffer, ['\\Seen']);
-      console.log(`[EmailSentSyncService] ✅ Synced sent email to "${targetPath}" for ${params.to} (${user})`);
+        // Find the Sent Mail mailbox
+        const mailboxes = await client.list();
+        const sentMailbox =
+          mailboxes.find((m) => m.specialUse === '\\Sent' || m.specialUse === '\\\\Sent') ||
+          mailboxes.find((m) => m.path === '[Gmail]/Sent Mail') ||
+          mailboxes.find((m) => /sent/i.test(m.path));
 
-      await client.logout();
-      return true;
+        const targetPath = sentMailbox ? sentMailbox.path : '[Gmail]/Sent Mail';
+
+        // Compile RFC 822 MIME message buffer using MailComposer
+        const composer = new MailComposer({
+          from: params.from,
+          to: params.to,
+          subject: params.subject,
+          text: params.text || '',
+          html: params.html || undefined,
+          attachments: params.attachments,
+        });
+
+        const rawBuffer = await composer.compile().build();
+
+        // Append with \Seen flag so it shows as read in Sent Mail
+        await client.append(targetPath, rawBuffer, ['\\Seen']);
+        console.log(`[EmailSentSyncService] ✅ Synced sent email to "${targetPath}" for ${params.to} (${user})`);
+
+        await client.logout();
+        return true;
+      } finally {
+        try {
+          if (client.usable) {
+            client.close();
+          }
+        } catch {}
+      }
     } catch (err: any) {
       console.warn(`[EmailSentSyncService] Failed to append sent message to IMAP Sent Mail:`, err?.message || err);
       return false;

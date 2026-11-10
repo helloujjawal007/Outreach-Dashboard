@@ -315,10 +315,17 @@ export class EmailInboundService {
           const startSeq = Math.max(1, totalExists - 40);
           const fetchRange = `${startSeq}:*`;
 
+          // Pass 1: Fetch message envelopes into array first to avoid nested IMAP command deadlocks
+          const inboxMessages: any[] = [];
           for await (const message of client.fetch(fetchRange, {
             envelope: true,
             uid: true,
           })) {
+            inboxMessages.push(message);
+          }
+
+          // Pass 2: Process messages sequentially now that socket fetch command is complete
+          for (const message of inboxMessages) {
             try {
               const messageId =
                 message.envelope?.messageId ||
@@ -868,10 +875,17 @@ export class EmailInboundService {
               const startSentSeq = Math.max(1, sentTotalExists - 40);
               const fetchRange = `${startSentSeq}:*`;
 
+              // Pass 1: Fetch sent message envelopes into array first to avoid nested IMAP command deadlocks
+              const sentMessages: any[] = [];
               for await (const message of client.fetch(fetchRange, {
                 envelope: true,
                 uid: true,
               })) {
+                sentMessages.push(message);
+              }
+
+              // Pass 2: Process sent messages sequentially now that socket fetch command is complete
+              for (const message of sentMessages) {
                 try {
                   const toAddresses: string[] = [];
                   if (message.envelope?.to) {
@@ -1033,6 +1047,7 @@ export class EmailInboundService {
       console.error('[EmailInboundService] IMAP connection or sync error:', connErr);
       return {
         syncedCount: 0,
+        syncedSentCount: 0,
         newReplies: [],
         bouncesRecorded: 0,
         message: connErr instanceof Error ? connErr.message : 'IMAP connection failed',

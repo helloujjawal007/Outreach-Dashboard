@@ -1,4 +1,4 @@
-import { ImapFlow } from 'imapflow';
+import { ImapFlow, type FetchMessageObject } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { query } from '../config/db';
 import { env } from '../config/env';
@@ -316,7 +316,7 @@ export class EmailInboundService {
           const fetchRange = `${startSeq}:*`;
 
           // Pass 1: Fetch message envelopes into array first to avoid nested IMAP command deadlocks
-          const inboxMessages: any[] = [];
+          const inboxMessages: FetchMessageObject[] = [];
           for await (const message of client.fetch(fetchRange, {
             envelope: true,
             uid: true,
@@ -876,7 +876,7 @@ export class EmailInboundService {
               const fetchRange = `${startSentSeq}:*`;
 
               // Pass 1: Fetch sent message envelopes into array first to avoid nested IMAP command deadlocks
-              const sentMessages: any[] = [];
+              const sentMessages: FetchMessageObject[] = [];
               for await (const message of client.fetch(fetchRange, {
                 envelope: true,
                 uid: true,

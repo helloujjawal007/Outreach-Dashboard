@@ -69,6 +69,15 @@ export class TechnicalAuditPdfService {
     return clean || 'website';
   }
 
+  private escapeHtml(raw?: string | null): string {
+    return (raw || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   /**
    * Builds high-converting, agency-grade HTML audit document for PDF rendering
    */
@@ -359,8 +368,87 @@ export class TechnicalAuditPdfService {
     ${criticalItemsHtml || '<div style="padding: 10px; color: #10b981;">No critical roadblocks detected. Site architecture meets performance baselines.</div>'}
   </div>
 
+  ${(() => {
+    const mp = report.multiPageAudit;
+    if (!mp || (mp.majorPages.length === 0 && mp.offeredServices.length === 0)) return '';
+
+    const dupBanner =
+      mp.duplicateH1Clusters.length > 0
+        ? `<div style="padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-left: 3px solid #dc2626; border-radius: 4px; margin-bottom: 10px; font-size: 11px; color: #7f1d1d;">
+             <strong>Duplicate &lt;h1&gt; Detected Across Pages:</strong>
+             ${mp.duplicateH1Clusters
+               .slice(0, 3)
+               .map(
+                 (c) =>
+                   `"&lt;h1&gt;${this.escapeHtml(c.h1Text)}&lt;/h1&gt;" repeated on ${c.pagesCount} pages (${c.paths.slice(0, 4).map((p) => this.escapeHtml(p)).join(', ')})`
+               )
+               .join(' • ')}
+           </div>`
+        : '';
+
+    const rowsSource =
+      mp.offeredServices.length > 0
+        ? mp.offeredServices.slice(0, 10).map((s) => {
+            const matchedPage = mp.majorPages.find((p) => p.path === s.pagePath);
+            return {
+              label: s.name,
+              path: s.pagePath,
+              h1: s.h1,
+              isDupH1: Boolean(matchedPage?.duplicateH1Group),
+              multiH1: (matchedPage?.h1Count || 0) > 1,
+              keywords: s.targetKeywords,
+              issues: s.issues,
+            };
+          })
+        : mp.majorPages.slice(0, 11).map((p) => ({
+            label: p.serviceName || p.pageType,
+            path: p.path,
+            h1: p.primaryH1 || '(Missing H1)',
+            isDupH1: Boolean(p.duplicateH1Group),
+            multiH1: p.h1Count > 1,
+            keywords: p.targetKeywords,
+            issues: p.issues,
+          }));
+
+    const rowsHtml = rowsSource
+      .map(
+        (r) => `
+      <tr>
+        <td><strong>${this.escapeHtml(r.label)}</strong></td>
+        <td style="font-family: monospace; font-size: 10px;">${this.escapeHtml(r.path)}</td>
+        <td>
+          <span style="color: ${r.isDupH1 || r.multiH1 || r.h1 === '(Missing H1)' ? '#b91c1c' : '#0f172a'}; font-weight: ${
+            r.isDupH1 ? '700' : '500'
+          };">
+            ${this.escapeHtml(r.h1.slice(0, 55))}${r.isDupH1 ? ' [Duplicate H1]' : r.multiH1 ? ' [Multiple H1s]' : ''}
+          </span>
+        </td>
+        <td>${r.keywords.length > 0 ? r.keywords.slice(0, 3).map((k) => this.escapeHtml(k)).join(', ') : '—'}</td>
+      </tr>`
+      )
+      .join('');
+
+    return `
+  <!-- MAJOR PAGES, SERVICES & DUPLICATE H1 AUDIT -->
+  <div class="section-title" style="page-break-before: auto;">3. Major Pages, Offered Services & On-Page Keyword Alignment (${mp.pagesAudited} Pages Audited)</div>
+  ${dupBanner}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 24%;">Service / Major Page</th>
+        <th style="width: 22%;">URL Path</th>
+        <th style="width: 28%;">Primary &lt;h1&gt; Heading</th>
+        <th style="width: 26%;">Target On-Page Keywords</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>`;
+  })()}
+
   <!-- REMEDIATION ROADMAP -->
-  <div class="section-title">3. Action Plan & Recommended Implementation</div>
+  <div class="section-title">${report.multiPageAudit ? '4' : '3'}. Action Plan & Recommended Implementation</div>
   <div style="margin-bottom: 14px;">
     ${recommendationsHtml}
   </div>
@@ -466,6 +554,7 @@ export class TechnicalAuditPdfService {
     audit_pdf_path?: string | null;
     audit_pdf_name?: string | null;
     audit_ready_at?: string | null;
+    metadata?: any;
   }): Promise<{ pdfPath: string; pdfName: string } | null> {
     if (isValidPdfFile(lead.audit_pdf_path)) {
       return {
@@ -512,6 +601,7 @@ export class TechnicalAuditPdfService {
       grade: (lead.audit_score || 72) >= 80 ? 'Good' : (lead.audit_score || 72) >= 55 ? 'Needs Work' : 'Poor',
       responseTimeMs: 240,
       mobileFriendly: true,
+      multiPageAudit: lead.metadata?.multi_page_audit || undefined,
       checks: [],
       criticalIssues: findings,
       recommendations: [

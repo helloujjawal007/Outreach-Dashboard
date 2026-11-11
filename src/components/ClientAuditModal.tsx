@@ -887,6 +887,98 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
               </div>
             )}
 
+            {/* Multi-Page Duplicate H1, Major Pages & Offered Services (Up to 10) */}
+            {auditReport.multiPageAudit && (
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800 flex items-center gap-1.5">
+                    <FileText size={13} className="text-indigo-600" />
+                    <span>
+                      Major Pages, Services Offered &amp; H1 Uniqueness ({auditReport.multiPageAudit.pagesAudited} Pages Audited)
+                    </span>
+                  </h4>
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                    <span
+                      className={`px-2 py-0.5 rounded-full border ${
+                        auditReport.multiPageAudit.duplicateH1Clusters.length > 0
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}
+                    >
+                      Duplicate H1s: {auditReport.multiPageAudit.duplicateH1AcrossPagesCount} pages
+                    </span>
+                    {auditReport.multiPageAudit.multipleH1PagesCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                        Multi-H1: {auditReport.multiPageAudit.multipleH1PagesCount}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {auditReport.multiPageAudit.duplicateH1Clusters.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-rose-50/80 border border-rose-200 text-rose-950 text-xs space-y-1">
+                    <p className="font-bold">Duplicate &lt;h1&gt; Tags Shared Across Multiple Pages</p>
+                    {auditReport.multiPageAudit.duplicateH1Clusters.slice(0, 3).map((cluster, idx) => (
+                      <p key={idx} className="text-[11px]">
+                        • <strong>&ldquo;{cluster.h1Text}&rdquo;</strong> appears on {cluster.pagesCount} pages:{' '}
+                        <span className="font-mono text-[10px]">{cluster.paths.slice(0, 5).join(', ')}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {(auditReport.multiPageAudit.offeredServices.length > 0 ||
+                  auditReport.multiPageAudit.majorPages.length > 0) && (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <thead className="bg-slate-50 text-ink-600 uppercase text-[9.5px] font-bold">
+                        <tr>
+                          <th className="py-2 px-2.5 border-b border-slate-200">Service / Major Page</th>
+                          <th className="py-2 px-2.5 border-b border-slate-200">Path</th>
+                          <th className="py-2 px-2.5 border-b border-slate-200">&lt;h1&gt; Heading</th>
+                          <th className="py-2 px-2.5 border-b border-slate-200">On-Page Target Keywords</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(auditReport.multiPageAudit.offeredServices.length > 0
+                          ? auditReport.multiPageAudit.offeredServices.slice(0, 10).map((s) => ({
+                              name: s.name,
+                              path: s.pagePath,
+                              h1: s.h1,
+                              keywords: s.targetKeywords,
+                              issues: s.issues,
+                            }))
+                          : auditReport.multiPageAudit.majorPages.slice(0, 11).map((p) => ({
+                              name: p.serviceName || p.pageType,
+                              path: p.path,
+                              h1: p.primaryH1 || '(Missing H1)',
+                              keywords: p.targetKeywords,
+                              issues: p.issues,
+                            }))
+                        ).map((row, idx) => {
+                          const hasH1Issue = row.issues.some((iss) => /h1/i.test(iss));
+                          return (
+                            <tr key={idx} className="hover:bg-slate-50/70">
+                              <td className="py-2 px-2.5 font-semibold text-ink-900">{row.name}</td>
+                              <td className="py-2 px-2.5 font-mono text-[10px] text-ink-600">{row.path}</td>
+                              <td className="py-2 px-2.5">
+                                <span className={hasH1Issue ? 'text-rose-700 font-semibold' : 'text-ink-800'}>
+                                  {row.h1}
+                                </span>
+                              </td>
+                              <td className="py-2 px-2.5 text-ink-700">
+                                {row.keywords.length > 0 ? row.keywords.join(', ') : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-ink-800">

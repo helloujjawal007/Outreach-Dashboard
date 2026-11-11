@@ -939,6 +939,7 @@ export class FiveSlotSenderService {
           audit_key_takeaways = $3,
           audit_pdf_name = $4,
           audit_pdf_path = $5,
+          metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{multi_page_audit}', COALESCE($7::jsonb, 'null'::jsonb), true),
           audit_ready_at = NOW(),
           updated_at = NOW()
          WHERE id = $6`,
@@ -949,6 +950,7 @@ export class FiveSlotSenderService {
           pdf.pdfName,
           pdf.pdfPath,
           leadId,
+          report.multiPageAudit ? JSON.stringify(report.multiPageAudit) : null,
         ]
       );
 

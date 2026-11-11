@@ -70,8 +70,12 @@ slotsRouter.post('/trigger-tick', async (req: Request, res: Response) => {
  */
 slotsRouter.post('/distribute-leads', async (req: Request, res: Response) => {
   try {
-    const { rebalanceAll, listId } = req.body || {};
-    const result = await fiveSlotSenderService.autoAssignUnassignedLeads({ rebalanceAll, listId });
+    const { rebalanceAll, listId, replaceExisting } = req.body || {};
+    const result = await fiveSlotSenderService.autoAssignUnassignedLeads({
+      rebalanceAll,
+      listId,
+      replaceExisting: replaceExisting !== undefined ? Boolean(replaceExisting) : Boolean(listId),
+    });
     res.json({ success: true, ...result });
   } catch (err: any) {
     console.error('[slotsRouter.distribute-leads] Error:', err);

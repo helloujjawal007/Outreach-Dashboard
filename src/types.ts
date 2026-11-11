@@ -1030,6 +1030,8 @@ export interface SlotSenderSettings {
   send_window_end_hour?: number;
   weekdays_only?: boolean;
   send_window_timezone?: string;
+  global_min_gap_sec?: number;
+  active_list_id?: string | null;
   circuit_breaker_tripped?: boolean;
 }
 
@@ -1072,6 +1074,7 @@ export interface SlotsOverviewResponse {
   activeSlotNow: SlotId | null;
   schedulerState?: 'active' | 'standby' | 'stopped' | 'tripped';
   hasPendingLeads?: boolean;
+  activeList?: { id: string; name: string } | null;
   circuitBreaker?: {
     tripped: boolean;
     failures: number;

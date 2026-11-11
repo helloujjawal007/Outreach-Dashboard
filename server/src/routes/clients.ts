@@ -85,12 +85,17 @@ clientsRouter.delete('/:id', async (req: Request, res: Response) => {
       [allTargetIds]
     );
 
-    // Also soft-delete corresponding lead if exists
+    // Soft-delete corresponding lead if exists and clear from 5-slot queues
     if (client.original_lead_id) {
       await query(
         `UPDATE leads 
          SET deleted_at = NOW(), 
-             deleted_expires_at = NOW() + INTERVAL '28 days'
+             deleted_expires_at = NOW() + INTERVAL '28 days',
+             slot_id = NULL,
+             slot_assigned_at = NULL,
+             claimed_stage = NULL,
+             claimed_at = NULL,
+             updated_at = NOW()
          WHERE id = $1`,
         [client.original_lead_id]
       );
@@ -98,7 +103,12 @@ clientsRouter.delete('/:id', async (req: Request, res: Response) => {
       await query(
         `UPDATE leads 
          SET deleted_at = NOW(), 
-             deleted_expires_at = NOW() + INTERVAL '28 days'
+             deleted_expires_at = NOW() + INTERVAL '28 days',
+             slot_id = NULL,
+             slot_assigned_at = NULL,
+             claimed_stage = NULL,
+             claimed_at = NULL,
+             updated_at = NOW()
          WHERE LOWER(email) = LOWER($1)`,
         [client.email]
       );

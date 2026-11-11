@@ -28,6 +28,8 @@ export function SlotsPanel() {
   const [activeSlotNow, setActiveSlotNow] = useState<SlotId | null>(null);
   const [schedulerState, setSchedulerState] = useState<'active' | 'standby' | 'stopped' | 'tripped'>('standby');
   const [hasPendingLeads, setHasPendingLeads] = useState(false);
+  const [activeList, setActiveList] = useState<{ id: string; name: string } | null>(null);
+  const [updatingPresetMin, setUpdatingPresetMin] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [isTickRunning, setIsTickRunning] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
@@ -81,6 +83,7 @@ export function SlotsPanel() {
         setSlots(res.slots);
         setSettings(res.settings);
         setActiveSlotNow(res.activeSlotNow);
+        setActiveList(res.activeList || null);
         const derivedPending =
           res.hasPendingLeads ??
           res.slots.some((s) => (s.waitingCount ?? 0) > 0 || (s.readyToSendCount ?? 0) > 0 || (s.dueFollowupCount ?? 0) > 0);
@@ -123,9 +126,14 @@ export function SlotsPanel() {
     const clockInterval = setInterval(() => {
       setNowSec(Math.floor(Date.now() / 1000));
     }, 1000);
+    const onSlotsUpdated = () => {
+      fetchStatus();
+    };
+    window.addEventListener('od:slots-updated', onSlotsUpdated);
     return () => {
       clearInterval(interval);
       clearInterval(clockInterval);
+      window.removeEventListener('od:slots-updated', onSlotsUpdated);
     };
   }, [fetchStatus]);
 
@@ -191,13 +199,66 @@ export function SlotsPanel() {
     }
   };
 
+  const handleQuickCyclePreset = async (minutes: number) => {
+    setUpdatingPresetMin(minutes);
+    setFeedback(null);
+    try {
+      const offsetMin = Number(Math.max(0.1, minutes / 5).toFixed(2));
+      const globalMinGapSec = Math.max(5, Math.floor(offsetMin * 60 * 0.75));
+      const payload: Partial<SlotSenderSettings> = {
+        slot_cycle_min: minutes,
+        slot_offset_min: offsetMin,
+        global_min_gap_sec: globalMinGapSec,
+      };
+      if (settings?.anchor_timestamp) {
+        const currentAnchorMs = new Date(settings.anchor_timestamp).getTime();
+        const targetCapMs = Date.now() + minutes * 60 * 1000;
+        if (Number.isFinite(currentAnchorMs) && currentAnchorMs > targetCapMs) {
+          payload.anchor_timestamp = new Date(targetCapMs).toISOString();
+        }
+      }
+      const res = await api.updateSlotsSettings(payload);
+      if (res.success) {
+        setSettings(res.settings);
+        const offsetText = offsetMin < 1 ? `${Math.round(offsetMin * 60)}s` : `${offsetMin}m`;
+        setFeedback(`✓ Cycle set to ${minutes}m (${offsetText} between slots)`);
+        await fetchStatus();
+      }
+    } catch (err: any) {
+      setFeedback(`❌ Failed updating interval: ${err?.message}`);
+    } finally {
+      setUpdatingPresetMin(null);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  const handleClearListScope = async () => {
+    setIsDistributing(true);
+    setFeedback(null);
+    try {
+      await api.updateSlotsSettings({ active_list_id: null });
+      const res = await api.distributeLeadsToSlots({ rebalanceAll: false, replaceExisting: true });
+      setFeedback(`✓ Switched back to All Active Leads (${res.assignedCount} newly assigned)`);
+      await fetchStatus();
+    } catch (err: any) {
+      setFeedback(`❌ Error clearing list scope: ${err?.message}`);
+    } finally {
+      setIsDistributing(false);
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
   const handleDistributeLeads = async (rebalanceAll: boolean = false) => {
     setIsDistributing(true);
     setFeedback(null);
     try {
-      const res = await api.distributeLeadsToSlots({ rebalanceAll });
+      const res = await api.distributeLeadsToSlots({
+        rebalanceAll,
+        listId: activeList?.id,
+        replaceExisting: Boolean(activeList?.id),
+      });
       if (res.success) {
-        setFeedback(`✓ ${rebalanceAll ? 'Rebalanced' : 'Divided'} ${res.assignedCount} leads across Slots A-E`);
+        setFeedback(`✓ ${rebalanceAll ? 'Rebalanced' : 'Divided'} ${res.assignedCount} leads${activeList ? ` from "${activeList.name}"` : ''} across Slots A-E`);
         await fetchStatus();
       } else {
         setFeedback(`⚠️ ${(res as any).error || 'Failed to divide leads'}`);
@@ -214,12 +275,19 @@ export function SlotsPanel() {
     e.preventDefault();
     setSavingSettings(true);
     try {
-      const cycle = parseInt(cycleMinInput, 10) || 10;
-      const offset = parseInt(offsetMinInput, 10) || Math.max(1, Math.floor(cycle / 5));
+      const parsedCycle = parseFloat(cycleMinInput);
+      const cycle = Number.isFinite(parsedCycle) && parsedCycle >= 0.5 ? parsedCycle : 10;
+      const parsedOffset = parseFloat(offsetMinInput);
+      const offset =
+        Number.isFinite(parsedOffset) && parsedOffset >= 0.1
+          ? Number(parsedOffset.toFixed(2))
+          : Number(Math.max(0.1, cycle / 5).toFixed(2));
+      const globalMinGapSec = Math.max(5, Math.floor(offset * 60 * 0.75));
 
       const payload: Partial<SlotSenderSettings> = {
         slot_cycle_min: cycle,
         slot_offset_min: offset,
+        global_min_gap_sec: globalMinGapSec,
         td_endpoint_url: tdUrlInput.trim(),
         td_shared_secret: tdSecretInput.trim(),
         send_window_timezone: sendWindowTzInput.trim() || 'UTC',
@@ -287,8 +355,50 @@ export function SlotsPanel() {
               <h3 className="text-sm font-bold text-slate-900">5-Slot Staggered Scheduler</h3>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                Deterministic Grid (Cycle: {settings?.slot_cycle_min || 10}m, Offset: {settings?.slot_offset_min || 2}m)
+                Deterministic Grid (Cycle: {settings?.slot_cycle_min || 10}m, Offset:{' '}
+                {(settings?.slot_offset_min ?? 2) < 1
+                  ? `${Math.round((settings?.slot_offset_min ?? 0.4) * 60)}s`
+                  : `${settings?.slot_offset_min ?? 2}m`}
+                )
               </span>
+
+              {/* Quick 2m / 3m / 5m / 10m Interval Switcher for Testing */}
+              <div className="inline-flex items-center gap-1 bg-white border border-slate-200 rounded-full px-1.5 py-0.5 shadow-2xs">
+                <span className="text-[9px] font-bold text-slate-400 pl-1">Pace:</span>
+                {[2, 3, 5, 10].map((m) => {
+                  const isCurrent = Math.abs((settings?.slot_cycle_min ?? 10) - m) < 0.05;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => handleQuickCyclePreset(m)}
+                      disabled={updatingPresetMin !== null}
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold transition-colors cursor-pointer ${
+                        isCurrent
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
+                      }`}
+                      title={`Switch 5-slot cycle to ${m} minutes (${m === 2 ? '24s' : m === 3 ? '36s' : m === 5 ? '1m' : '2m'} per slot)`}
+                    >
+                      {updatingPresetMin === m ? '...' : `${m}m`}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeList && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                  <span>List: {activeList.name}</span>
+                  <button
+                    type="button"
+                    onClick={handleClearListScope}
+                    className="ml-0.5 text-violet-500 hover:text-violet-900 font-black cursor-pointer"
+                    title="Clear list filter and show all active CRM leads"
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
 
               {/* Active / Standby / Stopped Indicator */}
               {!isSenderActive ? (
@@ -413,25 +523,55 @@ export function SlotsPanel() {
               <label className="block font-semibold text-slate-700 mb-1">Slot Cycle Time (Min)</label>
               <input
                 type="number"
-                min="1"
+                min="0.5"
                 max="60"
+                step="0.5"
                 value={cycleMinInput}
-                onChange={(e) => setCycleMinInput(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCycleMinInput(val);
+                  const num = parseFloat(val);
+                  if (Number.isFinite(num) && num >= 0.5) {
+                    setOffsetMinInput(String(Number(Math.max(0.1, num / 5).toFixed(2))));
+                  }
+                }}
                 className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"
               />
-              <span className="text-[10px] text-slate-500">How often a slot sends (default: 10m)</span>
+              <div className="flex items-center gap-1 mt-1">
+                {[2, 3, 5, 10].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setCycleMinInput(String(m));
+                      setOffsetMinInput(String(Number((m / 5).toFixed(2))));
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                      Math.abs(parseFloat(cycleMinInput) - m) < 0.05
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-indigo-50'
+                    }`}
+                  >
+                    {m}m
+                  </button>
+                ))}
+                <span className="text-[10px] text-slate-400 ml-1">Quick presets</span>
+              </div>
             </div>
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Slot Stagger Offset (Min)</label>
               <input
                 type="number"
-                min="1"
+                min="0.1"
                 max="30"
+                step="0.1"
                 value={offsetMinInput}
                 onChange={(e) => setOffsetMinInput(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"
               />
-              <span className="text-[10px] text-slate-500">Delay between slots (default: 2m)</span>
+              <span className="text-[10px] text-slate-500">
+                Delay between slots ({parseFloat(offsetMinInput) < 1 ? `${Math.round((parseFloat(offsetMinInput) || 0.4) * 60)}s` : `${offsetMinInput}m`})
+              </span>
             </div>
             <div>
               <label className="block font-semibold text-slate-700 mb-1">TD Audit Webhook URL</label>

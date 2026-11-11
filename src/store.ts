@@ -636,6 +636,7 @@ export function useStore() {
           await api.deleteLead(id);
         }
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
       } catch (err) {
         console.error('[Store] deleteLead error:', err);
         await refreshAll();
@@ -713,6 +714,7 @@ export function useStore() {
         ]);
 
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
       } catch (err) {
         console.error('[Store] bulkDeleteLeads error:', err);
         await refreshAll();
@@ -732,6 +734,7 @@ export function useStore() {
           setLeads((prev) => prev.filter((l) => l.status !== 'duplicate'));
         }
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
         return res;
       } catch (err) {
         console.error('[Store] deleteDuplicateLeads error:', err);
@@ -753,6 +756,7 @@ export function useStore() {
           await api.updateLeadStatus(id, status);
         }
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
       } catch (err) {
         console.error('[Store] updateLeadStatus error:', err);
         await refreshAll();
@@ -789,6 +793,7 @@ export function useStore() {
         }
         await Promise.all(promises);
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
       } catch (err) {
         console.error('[Store] bulkUpdateLeadStatus error:', err);
         await refreshAll();
@@ -809,6 +814,7 @@ export function useStore() {
         );
         await api.approveLeadReview(id);
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
       } catch (err) {
         console.error('[Store] approveLeadReview error:', err);
         await refreshAll();
@@ -830,6 +836,7 @@ export function useStore() {
         );
         await api.bulkApproveLeadReviews(ids);
         await refreshAll();
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
       } catch (err) {
         console.error('[Store] bulkApproveLeadReviews error:', err);
         await refreshAll();
@@ -855,6 +862,7 @@ export function useStore() {
     try {
       setLists((prev) => prev.filter((l) => l.id !== id));
       await api.deleteList(id);
+      window.dispatchEvent(new CustomEvent('od:slots-updated'));
     } catch (err) {
       console.error('[Store] deleteList error:', err);
       throw err;
@@ -887,6 +895,7 @@ export function useStore() {
       ]);
       setLists(freshLists);
       setLeads([...freshLeads, ...freshClients]);
+      window.dispatchEvent(new CustomEvent('od:slots-updated'));
     } catch (err) {
       console.error('[Store] removeLeadsFromList error:', err);
       throw err;
@@ -903,6 +912,7 @@ export function useStore() {
       ]);
       setLists(freshLists);
       setLeads([...freshLeads, ...freshClients]);
+      window.dispatchEvent(new CustomEvent('od:slots-updated'));
     } catch (err) {
       console.error('[Store] removeLeadFromList error:', err);
       throw err;

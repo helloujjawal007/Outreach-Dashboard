@@ -526,20 +526,25 @@ export const api = {
 
   async deleteLead(id: string): Promise<void> {
     await request(`/leads/${id}`, { method: 'DELETE' });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
   },
 
   async bulkDeleteLeads(ids: string[]): Promise<{ deletedCount: number }> {
-    return request<{ success: boolean; deletedCount: number }>('/leads/bulk-delete', {
+    const res = await request<{ success: boolean; deletedCount: number }>('/leads/bulk-delete', {
       method: 'POST',
       body: JSON.stringify({ ids }),
     });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
+    return res;
   },
 
   async deleteDuplicateLeads(ids?: string[]): Promise<{ count: number; success: boolean; message: string }> {
-    return request<{ success: boolean; count: number; message: string }>('/leads/duplicates', {
+    const res = await request<{ success: boolean; count: number; message: string }>('/leads/duplicates', {
       method: 'DELETE',
       body: JSON.stringify({ ids }),
     });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
+    return res;
   },
 
   // 28-Day Deletion History & Trash
@@ -865,6 +870,7 @@ export const api = {
 
   async deleteList(id: string): Promise<void> {
     await request(`/lists/${id}`, { method: 'DELETE' });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
   },
 
   async addLeadsToList(listId: string, leadIds: string[]): Promise<{ addedCount: number }> {
@@ -875,16 +881,19 @@ export const api = {
   },
 
   async removeLeadsFromList(listId: string, leadIds: string[]): Promise<{ removedCount: number }> {
-    return request<{ success: boolean; removedCount: number }>(`/lists/${listId}/members`, {
+    const res = await request<{ success: boolean; removedCount: number }>(`/lists/${listId}/members`, {
       method: 'DELETE',
       body: JSON.stringify({ leadIds }),
     });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
+    return res;
   },
 
   async removeLeadFromList(listId: string, leadId: string): Promise<void> {
     await request(`/lists/${listId}/members/${leadId}`, {
       method: 'DELETE',
     });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
   },
 
   async importLeads(leads: Partial<Lead>[], batchName?: string): Promise<{
@@ -2203,12 +2212,13 @@ export const api = {
     });
   },
 
-  async distributeLeadsToSlots(options?: { rebalanceAll?: boolean; listId?: string }): Promise<{
+  async distributeLeadsToSlots(options?: { rebalanceAll?: boolean; listId?: string; replaceExisting?: boolean }): Promise<{
     success: boolean;
     assignedCount: number;
     distribution: Record<string, number>;
+    activeListId?: string | null;
   }> {
-    return request<{ success: boolean; assignedCount: number; distribution: Record<string, number> }>('/slots/distribute-leads', {
+    return request<{ success: boolean; assignedCount: number; distribution: Record<string, number>; activeListId?: string | null }>('/slots/distribute-leads', {
       method: 'POST',
       body: JSON.stringify(options || {}),
     });
@@ -2284,9 +2294,17 @@ export const api = {
     company: string;
     message: string;
   }> {
-    return request(`/failures/${id}/lead`, {
+    const res = await request<{
+      success: boolean;
+      deletedLead: boolean;
+      leadId: string | null;
+      company: string;
+      message: string;
+    }>(`/failures/${id}/lead`, {
       method: 'DELETE',
     });
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('od:slots-updated'));
+    return res;
   },
 
   getFailuresExportUrl(params?: {

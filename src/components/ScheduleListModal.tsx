@@ -49,6 +49,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
   const [style, setStyle] = useState<'conversational' | 'direct' | 'curious'>('conversational');
   const [stage, setStage] = useState<'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3'>('auto');
   const [customInstructions, setCustomInstructions] = useState<string>('');
+  const [slotCycleMinutes, setSlotCycleMinutes] = useState<number>(10);
+  const [replaceOlderSlots, setReplaceOlderSlots] = useState<boolean>(true);
 
   // Multi-Inbox Rotation State (Email)
   const [inboxes, setInboxes] = useState<ConnectedInbox[]>([]);
@@ -89,6 +91,16 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
       const localISOTime = new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
       setScheduledDateTime(localISOTime);
       setSubmitFeedback(null);
+
+      // Sync default slot cadence from backend settings so 2/3/5/10m preference persists
+      api.getSlotsStatus()
+        .then((res) => {
+          const curCycle = Number(res?.settings?.slot_cycle_min);
+          if (Number.isFinite(curCycle) && curCycle >= 1) {
+            setSlotCycleMinutes(Math.round(curCycle * 10) / 10);
+          }
+        })
+        .catch(() => {});
 
       // Fetch Inboxes for Email Rotation
       setIsLoadingInboxes(true);
@@ -320,23 +332,32 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
 
       // Email channel routes strictly via 5-Agent Virtual Slot Method
       if (channel === 'email') {
-        const distRes = await api.distributeLeadsToSlots({
-          listId: selectedListId === 'all' ? undefined : selectedListId,
-          rebalanceAll: false,
-        });
+        const cycleMin = Math.max(1, Number(slotCycleMinutes) || 10);
+        const offsetMin = Number(Math.max(0.1, cycleMin / 5).toFixed(2));
+        const globalMinGapSec = Math.max(5, Math.floor(offsetMin * 60 * 0.75));
+        const firstSendAnchor = new Date(Date.now() + cycleMin * 60 * 1000).toISOString();
+        const isAllLeads = selectedListId === 'all';
 
-        // Set first send to dispatch in 10 minutes from now (staggered 10m cycle, 2m slot offset)
-        const tenMinsFromNow = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         await api.updateSlotsSettings({
-          anchor_timestamp: tenMinsFromNow,
-          slot_cycle_min: 10,
-          slot_offset_min: 2,
+          anchor_timestamp: firstSendAnchor,
+          slot_cycle_min: cycleMin,
+          slot_offset_min: offsetMin,
+          global_min_gap_sec: globalMinGapSec,
+          active_list_id: isAllLeads ? null : selectedListId,
           is_active: true,
         });
 
+        const distRes = await api.distributeLeadsToSlots({
+          listId: isAllLeads ? undefined : selectedListId,
+          rebalanceAll: false,
+          replaceExisting: isAllLeads ? true : replaceOlderSlots,
+        });
+
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
+
         setSubmitFeedback({
           type: 'success',
-          message: `✓ Allocated ${distRes.assignedCount || eligibleLeadsCount} leads to 5-Slot Sender Engine. First email sends in 10 mins! Redirecting to 5-Slot Sender...`,
+          message: `✓ Allocated ${distRes.assignedCount || eligibleLeadsCount} leads${isAllLeads ? '' : ' (exclusive list)'} to 5-Slot Sender Engine (${cycleMin}m cycle). First email sends in ${cycleMin} min${cycleMin === 1 ? '' : 's'}! Redirecting...`,
         });
 
         await store.fetchLeads();
@@ -674,12 +695,14 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                   <p className="text-[11px] text-slate-600 leading-relaxed">
                     Selected leads will be automatically divided equally across all 5 virtual sending agents on a deterministic staggered schedule.
                     Sending will route via <strong>cloudconsultancy.ad@gmail.com</strong> with audit-first protection and zero send conflicts.
-                    First email will be sent after <strong>10 minutes</strong>.
+                    First email will be sent after <strong>{slotCycleMinutes} {slotCycleMinutes === 1 ? 'minute' : 'minutes'}</strong>.
                   </p>
 
                   <div className="pt-1 flex items-center justify-between text-[10px] text-slate-500 font-medium border-t border-indigo-100">
                     <span>Target: {eligibleLeadsCount} Leads to Partition</span>
-                    <span className="text-emerald-700 font-bold">✓ Audit Gate Enabled • First Send in 10m</span>
+                    <span className="text-emerald-700 font-bold">
+                      ✓ Audit Gate Enabled • First Send in {slotCycleMinutes}m
+                    </span>
                   </div>
                 </div>
               )}
@@ -711,22 +734,94 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                   3. Dispatch Timing
                 </label>
                 {channel === 'email' ? (
-                  <div className="p-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 via-white to-indigo-50/50 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <Clock size={16} className="text-indigo-600 shrink-0" />
-                      <div>
-                        <span className="text-xs font-bold text-indigo-950 block">
-                          5-Slot Staggered Pacing (Starts in 10 mins)
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          10-minute cycle • 2-minute offset between slots • Zero send conflicts
-                        </span>
+                  (() => {
+                    const computedOffsetMin = Number(Math.max(0.1, slotCycleMinutes / 5).toFixed(2));
+                    const offsetText =
+                      computedOffsetMin < 1
+                        ? `${Math.round(computedOffsetMin * 60)}-second`
+                        : `${computedOffsetMin}-minute`;
+                    return (
+                      <div className="p-3 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50/70 via-white to-indigo-50/50 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <Clock size={16} className="text-indigo-600 shrink-0" />
+                            <div>
+                              <span className="text-xs font-bold text-indigo-950 block">
+                                5-Slot Staggered Pacing (Starts in {slotCycleMinutes} {slotCycleMinutes === 1 ? 'min' : 'mins'})
+                              </span>
+                              <span className="text-[10px] text-slate-500">
+                                {slotCycleMinutes}-minute cycle • {offsetText} offset between slots • Zero send conflicts
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
+                            First Send: ~{slotCycleMinutes}m
+                          </span>
+                        </div>
+
+                        {/* Quick Delay / Cycle Presets (decrease 10m down to 2m / 3m / 5m for faster testing) */}
+                        <div className="grid grid-cols-5 gap-1.5 pt-2 border-t border-indigo-100/80">
+                          {[
+                            { min: 2, label: '2 mins', sub: 'Fast Test (24s/slot)' },
+                            { min: 3, label: '3 mins', sub: 'Test (36s/slot)' },
+                            { min: 5, label: '5 mins', sub: 'Medium (1m/slot)' },
+                            { min: 10, label: '10 mins', sub: 'Standard (2m/slot)' },
+                          ].map((p) => (
+                            <button
+                              key={p.min}
+                              type="button"
+                              onClick={() => setSlotCycleMinutes(p.min)}
+                              className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                                slotCycleMinutes === p.min
+                                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-2xs'
+                                  : 'border-slate-200 bg-white hover:border-indigo-300 text-slate-700'
+                              }`}
+                            >
+                              <div className="text-[11px] font-bold leading-tight">{p.label}</div>
+                              <div
+                                className={`text-[9px] leading-tight mt-0.5 ${
+                                  slotCycleMinutes === p.min ? 'text-indigo-100' : 'text-slate-400'
+                                }`}
+                              >
+                                {p.sub}
+                              </div>
+                            </button>
+                          ))}
+                          <div className="flex flex-col justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white">
+                            <span className="text-[9px] font-semibold text-slate-500 leading-none mb-0.5">Custom (m)</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="60"
+                              step="1"
+                              value={slotCycleMinutes}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                if (Number.isFinite(v) && v >= 1 && v <= 60) {
+                                  setSlotCycleMinutes(v);
+                                }
+                              }}
+                              className="w-full text-[11px] font-bold text-slate-800 bg-transparent focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {selectedListId && selectedListId !== 'all' && (
+                          <label className="flex items-center gap-2 pt-1.5 border-t border-indigo-100/80 text-[11px] text-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={replaceOlderSlots}
+                              onChange={(e) => setReplaceOlderSlots(e.target.checked)}
+                              className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 cursor-pointer"
+                            />
+                            <span>
+                              Remove older list leads from Slots A–E so <strong>only this list</strong> runs in 5-Slot Sender
+                            </span>
+                          </label>
+                        )}
                       </div>
-                    </div>
-                    <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
-                      First Send: ~10m
-                    </span>
-                  </div>
+                    );
+                  })()
                 ) : (
                   <>
                     <div className="grid grid-cols-2 gap-2.5">
@@ -964,7 +1059,7 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
                       ⏱️ 5-Agent Virtual Slot Method Active
                     </p>
                     <p className="text-indigo-700">
-                      Deterministic 10-minute cycle with 2-minute slot offsets across Slots A–E. First email dispatches in 10 minutes. Zero send conflicts &amp; Google warm-up compliant.
+                      Deterministic {slotCycleMinutes}-minute cycle with {Math.max(0.1, slotCycleMinutes / 5) < 1 ? `${Math.round(Math.max(0.1, slotCycleMinutes / 5) * 60)}-second` : `${Number((slotCycleMinutes / 5).toFixed(2))}-minute`} slot offsets across Slots A–E. First email dispatches in {slotCycleMinutes} {slotCycleMinutes === 1 ? 'minute' : 'minutes'}. Zero send conflicts &amp; Google warm-up compliant.
                     </p>
                   </div>
                 </div>

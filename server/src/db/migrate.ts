@@ -340,7 +340,8 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS send_window_timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
         ADD COLUMN IF NOT EXISTS global_min_gap_sec INT NOT NULL DEFAULT 90,
         ADD COLUMN IF NOT EXISTS whatsapp_cold_outreach_enabled BOOLEAN NOT NULL DEFAULT false,
-        ADD COLUMN IF NOT EXISTS whatsapp_daily_limit INT NOT NULL DEFAULT 20;
+        ADD COLUMN IF NOT EXISTS whatsapp_daily_limit INT NOT NULL DEFAULT 20,
+        ADD COLUMN IF NOT EXISTS active_list_id UUID DEFAULT NULL;
 
       ALTER TABLE slot_sender_settings 
         ALTER COLUMN slot_cycle_min TYPE NUMERIC USING slot_cycle_min::numeric,

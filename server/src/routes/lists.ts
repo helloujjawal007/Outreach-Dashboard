@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
 import { channelListAutoAssignmentService } from '../services/channelListAutoAssignmentService';
+import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
 
 export const listsRouter = Router();
 
@@ -15,7 +16,7 @@ listsRouter.post('/sync-channels', async (_req: Request, res: Response) => {
   }
 });
 
-// GET /api/lists - List all custom lists with member count
+// GET /api/lists - List all custom lists with active (non-deleted) member count
 listsRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const result = await query(
@@ -25,9 +26,10 @@ listsRouter.get('/', async (_req: Request, res: Response) => {
          l.description,
          l.created_at,
          l.updated_at,
-         COUNT(m.lead_id)::int as lead_count
+         COUNT(ld.id)::int as lead_count
        FROM lists l
        LEFT JOIN lead_list_memberships m ON m.list_id = l.id
+       LEFT JOIN leads ld ON ld.id = m.lead_id AND ld.deleted_at IS NULL
        GROUP BY l.id
        ORDER BY l.created_at ASC`
     );
@@ -61,17 +63,21 @@ listsRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/lists/:id - Delete a list
+// DELETE /api/lists/:id - Delete a list and unassign its leads from 5-slot queues
 listsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    await fiveSlotSenderService.handleListDeleted(id).catch((err) => {
+      console.warn('[listsRouter.delete] Slot cleanup warning:', err?.message);
+    });
 
     const result = await query(`DELETE FROM lists WHERE id = $1 RETURNING id`, [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'List not found' });
     }
 
-    res.json({ success: true, message: 'List deleted successfully' });
+    res.json({ success: true, message: 'List deleted and removed from 5-slot queues successfully' });
   } catch (error) {
     console.error('[listsRouter.delete]', error);
     res.status(500).json({ success: false, error: 'Failed to delete list' });
@@ -124,6 +130,8 @@ listsRouter.delete('/:id/members', async (req: Request, res: Response) => {
       [listId, leadIds]
     );
 
+    await fiveSlotSenderService.handleMembersRemovedFromList(listId, leadIds).catch(() => {});
+
     res.json({ success: true, removedCount: resDelete.rows.length });
   } catch (error) {
     console.error('[listsRouter.removeMembers]', error);
@@ -143,6 +151,8 @@ listsRouter.delete('/:id/members/:leadId', async (req: Request, res: Response) =
        RETURNING lead_id`,
       [listId, leadId]
     );
+
+    await fiveSlotSenderService.handleMembersRemovedFromList(listId, [leadId]).catch(() => {});
 
     res.json({ success: true, removedCount: resDelete.rows.length });
   } catch (error) {

@@ -31,6 +31,7 @@ export interface SlotSenderSettings {
   global_min_gap_sec?: number;
   whatsapp_cold_outreach_enabled?: boolean;
   whatsapp_daily_limit?: number;
+  active_list_id?: string | null;
 }
 
 export interface SlotLeadMilestone {
@@ -243,11 +244,14 @@ export class FiveSlotSenderService {
     let cancelledDispatchesCount = 0;
 
     if (targetSlot === 'all') {
-      if (pauseSender) {
-        await query(
-          `UPDATE slot_sender_settings SET is_active = false, updated_at = NOW() WHERE id = 'default'`
-        );
-      }
+      await query(
+        `UPDATE slot_sender_settings
+         SET is_active = CASE WHEN $1 THEN false ELSE is_active END,
+             active_list_id = NULL,
+             updated_at = NOW()
+         WHERE id = 'default'`,
+        [pauseSender]
+      );
 
       const leadRes = await query<{ id: string }>(
         `UPDATE leads 
@@ -257,8 +261,7 @@ export class FiveSlotSenderService {
              claimed_stage = NULL, 
              claimed_at = NULL,
              updated_at = NOW()
-         WHERE slot_id IS NOT NULL 
-           AND (outreach_stage IS NULL OR outreach_stage IN ('initial', 'sending'))
+         WHERE slot_id IS NOT NULL
          RETURNING id`
       );
       terminatedLeadsCount = leadRes.rowCount || 0;
@@ -359,10 +362,13 @@ export class FiveSlotSenderService {
           send_window_start_hour: row.send_window_start_hour !== null && row.send_window_start_hour !== undefined ? parseInt(row.send_window_start_hour as any, 10) : 0,
           send_window_end_hour: row.send_window_end_hour !== null && row.send_window_end_hour !== undefined ? parseInt(row.send_window_end_hour as any, 10) : 24,
           weekdays_only: row.weekdays_only ?? false,
-          global_min_gap_sec: parseInt(row.global_min_gap_sec as any, 10) || 90,
+          global_min_gap_sec: Number.isFinite(Number(row.global_min_gap_sec))
+            ? Math.max(1, parseInt(row.global_min_gap_sec as any, 10))
+            : 90,
           td_endpoint_url: row.td_endpoint_url || 'http://127.0.0.1:5055/api/od/audit-request',
           whatsapp_cold_outreach_enabled: row.whatsapp_cold_outreach_enabled ?? false,
           whatsapp_daily_limit: row.whatsapp_daily_limit ?? 20,
+          active_list_id: row.active_list_id || null,
         };
       }
     } catch (err) {
@@ -385,6 +391,7 @@ export class FiveSlotSenderService {
       global_min_gap_sec: 90,
       whatsapp_cold_outreach_enabled: false,
       whatsapp_daily_limit: 20,
+      active_list_id: null,
     };
   }
 
@@ -512,10 +519,32 @@ export class FiveSlotSenderService {
    */
   async updateSettings(partial: Partial<SlotSenderSettings>): Promise<SlotSenderSettings> {
     const current = await this.getSettings();
+    const nextCycleMin =
+      partial.slot_cycle_min !== undefined
+        ? Math.max(0.5, Number(partial.slot_cycle_min) || 10)
+        : current.slot_cycle_min;
+    const nextOffsetMin =
+      partial.slot_offset_min !== undefined
+        ? Math.max(0.1, Number(Number(partial.slot_offset_min).toFixed(2)))
+        : partial.slot_cycle_min !== undefined
+        ? Math.max(0.1, Number((nextCycleMin / 5).toFixed(2)))
+        : current.slot_offset_min;
+    const nextGlobalMinGapSec =
+      partial.global_min_gap_sec !== undefined
+        ? Math.max(1, Math.round(Number(partial.global_min_gap_sec)))
+        : partial.slot_cycle_min !== undefined || partial.slot_offset_min !== undefined
+        ? Math.max(5, Math.floor(nextOffsetMin * 60 * 0.75))
+        : current.global_min_gap_sec ?? 90;
+    const nextActiveListId =
+      'active_list_id' in partial ? partial.active_list_id || null : current.active_list_id ?? null;
+
     const updated: SlotSenderSettings = {
       ...current,
       ...partial,
-      slot_offset_min: partial.slot_offset_min ?? (partial.slot_cycle_min ? Math.max(1, Math.floor(partial.slot_cycle_min / 5)) : current.slot_offset_min),
+      slot_cycle_min: nextCycleMin,
+      slot_offset_min: nextOffsetMin,
+      global_min_gap_sec: nextGlobalMinGapSec,
+      active_list_id: nextActiveListId,
     };
 
     await query(
@@ -533,6 +562,7 @@ export class FiveSlotSenderService {
         is_active = $11,
         send_window_timezone = $12,
         global_min_gap_sec = $13,
+        active_list_id = $14,
         updated_at = NOW()
        WHERE id = 'default'`,
       [
@@ -548,7 +578,8 @@ export class FiveSlotSenderService {
         updated.weekdays_only,
         updated.is_active,
         updated.send_window_timezone || 'UTC',
-        updated.global_min_gap_sec || 90,
+        updated.global_min_gap_sec ?? 90,
+        updated.active_list_id ?? null,
       ]
     );
 
@@ -663,22 +694,182 @@ export class FiveSlotSenderService {
   }
 
   /**
-   * Distributes unassigned leads round-robin across the 5 slots (A, B, C, D, E)
-   * If rebalanceAll is true, rebalances all active leads across slots.
+   * Clears slot assignments from soft-deleted, inactive, manual_review, duplicate, or opted-out leads
+   * so deleted/older invalid leads never appear in any slot count or queue.
    */
-  async autoAssignUnassignedLeads(options?: { rebalanceAll?: boolean; listId?: string }): Promise<{
+  async clearDeletedOrInvalidSlotAssignments(): Promise<number> {
+    const res = await query<{ id: string }>(
+      `UPDATE leads
+       SET slot_id = NULL,
+           slot_assigned_at = NULL,
+           claimed_stage = NULL,
+           claimed_at = NULL,
+           updated_at = NOW()
+       WHERE slot_id IS NOT NULL
+         AND (
+           deleted_at IS NOT NULL
+           OR status IN ('manual_review', 'inactive', 'paused', 'duplicate')
+           OR consent_status IN ('opted_out', 'unsubscribed', 'replied')
+         )
+       RETURNING id`
+    );
+    return res.rowCount || 0;
+  }
+
+  /**
+   * Explicitly unassigns specific leads (e.g., deleted or removed from active list) from 5 slots.
+   */
+  async unassignLeadsFromSlots(leadIds: string[]): Promise<number> {
+    if (!Array.isArray(leadIds) || leadIds.length === 0) return 0;
+    const res = await query<{ id: string }>(
+      `UPDATE leads
+       SET slot_id = NULL,
+           slot_assigned_at = NULL,
+           claimed_stage = NULL,
+           claimed_at = NULL,
+           updated_at = NOW()
+       WHERE id = ANY($1)
+         AND slot_id IS NOT NULL
+       RETURNING id`,
+      [leadIds]
+    );
+    return res.rowCount || 0;
+  }
+
+  /**
+   * Called before deleting a custom list so its leads are immediately removed from 5-slot queues
+   * and any active_list_id scope pointing to that deleted list is cleared.
+   */
+  async handleListDeleted(listId: string): Promise<{ clearedLeads: number; resetActiveScope: boolean }> {
+    const settings = await this.getSettings();
+    const isScopedList = settings.active_list_id === listId;
+
+    const memberRes = await query<{ lead_id: string }>(
+      `SELECT lead_id FROM lead_list_memberships WHERE list_id = $1`,
+      [listId]
+    );
+    const memberIds = memberRes.rows.map((r) => r.lead_id);
+
+    let clearedLeads = 0;
+    if (isScopedList) {
+      await this.updateSettings({ active_list_id: null });
+      const clr = await query<{ id: string }>(
+        `UPDATE leads
+         SET slot_id = NULL, slot_assigned_at = NULL, claimed_stage = NULL, claimed_at = NULL, updated_at = NOW()
+         WHERE slot_id IS NOT NULL
+         RETURNING id`
+      );
+      clearedLeads = clr.rowCount || 0;
+    } else if (memberIds.length > 0) {
+      // Unassign leads whose only list or slot association came from this deleted list
+      const clr = await query<{ id: string }>(
+        `UPDATE leads
+         SET slot_id = NULL, slot_assigned_at = NULL, claimed_stage = NULL, claimed_at = NULL, updated_at = NOW()
+         WHERE id = ANY($1)
+           AND slot_id IS NOT NULL
+         RETURNING id`,
+        [memberIds]
+      );
+      clearedLeads = clr.rowCount || 0;
+    }
+
+    return { clearedLeads, resetActiveScope: isScopedList };
+  }
+
+  /**
+   * Called when members are removed from a list; unassigns removed leads if they belong to the active scoped list.
+   */
+  async handleMembersRemovedFromList(listId: string, leadIds: string[]): Promise<number> {
+    if (!Array.isArray(leadIds) || leadIds.length === 0) return 0;
+    const settings = await this.getSettings();
+    if (settings.active_list_id === listId || !settings.active_list_id) {
+      return this.unassignLeadsFromSlots(leadIds);
+    }
+    return 0;
+  }
+
+  /**
+   * Distributes unassigned leads round-robin across the 5 slots (A, B, C, D, E).
+   * - If listId is provided with replaceExisting=true, older leads outside listId are cleared from slots
+   *   and settings.active_list_id is locked to listId so ONLY the new list runs across Slots A-E.
+   * - If rebalanceAll is true, rebalances all eligible leads in scope evenly.
+   */
+  async autoAssignUnassignedLeads(options?: {
+    rebalanceAll?: boolean;
+    listId?: string;
+    replaceExisting?: boolean;
+  }): Promise<{
     assignedCount: number;
     distribution: Record<SlotId, number>;
+    activeListId: string | null;
   }> {
     const rebalanceAll = options?.rebalanceAll === true;
-    const listId = options?.listId;
+    const rawListId = options?.listId;
+    const listId =
+      rawListId && rawListId !== 'all' && rawListId !== 'all-leads' && rawListId.trim() !== ''
+        ? rawListId.trim()
+        : undefined;
+    const replaceExisting = options?.replaceExisting === true;
 
-    // 1. Get current lead counts per slot
+    // 0. Always purge slot assignments on deleted/inactive/manual_review/opted-out leads
+    await this.clearDeletedOrInvalidSlotAssignments();
+
+    // If a specific listId is requested, verify it exists (not deleted)
+    if (listId) {
+      const listExists = await query<{ id: string }>(`SELECT id FROM lists WHERE id = $1`, [listId]);
+      if (listExists.rows.length === 0) {
+        const settings = await this.getSettings();
+        if (settings.active_list_id === listId) {
+          await this.updateSettings({ active_list_id: null });
+          await query(
+            `UPDATE leads SET slot_id = NULL, slot_assigned_at = NULL, claimed_stage = NULL, claimed_at = NULL, updated_at = NOW() WHERE slot_id IS NOT NULL`
+          );
+        }
+        return { assignedCount: 0, distribution: { A: 0, B: 0, C: 0, D: 0, E: 0 }, activeListId: null };
+      }
+    }
+
+    // 1. Replace older list assignments when switching to a specific list (or clearing scope to "all")
+    let resolvedActiveListId: string | null = null;
+    if (replaceExisting) {
+      resolvedActiveListId = listId || null;
+      await this.updateSettings({ active_list_id: resolvedActiveListId });
+      if (listId) {
+        await query(
+          `UPDATE leads
+           SET slot_id = NULL,
+               slot_assigned_at = NULL,
+               claimed_stage = NULL,
+               claimed_at = NULL,
+               updated_at = NOW()
+           WHERE slot_id IS NOT NULL
+             AND id NOT IN (SELECT lead_id FROM lead_list_memberships WHERE list_id = $1)`,
+          [listId]
+        );
+      }
+    } else {
+      const currentSettings = await this.getSettings();
+      resolvedActiveListId = listId || currentSettings.active_list_id || null;
+    }
+
+    // 2. Get current lead counts per slot (scoped cleanly to active_list_id if set)
+    const countConditions = [
+      `deleted_at IS NULL`,
+      `(status = 'active' OR status = 'queued' OR status IS NULL)`,
+      `slot_id IS NOT NULL`,
+    ];
+    const countParams: any[] = [];
+    if (listId) {
+      countParams.push(listId);
+      countConditions.push(`id IN (SELECT lead_id FROM lead_list_memberships WHERE list_id = $${countParams.length})`);
+    }
+
     const slotCountsRes = await query<{ slot_id: SlotId; count: string }>(
       `SELECT slot_id, COUNT(*) as count 
        FROM leads 
-       WHERE deleted_at IS NULL AND (status = 'active' OR status IS NULL) AND slot_id IS NOT NULL 
-       GROUP BY slot_id`
+       WHERE ${countConditions.join(' AND ')}
+       GROUP BY slot_id`,
+      countParams
     );
 
     const countMap = new Map<SlotId, number>();
@@ -691,10 +882,10 @@ export class FiveSlotSenderService {
       });
     }
 
-    // 2. Fetch contactable, non-completed active leads to assign
+    // 3. Fetch contactable, non-completed active leads to assign
     const whereConditions = [
       `deleted_at IS NULL`,
-      `(status = 'active' OR status IS NULL)`,
+      `(status = 'active' OR status = 'queued' OR status IS NULL)`,
       `(consent_status = 'none' OR consent_status IS NULL)`,
       `(outreach_stage IS NULL OR outreach_stage NOT IN ('completed', 'followup_3', 'skipped_no_opportunity'))`,
       `((email IS NOT NULL AND TRIM(email) LIKE '%@%.%') OR LENGTH(REGEXP_REPLACE(COALESCE(whatsapp, phone, ''), '[^0-9]', '', 'g')) >= 8)`,
@@ -719,10 +910,10 @@ export class FiveSlotSenderService {
     if (unassignedRes.rows.length === 0) {
       const dist: Record<SlotId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
       countMap.forEach((v, k) => { dist[k] = v; });
-      return { assignedCount: 0, distribution: dist };
+      return { assignedCount: 0, distribution: dist, activeListId: resolvedActiveListId };
     }
 
-    // 3. Assign leads round-robin to slot with fewest leads
+    // 4. Assign leads round-robin to slot with fewest leads
     for (const lead of unassignedRes.rows) {
       let minSlot: SlotId = 'A';
       let minCount = Infinity;
@@ -741,16 +932,16 @@ export class FiveSlotSenderService {
     }
 
     console.log(
-      `[FiveSlotSenderService] 🎯 Assigned ${unassignedRes.rows.length} leads across 5 slots: ` +
+      `[FiveSlotSenderService] 🎯 Assigned ${unassignedRes.rows.length} leads${listId ? ` (list ${listId})` : ''} across 5 slots: ` +
       SLOTS.map((s) => `Slot ${s}: ${countMap.get(s)}`).join(', ')
     );
 
-    // 4. Trigger rolling audits for the top leads in each slot
+    // 5. Trigger rolling audits for the top leads in each slot
     await this.dispatchRollingAudits();
 
     const distribution: Record<SlotId, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
     countMap.forEach((v, k) => { distribution[k] = v; });
-    return { assignedCount: unassignedRes.rows.length, distribution };
+    return { assignedCount: unassignedRes.rows.length, distribution, activeListId: resolvedActiveListId };
   }
 
   /**
@@ -1063,8 +1254,30 @@ export class FiveSlotSenderService {
   computeGridState(now: Date = new Date(), settings: SlotSenderSettings) {
     const nowSec = Math.floor(now.getTime() / 1000);
     const anchorSec = Math.floor(new Date(settings.anchor_timestamp).getTime() / 1000);
-    const cycleSec = Math.max(5, settings.slot_cycle_min * 60);
-    const offsetSec = Math.max(1, settings.slot_offset_min * 60);
+    const cycleSec = Math.max(5, Math.round(settings.slot_cycle_min * 60));
+    const offsetSec = Math.max(1, Math.round(settings.slot_offset_min * 60));
+
+    // If anchor_timestamp is scheduled in the future (initial first-send wait window),
+    // no slot is active yet and all 5 slots show their true upcoming start times.
+    if (nowSec < anchorSec) {
+      const slotTimes: Record<SlotId, { nextSec: number; nextDate: Date; slotCycleIndex: number }> = {} as any;
+      SLOTS.forEach((slot, idx) => {
+        const targetSec = anchorSec + idx * offsetSec;
+        slotTimes[slot] = {
+          nextSec: targetSec,
+          nextDate: new Date(targetSec * 1000),
+          slotCycleIndex: 0,
+        };
+      });
+      return {
+        nowSec,
+        cycleIndex: -1,
+        cycleStartSec: anchorSec,
+        offsetInCycle: 0,
+        currentActiveSlot: null,
+        slotTimes,
+      };
+    }
 
     const elapsed = Math.max(0, nowSec - anchorSec);
     const cycleIndex = Math.floor(elapsed / cycleSec);
@@ -1186,19 +1399,44 @@ export class FiveSlotSenderService {
       }
     }
 
-    // Auto-assign unassigned contactable active leads so all 5 slots have leads in their queue
-    await this.autoAssignUnassignedLeads().catch((err) => {
-      console.warn('[FiveSlotSenderService] Auto-assign error during tick:', err?.message);
-    });
+    // Clear deleted/invalid slot assignments first and respect scoped active_list_id (never re-pull older lists)
+    await this.clearDeletedOrInvalidSlotAssignments().catch(() => {});
+
+    let scopedListId = settings.active_list_id || undefined;
+    if (scopedListId && !filterTestBatch) {
+      const listExistsRes = await query<{ id: string }>(`SELECT id FROM lists WHERE id = $1`, [scopedListId]);
+      if (listExistsRes.rows.length === 0) {
+        await this.updateSettings({ active_list_id: null });
+        await query(
+          `UPDATE leads SET slot_id = NULL, slot_assigned_at = NULL, claimed_stage = NULL, claimed_at = NULL, updated_at = NOW() WHERE slot_id IS NOT NULL`
+        );
+        scopedListId = undefined;
+      }
+    }
+
+    if (!filterTestBatch) {
+      await this.autoAssignUnassignedLeads({
+        listId: scopedListId,
+      }).catch((err) => {
+        console.warn('[FiveSlotSenderService] Auto-assign error during tick:', err?.message);
+      });
+    }
 
     // Empty-queue Standby Guard (non-forced production ticks): stay idle unless there are leads awaiting outreach
     if (!filterTestBatch && !isForced) {
+      const pendingParams: any[] = [];
+      let pendingListFilter = '';
+      if (scopedListId) {
+        pendingParams.push(scopedListId);
+        pendingListFilter = `AND (slot_id IS NOT NULL OR id IN (SELECT lead_id FROM lead_list_memberships WHERE list_id = $${pendingParams.length}))`;
+      }
       const pendingCheck = await query<{ has_pending: boolean }>(
         `SELECT EXISTS (
            SELECT 1 FROM leads
            WHERE deleted_at IS NULL
              AND (status = 'active' OR status = 'queued' OR status IS NULL)
              AND (consent_status = 'none' OR consent_status IS NULL)
+             ${pendingListFilter}
              AND (
                outreach_stage IS NULL
                OR outreach_stage = 'initial'
@@ -1206,7 +1444,8 @@ export class FiveSlotSenderService {
                OR (outreach_stage = 'followup_1' AND last_contacted_at <= NOW() - INTERVAL '48 hours')
                OR (outreach_stage = 'followup_2' AND last_contacted_at <= NOW() - INTERVAL '72 hours')
              )
-         ) AS has_pending`
+         ) AS has_pending`,
+        pendingParams
       );
       if (!pendingCheck.rows[0]?.has_pending) {
         return {
@@ -1227,10 +1466,22 @@ export class FiveSlotSenderService {
 
       // 3. Compute Deterministic Grid
       const grid = this.computeGridState(now, settings);
-      const activeSlot = grid.currentActiveSlot;
+      let activeSlot = grid.currentActiveSlot;
 
       if (!activeSlot) {
-        return { activeSlot: null, dispatched: false, reason: 'Between slot offset windows' };
+        if (grid.cycleIndex < 0 && !isForced) {
+          const waitSec = Math.max(1, grid.cycleStartSec - grid.nowSec);
+          return {
+            activeSlot: null,
+            dispatched: false,
+            reason: `Waiting for scheduled first send in ${waitSec}s`,
+          };
+        }
+        if (isForced) {
+          activeSlot = 'A';
+        } else {
+          return { activeSlot: null, dispatched: false, reason: 'Between slot offset windows' };
+        }
       }
 
       // Ensure this slot has not already dispatched during this cycle window
@@ -2002,14 +2253,39 @@ export class FiveSlotSenderService {
     activeSlotNow: SlotId | null;
     schedulerState: 'active' | 'standby' | 'stopped' | 'tripped';
     hasPendingLeads: boolean;
+    activeList: { id: string; name: string } | null;
     circuitBreaker: {
       tripped: boolean;
       failures: number;
       alert: string | null;
     };
   }> {
-    const rawSettings = await this.getSettings();
+    // Self-heal: remove any soft-deleted, inactive, manual_review, or opted-out leads from slot assignments
+    await this.clearDeletedOrInvalidSlotAssignments().catch(() => {});
+
+    let rawSettings = await this.getSettings();
+    let activeList: { id: string; name: string } | null = null;
+    if (rawSettings.active_list_id) {
+      const listRes = await query<{ id: string; name: string }>(
+        `SELECT id, name FROM lists WHERE id = $1`,
+        [rawSettings.active_list_id]
+      );
+      if (listRes.rows.length > 0) {
+        activeList = listRes.rows[0];
+      } else {
+        // Active scoped list was deleted — clear scope and unassign orphaned leads
+        rawSettings = await this.updateSettings({ active_list_id: null });
+        await query(
+          `UPDATE leads SET slot_id = NULL, slot_assigned_at = NULL, claimed_stage = NULL, claimed_at = NULL, updated_at = NOW() WHERE slot_id IS NOT NULL`
+        );
+      }
+    }
+
     const grid = this.computeGridState(new Date(), rawSettings);
+    const listScopeClause = activeList
+      ? `AND id IN (SELECT lead_id FROM lead_list_memberships WHERE list_id = $1)`
+      : '';
+    const listScopeParams = activeList ? [activeList.id] : [];
 
     const countsRes = await query<{
       slot_id: SlotId;
@@ -2053,10 +2329,13 @@ export class FiveSlotSenderService {
        FROM leads
        WHERE deleted_at IS NULL
          AND slot_id IS NOT NULL
-       GROUP BY slot_id`
+         AND (status IS NULL OR status NOT IN ('inactive', 'duplicate', 'manual_review', 'paused'))
+         ${listScopeClause}
+       GROUP BY slot_id`,
+      listScopeParams
     );
 
-    // Check unassigned contactable active leads too so brand-new imports reflect active/pending status immediately
+    // Check unassigned contactable active leads too (scoped to activeList if one is active)
     const unassignedPendingRes = await query<{ has_unassigned: boolean }>(
       `SELECT EXISTS (
          SELECT 1 FROM leads
@@ -2065,15 +2344,17 @@ export class FiveSlotSenderService {
            AND (status = 'active' OR status = 'queued' OR status IS NULL)
            AND (consent_status = 'none' OR consent_status IS NULL)
            AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity'))
+           ${listScopeClause}
            AND (
              (email IS NOT NULL AND email LIKE '%@%')
              OR LENGTH(REGEXP_REPLACE(COALESCE(NULLIF(TRIM(whatsapp), ''), NULLIF(TRIM(phone), ''), ''), '[^0-9]', '', 'g')) >= 8
            )
-       ) AS has_unassigned`
+       ) AS has_unassigned`,
+      listScopeParams
     );
     const hasUnassignedPending = Boolean(unassignedPendingRes.rows[0]?.has_unassigned);
 
-    // Fetch up to 5 recent leads per slot with detailed 4-step pipeline status
+    // Fetch up to 5 active leads per slot with detailed 4-step pipeline status
     const slotLeadsRes = await query<{
       id: string;
       business_name: string;
@@ -2094,7 +2375,11 @@ export class FiveSlotSenderService {
        FROM leads
        WHERE deleted_at IS NULL
          AND slot_id IS NOT NULL
-       ORDER BY updated_at DESC`
+         AND (status = 'active' OR status = 'queued' OR status IS NULL)
+         AND (consent_status = 'none' OR consent_status IS NULL)
+         ${listScopeClause}
+       ORDER BY updated_at DESC`,
+      listScopeParams
     );
 
     const slotLeadsMap = new Map<SlotId, SlotLeadMilestone[]>();
@@ -2206,6 +2491,7 @@ export class FiveSlotSenderService {
       activeSlotNow: schedulerState === 'active' ? grid.currentActiveSlot : null,
       schedulerState,
       hasPendingLeads,
+      activeList,
       circuitBreaker: {
         tripped: this.isCircuitBreakerTripped,
         failures: this.consecutiveAuthFailures,

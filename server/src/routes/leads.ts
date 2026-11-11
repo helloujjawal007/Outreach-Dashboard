@@ -440,11 +440,16 @@ leadsRouter.post('/bulk-delete', async (req: Request, res: Response) => {
     await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
 
-    // 2. Mark soft-deleted in leads table
+    // 2. Mark soft-deleted in leads table & immediately unassign from 5-slot queues
     const result = await query(
       `UPDATE leads 
        SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days'
+           deleted_expires_at = NOW() + INTERVAL '28 days',
+           slot_id = NULL,
+           slot_assigned_at = NULL,
+           claimed_stage = NULL,
+           claimed_at = NULL,
+           updated_at = NOW()
        WHERE id = ANY($1)
           OR id IN (SELECT original_lead_id FROM clients WHERE id = ANY($1) AND original_lead_id IS NOT NULL)
           OR (email <> '' AND LOWER(email) IN (SELECT LOWER(email) FROM clients WHERE id = ANY($1) AND email <> ''))
@@ -930,7 +935,15 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
           [allTargetIds]
         );
         await query(
-          `UPDATE leads SET deleted_at = NOW(), deleted_expires_at = NOW() + INTERVAL '28 days' WHERE id = ANY($1)`,
+          `UPDATE leads
+           SET deleted_at = NOW(),
+               deleted_expires_at = NOW() + INTERVAL '28 days',
+               slot_id = NULL,
+               slot_assigned_at = NULL,
+               claimed_stage = NULL,
+               claimed_at = NULL,
+               updated_at = NOW()
+           WHERE id = ANY($1)`,
           [allTargetIds]
         );
         return res.json({ success: true, message: 'Client soft-deleted (moved to Trash Bin for 28 days)' });
@@ -973,11 +986,16 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
     await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
 
-    // Mark soft-deleted in leads
+    // Mark soft-deleted in leads & clear from 5-slot queues immediately
     const updateRes = await query(
       `UPDATE leads 
        SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days'
+           deleted_expires_at = NOW() + INTERVAL '28 days',
+           slot_id = NULL,
+           slot_assigned_at = NULL,
+           claimed_stage = NULL,
+           claimed_at = NULL,
+           updated_at = NOW()
        WHERE id = ANY($1)
        RETURNING *`,
       [allTargetIds]

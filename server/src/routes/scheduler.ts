@@ -129,11 +129,12 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
     }
 
     if (channel === 'email') {
-      // Unified scheduling: route directly to the 5-Slot Sender Panel
+      // Unified scheduling: route directly to the 5-Slot Sender Panel (replacing older list assignments)
       const { fiveSlotSenderService } = await import('../services/fiveSlotSenderService');
       const assignRes = await fiveSlotSenderService.autoAssignUnassignedLeads({
         listId: listId !== 'all' && listId !== 'all-leads' ? listId : undefined,
         rebalanceAll: false,
+        replaceExisting: true,
       });
 
       if (scheduledFor === 'now') {

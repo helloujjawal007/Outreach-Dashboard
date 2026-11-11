@@ -1,4 +1,5 @@
 import { query } from '../config/db';
+import { workflowRoutingService } from './workflowRoutingService';
 
 export type FailureType =
   | 'SEND_FAILED'
@@ -48,6 +49,38 @@ export class FailureLogService {
     errorMessage: string;
     attempts?: number;
   }): Promise<FailureLogEntry> {
+    // Deduplicate unresolved failures of the same type for the same lead so one broken lead never floods the log
+    if (params.leadId) {
+      const existingRes = await query<FailureLogEntry>(
+        `SELECT * FROM failure_log
+         WHERE lead_id = $1 AND type = $2 AND resolved = false
+         ORDER BY created_at DESC LIMIT 1`,
+        [params.leadId, params.type]
+      );
+      if (existingRes.rows.length > 0) {
+        const updatedRes = await query<FailureLogEntry>(
+          `UPDATE failure_log
+           SET attempts = GREATEST(attempts + 1, $1),
+               error_message = $2,
+               slot_id = COALESCE(NULLIF($3, ''), slot_id),
+               website = COALESCE(NULLIF($4, ''), website),
+               email = COALESCE(NULLIF($5, ''), email),
+               created_at = NOW()
+           WHERE id = $6
+           RETURNING *`,
+          [
+            params.attempts || 1,
+            params.errorMessage || existingRes.rows[0].error_message,
+            params.slotId || '',
+            params.website || '',
+            params.email || '',
+            existingRes.rows[0].id,
+          ]
+        );
+        return updatedRes.rows[0];
+      }
+    }
+
     const res = await query<FailureLogEntry>(
       `INSERT INTO failure_log (
         lead_id, company, website, email, slot_id, stage, type, error_message, attempts, created_at, resolved
@@ -188,12 +221,42 @@ export class FailureLogService {
 
     const failure = res.rows[0];
 
-    // Mark log resolved
-    await query(`UPDATE failure_log SET resolved = true WHERE id = $1`, [id]);
-
     if (!failure.lead_id) {
       return { success: true, message: 'Failure marked resolved (no associated lead ID)' };
     }
+
+    // Validate before re-queuing so unrecoverable leads don't immediately fail again
+    const leadRes = await query<{ website: string | null; email: string | null; phone: string | null; whatsapp: string | null }>(
+      `SELECT website, email, phone, whatsapp FROM leads WHERE id = $1 AND deleted_at IS NULL`,
+      [failure.lead_id]
+    );
+    if (leadRes.rows.length === 0) {
+      await query(`UPDATE failure_log SET resolved = true WHERE id = $1`, [id]);
+      return { success: false, message: 'Associated lead no longer exists in CRM (failure closed).' };
+    }
+
+    const leadRow = leadRes.rows[0];
+    const hasEmail = Boolean(leadRow.email && leadRow.email.includes('@'));
+    const rawDigits = (leadRow.whatsapp || leadRow.phone || '').replace(/\D/g, '');
+    if (!hasEmail && rawDigits.length < 8) {
+      return {
+        success: false,
+        message: 'Cannot retry: lead has no email address or WhatsApp/phone number. Add contact info in CRM or delete this failed lead.',
+        leadId: failure.lead_id,
+      };
+    }
+
+    const isAuditError = ['AUDIT_FAILED', 'AUDIT_TIMEOUT', 'PDF_MISSING'].includes(failure.type);
+    if (isAuditError && !workflowRoutingService.hasValidWebsite(leadRow.website)) {
+      return {
+        success: false,
+        message: 'Cannot retry audit: lead has no valid website URL. Add a valid website URL in CRM or delete this failed lead.',
+        leadId: failure.lead_id,
+      };
+    }
+
+    // Mark log resolved only after passing retry validation
+    await query(`UPDATE failure_log SET resolved = true WHERE id = $1`, [id]);
 
     // Reset lead so that it can be audited and scheduled again
     await query(
@@ -222,6 +285,83 @@ export class FailureLogService {
       success: true,
       message: `Reset lead "${failure.company}" to active queue. Audit actively re-requested for slot ${failure.slot_id || 'A'}.`,
       leadId: failure.lead_id,
+    };
+  }
+
+  /**
+   * Soft-deletes a failed lead from CRM & slots and clears its failure log entries
+   */
+  async deleteFailedLead(id: string): Promise<{
+    success: boolean;
+    deletedLead: boolean;
+    leadId: string | null;
+    company: string;
+    message: string;
+  }> {
+    const res = await query<FailureLogEntry>(`SELECT * FROM failure_log WHERE id = $1`, [id]);
+    if (res.rows.length === 0) {
+      return {
+        success: false,
+        deletedLead: false,
+        leadId: null,
+        company: '',
+        message: 'Failure log entry not found',
+      };
+    }
+
+    const failure = res.rows[0];
+    let deletedLead = false;
+
+    if (failure.lead_id) {
+      const leadId = failure.lead_id;
+      await query(
+        `DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE lead_id = $1 OR client_id = $1)`,
+        [leadId]
+      );
+      await query(
+        `DELETE FROM conversations WHERE lead_id = $1 OR client_id = $1 OR (entity_type = 'lead' AND lead_id = $1) OR (entity_type = 'client' AND client_id = $1)`,
+        [leadId]
+      );
+      await query(`DELETE FROM scheduled_dispatches WHERE lead_id = $1 OR client_id = $1`, [leadId]);
+      await query(`DELETE FROM send_queue WHERE lead_id = $1 OR client_id = $1`, [leadId]);
+      await query(`DELETE FROM follow_up_logs WHERE lead_id = $1 OR client_id = $1`, [leadId]);
+      await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = $1`, [leadId]);
+      await query(`DELETE FROM lead_list_memberships WHERE lead_id = $1`, [leadId]);
+
+      const softDel = await query(
+        `UPDATE leads
+         SET deleted_at = NOW(),
+             deleted_expires_at = NOW() + INTERVAL '28 days',
+             slot_id = NULL,
+             status = 'inactive',
+             updated_at = NOW()
+         WHERE id = $1
+         RETURNING id`,
+        [leadId]
+      );
+      deletedLead = (softDel.rowCount || 0) > 0;
+
+      await query(
+        `UPDATE clients
+         SET deleted_at = NOW(),
+             deleted_expires_at = NOW() + INTERVAL '28 days'
+         WHERE id = $1 OR original_lead_id = $1`,
+        [leadId]
+      );
+
+      await query(`DELETE FROM failure_log WHERE lead_id = $1 OR id = $2`, [leadId, id]);
+    } else {
+      await query(`DELETE FROM failure_log WHERE id = $1`, [id]);
+    }
+
+    return {
+      success: true,
+      deletedLead,
+      leadId: failure.lead_id,
+      company: failure.company,
+      message: deletedLead
+        ? `Deleted failed lead "${failure.company}" from CRM & cleared failure logs.`
+        : `Removed orphaned failure log entry for "${failure.company}".`,
     };
   }
 

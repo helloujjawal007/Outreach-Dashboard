@@ -32,6 +32,15 @@ export class WorkflowRoutingService {
       trimmed === 'no' ||
       trimmed.includes('google.com/maps') ||
       trimmed.includes('maps.google.com') ||
+      trimmed.includes('maps.app.goo.gl') ||
+      trimmed.includes('goo.gl/maps') ||
+      trimmed.includes('googleapis.com') ||
+      trimmed.includes('streetviewpixels') ||
+      trimmed.includes('googleusercontent.com') ||
+      trimmed.includes('gstatic.com') ||
+      trimmed.includes('ggpht.com') ||
+      trimmed.includes('schema.org') ||
+      trimmed.includes('w3.org') ||
       trimmed.includes('facebook.com') ||
       trimmed.includes('instagram.com')
     ) {
@@ -43,7 +52,25 @@ export class WorkflowRoutingService {
         ? trimmed
         : `https://${trimmed}`;
       const parsed = new URL(normalized);
-      return Boolean(parsed.hostname && parsed.hostname.includes('.'));
+      const host = parsed.hostname.toLowerCase();
+      if (!host || !host.includes('.') || host === 'localhost' || host.endsWith('.local')) {
+        return false;
+      }
+      if (
+        host === 'google.com' ||
+        host.endsWith('.google.com') ||
+        host.endsWith('.googleapis.com') ||
+        host.endsWith('.googleusercontent.com') ||
+        host.endsWith('.gstatic.com') ||
+        host.endsWith('.ggpht.com')
+      ) {
+        return false;
+      }
+      // Reject direct image / static tile assets erroneously scraped as website URLs
+      if (/\.(png|jpe?g|webp|svg|gif|ico)(\?|$)/i.test(parsed.pathname)) {
+        return false;
+      }
+      return true;
     } catch {
       return false;
     }

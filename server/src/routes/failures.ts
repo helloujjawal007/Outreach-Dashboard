@@ -63,6 +63,24 @@ failuresRouter.post('/:id/retry', async (req: Request, res: Response) => {
 });
 
 /**
+ * DELETE /api/failures/:id/lead
+ * Delete failed lead from CRM/queues and remove associated failure entries
+ */
+failuresRouter.delete('/:id/lead', async (req: Request, res: Response) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const result = await failureLogService.deleteFailedLead(id);
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+    res.json(result);
+  } catch (err: any) {
+    console.error('[failuresRouter.deleteLead] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to delete failed lead' });
+  }
+});
+
+/**
  * GET /api/failures/export
  * Download CSV export of failure logs
  */

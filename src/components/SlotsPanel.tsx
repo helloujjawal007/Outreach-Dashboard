@@ -26,6 +26,8 @@ export function SlotsPanel() {
   const [slots, setSlots] = useState<SlotStatus[]>([]);
   const [settings, setSettings] = useState<SlotSenderSettings | null>(null);
   const [activeSlotNow, setActiveSlotNow] = useState<SlotId | null>(null);
+  const [schedulerState, setSchedulerState] = useState<'active' | 'standby' | 'stopped' | 'tripped'>('standby');
+  const [hasPendingLeads, setHasPendingLeads] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isTickRunning, setIsTickRunning] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
@@ -79,6 +81,20 @@ export function SlotsPanel() {
         setSlots(res.slots);
         setSettings(res.settings);
         setActiveSlotNow(res.activeSlotNow);
+        const derivedPending =
+          res.hasPendingLeads ??
+          res.slots.some((s) => (s.waitingCount ?? 0) > 0 || (s.readyToSendCount ?? 0) > 0 || (s.dueFollowupCount ?? 0) > 0);
+        setHasPendingLeads(derivedPending);
+        const derivedState =
+          res.schedulerState ??
+          (res.settings?.is_active === false
+            ? 'stopped'
+            : res.circuitBreaker?.tripped
+            ? 'tripped'
+            : derivedPending
+            ? 'active'
+            : 'standby');
+        setSchedulerState(derivedState);
         setCycleMinInput(String(res.settings.slot_cycle_min));
         setOffsetMinInput(String(res.settings.slot_offset_min));
         setTdUrlInput(res.settings.td_endpoint_url || '');
@@ -137,7 +153,7 @@ export function SlotsPanel() {
     try {
       const res = await api.terminateSlotSchedule({
         slotId: terminatingSlotId === 'all' ? undefined : terminatingSlotId,
-        pauseSender: true,
+        pauseSender: terminatingSlotId === 'all',
       });
       if (res.success) {
         setFeedback(`🛑 ${res.message}`);
@@ -252,14 +268,18 @@ export function SlotsPanel() {
     E: { border: 'border-rose-200', bg: 'bg-rose-50/50', badge: 'bg-rose-600', text: 'text-rose-900' },
   };
 
-  const isSenderActive = settings?.is_active !== false;
+  const isSenderActive = settings?.is_active !== false && schedulerState !== 'stopped' && schedulerState !== 'tripped';
+  const hasQueuedWork =
+    hasPendingLeads ||
+    slots.some((s) => (s.waitingCount ?? 0) > 0 || (s.readyToSendCount ?? 0) > 0 || (s.dueFollowupCount ?? 0) > 0);
+  const isActivelySending = isSenderActive && hasQueuedWork;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs mb-6 overflow-hidden">
       {/* Header bar */}
       <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+          <div className={`h-8 w-8 rounded-lg ${isActivelySending ? 'bg-indigo-600' : 'bg-slate-600'} text-white flex items-center justify-center shadow-xs`}>
             <Layers size={18} />
           </div>
           <div>
@@ -270,21 +290,30 @@ export function SlotsPanel() {
                 Deterministic Grid (Cycle: {settings?.slot_cycle_min || 10}m, Offset: {settings?.slot_offset_min || 2}m)
               </span>
 
-              {/* Active / Paused Indicator */}
-              {isSenderActive ? (
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Automated sending is active 24/7">
+              {/* Active / Standby / Stopped Indicator */}
+              {!isSenderActive ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="5-slot sending is stopped. Automated emails and audits are halted.">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  ⏸️ STOPPED
+                </span>
+              ) : isActivelySending ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" title="Leads are queued and automated 5-slot sending is active">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Active 24/7
+                  Active · Sending Leads
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="5-slot sending is paused. Automated emails are halted.">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                  ⏸️ PAUSED
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300" title="No leads currently queued to send. Scheduler stands by until leads are added.">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                  Standby (No Leads Queued)
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-500">
-              Zero send conflicts. 24/7 continuous outreach with sticky slot round-robin.
+              {!isSenderActive
+                ? 'Scheduler stopped by user. Click Start Sending or Divide Leads when ready.'
+                : isActivelySending
+                ? 'Zero send conflicts. Staggered outreach active across queued leads.'
+                : 'Queue empty — standing by cleanly with zero idle dispatches unless leads need sending.'}
             </p>
           </div>
         </div>
@@ -307,26 +336,26 @@ export function SlotsPanel() {
             <span>{isDistributing ? 'Dividing...' : '⚡ Divide Leads to 5 Slots'}</span>
           </button>
 
-          {/* Pause / Resume Button */}
+          {/* Stop / Start Scheduler Button */}
           {isSenderActive ? (
             <button
               onClick={handleTogglePause}
               disabled={isPausing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
-              title="Pause 5-slot sending across all slots. Halts automated email dispatches."
+              title="Stop / Pause 5-slot sending across all slots."
             >
               <Pause size={13} className={isPausing ? 'animate-spin text-amber-700' : 'text-amber-700'} />
-              <span>{isPausing ? 'Pausing...' : '⏸️ Pause Sending'}</span>
+              <span>{isPausing ? 'Stopping...' : '⏸️ Stop Scheduler'}</span>
             </button>
           ) : (
             <button
               onClick={handleTogglePause}
               disabled={isPausing}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
-              title="Resume 24/7 automated email sending across all slots."
+              title="Enable scheduler so it activates automatically whenever leads need sending."
             >
               <Play size={13} className={isPausing ? 'animate-spin text-emerald-700' : 'text-emerald-700 fill-emerald-700'} />
-              <span>{isPausing ? 'Resuming...' : '▶️ Resume Sending'}</span>
+              <span>{isPausing ? 'Starting...' : '▶️ Start Scheduler'}</span>
             </button>
           )}
 
@@ -527,8 +556,8 @@ export function SlotsPanel() {
       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {slots.map((s) => {
           const colors = slotColors[s.slotId] || slotColors.A;
-          const isActive = activeSlotNow === s.slotId;
-          const countdown = formatCountdown(s.nextSendTime);
+          const isActive = isActivelySending && activeSlotNow === s.slotId;
+          const countdown = isActivelySending ? formatCountdown(s.nextSendTime) : null;
 
           return (
             <div
@@ -553,7 +582,15 @@ export function SlotsPanel() {
                   </div>
                 </div>
 
-                {isActive ? (
+                {!isSenderActive ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800">
+                    Stopped
+                  </span>
+                ) : !isActivelySending ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-500">
+                    Idle
+                  </span>
+                ) : isActive ? (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 animate-pulse">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
                     Active Now
@@ -619,7 +656,11 @@ export function SlotsPanel() {
               <div className="mt-2.5 pt-1.5 border-t border-slate-200/60 text-[10px] text-slate-400 flex items-center justify-between">
                 <span>Next turn:</span>
                 <span className="font-mono font-medium text-slate-600">
-                  {new Date(s.nextSendTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {!isSenderActive
+                    ? 'Stopped'
+                    : !isActivelySending
+                    ? 'Standby'
+                    : new Date(s.nextSendTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             </div>

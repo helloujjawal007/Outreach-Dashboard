@@ -1003,6 +1003,7 @@ export interface SlotStatus {
   sentCount: number;
   receivedJsonCount: number;
   waitingCount: number;
+  dueFollowupCount?: number;
   nextSendTime: string;
   lastSendTime: string | null;
   status: 'active' | 'waiting' | 'idle';
@@ -1014,6 +1015,8 @@ export interface SlotsOverviewResponse {
   slots: SlotStatus[];
   settings: SlotSenderSettings;
   activeSlotNow: SlotId | null;
+  schedulerState?: 'active' | 'standby' | 'stopped' | 'tripped';
+  hasPendingLeads?: boolean;
   circuitBreaker?: {
     tripped: boolean;
     failures: number;

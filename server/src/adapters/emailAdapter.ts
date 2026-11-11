@@ -613,7 +613,13 @@ export class EmailAdapter {
         const isGmail = (env.SMTP_HOST || '').toLowerCase().includes('gmail') || (env.SMTP_USER || '').toLowerCase().endsWith('@gmail.com');
         const transporter = nodemailer.createTransport(
           (isGmail
-            ? { service: 'gmail', auth: { user: env.SMTP_USER, pass: cleanPass } }
+            ? {
+                service: 'gmail',
+                auth: { user: env.SMTP_USER, pass: cleanPass },
+                connectionTimeout: 20000,
+                greetingTimeout: 15000,
+                socketTimeout: 25000,
+              }
             : {
                 host: env.SMTP_HOST || 'smtppro.zoho.in',
                 port: env.SMTP_PORT || 465,

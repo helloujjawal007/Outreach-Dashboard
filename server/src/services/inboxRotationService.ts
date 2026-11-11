@@ -198,6 +198,9 @@ export class InboxRotationService {
               user: inbox.smtp_user,
               pass: cleanPass,
             },
+            connectionTimeout: 20000,
+            greetingTimeout: 15000,
+            socketTimeout: 25000,
             pool: false,
           }
         : (() => {

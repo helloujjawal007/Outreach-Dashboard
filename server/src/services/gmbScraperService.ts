@@ -9,6 +9,7 @@ import { query } from '../config/db';
 import { whatsappValidator } from './whatsappValidator';
 import { automatedIntakeEngine } from './automatedIntakeEngine';
 import { emailValidatorService } from './emailValidatorService';
+import { workflowRoutingService } from './workflowRoutingService';
 
 export interface ScrapedLeadItem {
   id?: string;
@@ -336,6 +337,10 @@ export class GmbScraperService {
     let targetUrl = rawUrl.trim();
     if (!/^https?:\/\//i.test(targetUrl)) {
       targetUrl = `https://${targetUrl}`;
+    }
+
+    if (!workflowRoutingService.hasValidWebsite(targetUrl)) {
+      return { isLive: false, verifiedUrl: '', error: 'Non-business or Google asset URL rejected' };
     }
 
     let parsed: URL;
@@ -854,12 +859,7 @@ export class GmbScraperService {
             function findWebsite(node: any): string | null {
               if (!node) return null;
               if (typeof node === 'string' && (node.startsWith('http://') || node.startsWith('https://'))) {
-                if (
-                  !node.includes('google.com') &&
-                  !node.includes('gstatic.com') &&
-                  !node.includes('schema.org') &&
-                  !node.includes('googleusercontent.com')
-                ) {
+                if (workflowRoutingService.hasValidWebsite(node)) {
                   return node;
                 }
               }
@@ -885,7 +885,7 @@ export class GmbScraperService {
             try {
               if (cleanWeb) {
                 const u = new URL(cleanWeb);
-                if (!['http:', 'https:'].includes(u.protocol) || u.hostname.includes('google.') || u.hostname.includes('gstatic.') || u.hostname.includes('schema.org')) {
+                if (!['http:', 'https:'].includes(u.protocol) || !workflowRoutingService.hasValidWebsite(cleanWeb)) {
                   cleanWeb = '';
                 } else {
                   cleanWeb = `${u.protocol}//${u.host}${u.pathname}${u.search}`;
@@ -1009,7 +1009,7 @@ export class GmbScraperService {
                 category: queryStr.split(' in ')[0] || 'Local Services',
                 phone: item.phone || '',
                 email: '',
-                website: item.website || '',
+                website: item.website && workflowRoutingService.hasValidWebsite(item.website) ? item.website : '',
                 address: item.address || queryStr.split(' in ')[1] || '',
                 country: targetCountry || 'USA',
                 rating: item.rating || 4.8,
@@ -1292,6 +1292,9 @@ export class GmbScraperService {
         waReason = val.reason;
       }
 
+      const hasContactChannel = (Boolean(email) && email.includes('@')) || phoneDigits.length >= 8;
+      const validWebsiteUrl = item.website && workflowRoutingService.hasValidWebsite(item.website) ? item.website : null;
+
       const googleProfile = {
         placeName: bName,
         rating: item.rating || 4.8,
@@ -1299,7 +1302,7 @@ export class GmbScraperService {
         formattedAddress: item.address || '',
         category: item.category || 'Local Business',
         status: 'OPERATIONAL',
-        website: item.website || undefined,
+        website: validWebsiteUrl || undefined,
         phone: item.phone || undefined,
         googleMapsUrl: item.googleMapsUrl || undefined,
         hasGbpClaimed: true,
@@ -1324,21 +1327,22 @@ export class GmbScraperService {
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11,
-          'active', 'none', $12, $13, $14,
-          $15, $16, $17, NOW()
+          $12, 'none', $13, $14, $15,
+          $16, $17, $18, NOW()
         ) RETURNING *`,
         [
           bName,
           item.category || 'Local Business',
           phone || null,
           email || null,
-          item.website || null,
+          validWebsiteUrl,
           location,
           item.country || 'USA',
           phone || null,
           item.discoveredSocials?.instagram || null,
           item.discoveredSocials?.facebook || null,
           item.discoveredSocials?.linkedin || null,
+          hasContactChannel ? 'active' : 'inactive',
           batchId,
           waEligible,
           waReason,

@@ -15,6 +15,7 @@ import {
   Check,
   XCircle,
   FileText,
+  Trash2,
 } from 'lucide-react';
 
 export function FailuresPage() {
@@ -33,6 +34,7 @@ export function FailuresPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [actionInProgress, setActionInProgress] = useState<Record<string, string>>({}); // id -> action label
+  const [deleteConfirmRecord, setDeleteConfirmRecord] = useState<FailureRecord | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const fetchFailures = useCallback(async () => {
@@ -90,8 +92,10 @@ export function FailuresPage() {
     try {
       const res = await api.retryFailure(id);
       if (res.success) {
-        setFeedback(`⚡ Lead re-queued into active rotation. Audit initiated!`);
+        setFeedback(`⚡ ${res.message || 'Lead re-queued into active rotation. Audit initiated!'}`);
         await fetchFailures();
+      } else {
+        setFeedback(`⚠️ ${res.message || 'Cannot retry this lead.'}`);
       }
     } catch (err: any) {
       setFeedback(`❌ Retry error: ${err?.message}`);
@@ -99,6 +103,31 @@ export function FailuresPage() {
       setActionInProgress((prev) => {
         const next = { ...prev };
         delete next[id];
+        return next;
+      });
+      setTimeout(() => setFeedback(null), 5000);
+    }
+  };
+
+  const handleConfirmDeleteLead = async () => {
+    if (!deleteConfirmRecord) return;
+    const target = deleteConfirmRecord;
+    setActionInProgress((prev) => ({ ...prev, [target.id]: 'deleting' }));
+    try {
+      const res = await api.deleteFailedLead(target.id);
+      if (res.success) {
+        setFeedback(`🗑️ ${res.message}`);
+        setDeleteConfirmRecord(null);
+        await fetchFailures();
+      } else {
+        setFeedback(`⚠️ ${res.message || 'Failed to delete lead'}`);
+      }
+    } catch (err: any) {
+      setFeedback(`❌ Delete error: ${err?.message}`);
+    } finally {
+      setActionInProgress((prev) => {
+        const next = { ...prev };
+        delete next[target.id];
         return next;
       });
       setTimeout(() => setFeedback(null), 5000);
@@ -351,6 +380,7 @@ export function FailuresPage() {
                   const slotClass = r.slot_id ? slotPills[r.slot_id] : 'bg-slate-100 text-slate-600 border-slate-200';
                   const isResolving = actionInProgress[r.id] === 'resolving';
                   const isRetrying = actionInProgress[r.id] === 'retrying';
+                  const isDeleting = actionInProgress[r.id] === 'deleting';
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
@@ -444,7 +474,7 @@ export function FailuresPage() {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleRetry(r.id)}
-                            disabled={isRetrying || isResolving}
+                            disabled={isRetrying || isResolving || isDeleting}
                             className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors disabled:opacity-50 cursor-pointer"
                             title="Re-enqueue lead & trigger audit diagnostic"
                           >
@@ -455,7 +485,7 @@ export function FailuresPage() {
                           {!r.resolved && (
                             <button
                               onClick={() => handleResolve(r.id)}
-                              disabled={isResolving || isRetrying}
+                              disabled={isResolving || isRetrying || isDeleting}
                               className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
                               title="Mark issue resolved"
                             >
@@ -463,6 +493,16 @@ export function FailuresPage() {
                               <span>Resolve</span>
                             </button>
                           )}
+
+                          <button
+                            onClick={() => setDeleteConfirmRecord(r)}
+                            disabled={isDeleting || isRetrying || isResolving}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors disabled:opacity-50 cursor-pointer"
+                            title="Delete failed lead from CRM and remove this failure record"
+                          >
+                            <Trash2 size={11} />
+                            <span>Delete</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -484,6 +524,51 @@ export function FailuresPage() {
           </span>
         </div>
       </div>
+
+      {/* Delete Failed Lead Confirmation Modal */}
+      {deleteConfirmRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Failed Lead</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Remove <strong className="text-slate-800">{deleteConfirmRecord.company || 'this lead'}</strong> from CRM &amp; active outreach queues and clear its failure logs?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-1">
+              <div><span className="font-semibold text-slate-700">Reason:</span> {deleteConfirmRecord.error_message}</div>
+              {deleteConfirmRecord.email && <div><span className="font-semibold text-slate-700">Email:</span> {deleteConfirmRecord.email}</div>}
+              {deleteConfirmRecord.website && <div><span className="font-semibold text-slate-700">Website:</span> {deleteConfirmRecord.website}</div>}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmRecord(null)}
+                disabled={Boolean(actionInProgress[deleteConfirmRecord.id])}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteLead}
+                disabled={Boolean(actionInProgress[deleteConfirmRecord.id])}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 size={13} />
+                <span>{actionInProgress[deleteConfirmRecord.id] === 'deleting' ? 'Deleting...' : 'Delete Lead'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

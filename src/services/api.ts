@@ -2277,6 +2277,18 @@ export const api = {
     });
   },
 
+  async deleteFailedLead(id: string): Promise<{
+    success: boolean;
+    deletedLead: boolean;
+    leadId: string | null;
+    company: string;
+    message: string;
+  }> {
+    return request(`/failures/${id}/lead`, {
+      method: 'DELETE',
+    });
+  },
+
   getFailuresExportUrl(params?: {
     type?: string;
     slotId?: string;

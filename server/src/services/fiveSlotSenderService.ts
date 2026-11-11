@@ -7,6 +7,7 @@ import { suppressionService } from './suppressionService';
 import { classifySmtpError } from '../utils/smtpClassifier';
 import { validateAuditAsset, isValidPdfFile } from '../utils/auditPolicy';
 import { resolveRecipientTimezone, isWithinRecipientWindow } from '../utils/timezoneHelper';
+import { workflowRoutingService } from './workflowRoutingService';
 import { env } from '../config/env';
 
 export const SLOTS = ['A', 'B', 'C', 'D', 'E'] as const;
@@ -57,6 +58,7 @@ export interface SlotStatus {
   sentCount: number;
   receivedJsonCount: number;
   waitingCount: number;
+  dueFollowupCount?: number;
   nextSendTime: string;
   lastSendTime: string | null;
   status: 'active' | 'waiting' | 'idle';
@@ -286,6 +288,7 @@ export class FiveSlotSenderService {
          SET slot_id = NULL, 
              slot_assigned_at = NULL, 
              outreach_stage = CASE WHEN outreach_stage IN ('initial', 'sending') THEN NULL ELSE outreach_stage END,
+             status = CASE WHEN status = 'active' THEN 'inactive' ELSE status END,
              claimed_stage = NULL, 
              claimed_at = NULL,
              updated_at = NOW()
@@ -295,6 +298,12 @@ export class FiveSlotSenderService {
         [targetSlot]
       );
       terminatedLeadsCount = leadRes.rowCount || 0;
+
+      if (options?.pauseSender === true) {
+        await query(
+          `UPDATE slot_sender_settings SET is_active = false, updated_at = NOW() WHERE id = 'default'`
+        );
+      }
 
       const dispRes = await query<{ id: string }>(
         `UPDATE scheduled_dispatches 
@@ -682,11 +691,13 @@ export class FiveSlotSenderService {
       });
     }
 
-    // 2. Fetch leads to assign
+    // 2. Fetch contactable, non-completed active leads to assign
     const whereConditions = [
       `deleted_at IS NULL`,
       `(status = 'active' OR status IS NULL)`,
       `(consent_status = 'none' OR consent_status IS NULL)`,
+      `(outreach_stage IS NULL OR outreach_stage NOT IN ('completed', 'followup_3', 'skipped_no_opportunity'))`,
+      `((email IS NOT NULL AND TRIM(email) LIKE '%@%.%') OR LENGTH(REGEXP_REPLACE(COALESCE(whatsapp, phone, ''), '[^0-9]', '', 'g')) >= 8)`,
     ];
 
     const params: any[] = [];
@@ -763,7 +774,7 @@ export class FiveSlotSenderService {
         );
 
         for (const lead of dueSoonRes.rows) {
-          if (lead.website && lead.website.trim()) {
+          if (workflowRoutingService.hasValidWebsite(lead.website)) {
             this.triggerAuditForLead(lead.id).catch((err) => {
               console.warn(`[FiveSlotSenderService] Rolling audit dispatch error for ${lead.id}:`, err?.message);
             });
@@ -773,6 +784,49 @@ export class FiveSlotSenderService {
     } catch (err: any) {
       console.warn('[FiveSlotSenderService] Rolling audit dispatch check error:', err?.message);
     }
+  }
+
+  /**
+   * Atomically isolates a lead whose audit cannot run or permanently failed,
+   * preventing repeated scheduler picks or duplicate failure_log entries.
+   */
+  private async isolateAuditFailure(params: {
+    leadId: string;
+    company: string;
+    website?: string | null;
+    email?: string | null;
+    slotId?: string | null;
+    stage?: string | null;
+    manualReason: string;
+    errorMessage: string;
+    failureType?: 'AUDIT_FAILED' | 'AUDIT_TIMEOUT' | 'PDF_MISSING';
+    attempts?: number;
+  }): Promise<void> {
+    const { leadIsolationService } = await import('./leadIsolationService');
+    await leadIsolationService.isolateFailedLead(params.leadId, params.manualReason);
+    await query(
+      `UPDATE leads
+       SET audit_status = 'failed',
+           status = 'manual_review',
+           manual_review_reason = $1,
+           slot_id = NULL,
+           claimed_stage = NULL,
+           claimed_at = NULL,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [params.manualReason, params.leadId]
+    );
+    await failureLogService.logFailure({
+      leadId: params.leadId,
+      company: params.company,
+      website: params.website || '',
+      email: params.email || '',
+      slotId: params.slotId || '',
+      stage: params.stage || 'initial',
+      type: params.failureType || 'AUDIT_FAILED',
+      errorMessage: params.errorMessage,
+      attempts: params.attempts || 1,
+    });
   }
 
   /**
@@ -786,25 +840,26 @@ export class FiveSlotSenderService {
       website: string;
       email: string;
       primary_contact_name: string;
+      slot_id: string | null;
+      outreach_stage: string | null;
     }>(
-      `SELECT id, business_name, website, email, primary_contact_name FROM leads WHERE id = $1`,
+      `SELECT id, business_name, website, email, primary_contact_name, slot_id, outreach_stage FROM leads WHERE id = $1`,
       [leadId]
     );
 
     if (leadRes.rows.length === 0) return;
     const lead = leadRes.rows[0];
 
-    if (!lead.website || !lead.website.trim()) {
-      await query(
-        `UPDATE leads SET audit_status = 'failed', manual_review_reason = 'No website to audit', updated_at = NOW() WHERE id = $1`,
-        [leadId]
-      );
-      await failureLogService.logFailure({
+    if (!lead.website || !lead.website.trim() || !workflowRoutingService.hasValidWebsite(lead.website)) {
+      await this.isolateAuditFailure({
         leadId,
         company: lead.business_name,
+        website: lead.website,
         email: lead.email,
-        type: 'AUDIT_FAILED',
-        errorMessage: 'Cannot audit lead: Website URL is missing',
+        slotId: lead.slot_id,
+        stage: lead.outreach_stage || 'initial',
+        manualReason: 'No valid website to audit',
+        errorMessage: 'Cannot audit lead: Website URL is missing or invalid',
       });
       return;
     }
@@ -900,15 +955,11 @@ export class FiveSlotSenderService {
       console.log(`[FiveSlotSenderService] ✅ Local audit ready for "${businessName}" with PDF: ${pdf.pdfName}`);
     } catch (err: any) {
       console.error(`[FiveSlotSenderService] Local audit failed for ${leadId}:`, err?.message);
-      await query(
-        `UPDATE leads SET audit_status = 'failed', updated_at = NOW() WHERE id = $1`,
-        [leadId]
-      );
-      await failureLogService.logFailure({
+      await this.isolateAuditFailure({
         leadId,
         company: businessName,
         website,
-        type: 'AUDIT_FAILED',
+        manualReason: 'Audit crawl failure',
         errorMessage: `Audit crawl failure: ${err?.message}`,
       });
     }
@@ -1089,17 +1140,23 @@ export class FiveSlotSenderService {
       return { activeSlot: null, dispatched: false, reason: 'Tick already in progress (re-entrancy guard)' };
     }
 
-    // Auto-assign unassigned active leads so all 5 slots have leads in their queue
-    await this.autoAssignUnassignedLeads().catch((err) => {
-      console.warn('[FiveSlotSenderService] Auto-assign error during tick:', err?.message);
-    });
-
     const isForced = testOptions?.forceSend === true;
     const bypassWindow = Boolean(isForced || testOptions?.bypassWindow);
     const bypassMinGap = Boolean(isForced || testOptions?.bypassMinGap);
     const bypassDailyCap = Boolean(isForced || testOptions?.bypassDailyCap);
 
     const now = overrideDate || new Date();
+
+    // 0. Check settings.is_active & circuit breaker FIRST before mutating/assigning leads!
+    const settings = await this.getSettings();
+    if (!settings.is_active || this.isCircuitBreakerTripped) {
+      return {
+        activeSlot: null,
+        dispatched: false,
+        reason: this.circuitBreakerAlert || 'Scheduler stopped/paused in settings',
+        circuitBreakerTripped: this.isCircuitBreakerTripped,
+      };
+    }
 
     // Check 5.4.5 daily quota timed pause
     if (this.quotaPauseUntil) {
@@ -1115,7 +1172,7 @@ export class FiveSlotSenderService {
       }
     }
 
-    // 0. PostgreSQL Advisory Lock Leader Election: Only ONE scheduler leader may run against this database
+    // PostgreSQL Advisory Lock Leader Election: Only ONE scheduler leader may run against this database
     if (!this.isLeader && !testOptions?.bypassLeaderLock) {
       const acquired = await this.acquireLeaderLock();
       if (!acquired) {
@@ -1127,14 +1184,35 @@ export class FiveSlotSenderService {
       }
     }
 
-    const settings = await this.getSettings();
-    if (!settings.is_active || this.isCircuitBreakerTripped) {
-      return {
-        activeSlot: null,
-        dispatched: false,
-        reason: this.circuitBreakerAlert || 'Slot sender disabled in settings',
-        circuitBreakerTripped: this.isCircuitBreakerTripped,
-      };
+    // Auto-assign unassigned contactable active leads so all 5 slots have leads in their queue
+    await this.autoAssignUnassignedLeads().catch((err) => {
+      console.warn('[FiveSlotSenderService] Auto-assign error during tick:', err?.message);
+    });
+
+    // Empty-queue Standby Guard (non-forced production ticks): stay idle unless there are leads awaiting outreach
+    if (!filterTestBatch && !isForced) {
+      const pendingCheck = await query<{ has_pending: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM leads
+           WHERE deleted_at IS NULL
+             AND (status = 'active' OR status = 'queued' OR status IS NULL)
+             AND (consent_status = 'none' OR consent_status IS NULL)
+             AND (
+               outreach_stage IS NULL
+               OR outreach_stage = 'initial'
+               OR outreach_stage = 'sending'
+               OR (outreach_stage = 'followup_1' AND last_contacted_at <= NOW() - INTERVAL '48 hours')
+               OR (outreach_stage = 'followup_2' AND last_contacted_at <= NOW() - INTERVAL '72 hours')
+             )
+         ) AS has_pending`
+      );
+      if (!pendingCheck.rows[0]?.has_pending) {
+        return {
+          activeSlot: null,
+          dispatched: false,
+          reason: 'Standby: No leads waiting in queue to send',
+        };
+      }
     }
 
     this.isTickRunning = true;
@@ -1259,6 +1337,8 @@ export class FiveSlotSenderService {
         business_name: string;
         website: string;
         email: string;
+        phone?: string | null;
+        whatsapp?: string | null;
         slot_id: SlotId;
         outreach_stage: string;
         audit_status: string;
@@ -1273,18 +1353,17 @@ export class FiveSlotSenderService {
         country?: string | null;
         metadata?: any;
       }>(
-        `SELECT id, business_name, website, email, slot_id, outreach_stage, audit_status, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name, audit_score, audit_retry_count, audit_requested_at, location, country, metadata
+        `SELECT id, business_name, website, email, phone, whatsapp, slot_id, outreach_stage, audit_status, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name, audit_score, audit_retry_count, audit_requested_at, location, country, metadata
          FROM leads
          WHERE deleted_at IS NULL
            AND (status = 'active' OR status = 'queued' OR status IS NULL)
            AND (consent_status = 'none' OR consent_status IS NULL)
            AND (slot_id = $1 OR (slot_id IS NULL AND $1 = 'A'))
-           AND (outreach_stage IS NULL OR (outreach_stage != 'sending' AND outreach_stage != 'completed' AND outreach_stage != 'skipped_no_opportunity'))
+           AND (outreach_stage IS NULL OR outreach_stage NOT IN ('sending', 'completed', 'followup_3', 'skipped_no_opportunity'))
            AND (
              ((outreach_stage IS NULL OR outreach_stage = 'initial') AND (last_contacted_at IS NULL OR last_contacted_at <= NOW() - INTERVAL '24 hours' OR $2 = true))
              OR (outreach_stage = 'followup_1' AND (last_contacted_at <= NOW() - INTERVAL '48 hours' OR $2 = true))
              OR (outreach_stage = 'followup_2' AND (last_contacted_at <= NOW() - INTERVAL '72 hours' OR $2 = true))
-             OR (outreach_stage = 'followup_3' AND (last_contacted_at <= NOW() - INTERVAL '96 hours' OR $2 = true))
            )
            ${testFilterClause}
            AND NOT EXISTS (
@@ -1320,6 +1399,32 @@ export class FiveSlotSenderService {
       let readyCandidate: typeof candidateQuery.rows[0] | null = null;
 
       for (const candidate of candidateQuery.rows) {
+        // Channel Guard: isolate uncontactable leads once rather than letting them crash SMTP/send ticks
+        const hasEmailChannel = Boolean(candidate.email && candidate.email.includes('@'));
+        const candidatePhoneDigits = ((candidate.whatsapp || candidate.phone || '').trim()).replace(/\D/g, '');
+        if (!hasEmailChannel && candidatePhoneDigits.length < 8) {
+          const { leadIsolationService } = await import('./leadIsolationService');
+          await leadIsolationService.isolateFailedLead(
+            candidate.id,
+            'No Email or WhatsApp contact channels available for lead'
+          );
+          await query(
+            `UPDATE leads SET status = 'manual_review', slot_id = NULL, manual_review_reason = 'No Email or WhatsApp contact channels available for lead', updated_at = NOW() WHERE id = $1`,
+            [candidate.id]
+          );
+          await failureLogService.logFailure({
+            leadId: candidate.id,
+            company: candidate.business_name,
+            website: candidate.website,
+            email: candidate.email,
+            slotId: activeSlot,
+            stage: candidate.outreach_stage || 'initial',
+            type: 'SEND_FAILED',
+            errorMessage: 'No Email or WhatsApp contact channels available for lead',
+          });
+          continue;
+        }
+
         // Recipient Timezone Window Check (09:00 - 17:00 recipient local time, Monday-Friday)
         const recipientTz = resolveRecipientTimezone(
           candidate.metadata?.timezone,
@@ -1385,6 +1490,23 @@ export class FiveSlotSenderService {
 
         const isFollowUp = candidate.outreach_stage === 'followup_1' || candidate.outreach_stage === 'followup_2';
         if (!isFollowUp && (!isAuditComplete || !validation.ready)) {
+          // Guard against missing/invalid/CDN asset URLs before attempting or retrying an audit
+          if (!workflowRoutingService.hasValidWebsite(candidate.website)) {
+            await this.isolateAuditFailure({
+              leadId: candidate.id,
+              company: candidate.business_name,
+              website: candidate.website,
+              email: candidate.email,
+              slotId: activeSlot,
+              stage: candidate.outreach_stage || 'initial',
+              manualReason: 'No valid website to audit',
+              errorMessage: 'Cannot audit lead: Website URL is missing or invalid',
+              failureType: 'AUDIT_FAILED',
+              attempts: 1,
+            });
+            continue;
+          }
+
           const requestedAtMs = candidate.audit_requested_at ? new Date(candidate.audit_requested_at).getTime() : 0;
           const isTimedOut = !requestedAtMs || Date.now() - requestedAtMs > 15 * 60 * 1000;
           const isAuditRunning = candidate.audit_status === 'pending' && !isTimedOut;
@@ -1401,21 +1523,16 @@ export class FiveSlotSenderService {
 
           if (candidate.audit_status === 'failed') {
             // Audit explicitly reported failed: isolate immediately without waiting out 3 retries!
-            const { leadIsolationService } = await import('./leadIsolationService');
-            await leadIsolationService.isolateFailedLead(candidate.id, 'Audit crawl failed in Technical Dashboard');
-            await query(
-              `UPDATE leads SET status = 'manual_review', manual_review_reason = 'Audit failed in TD', updated_at = NOW() WHERE id = $1`,
-              [candidate.id]
-            );
-            await failureLogService.logFailure({
+            await this.isolateAuditFailure({
               leadId: candidate.id,
               company: candidate.business_name,
               website: candidate.website,
               email: candidate.email,
               slotId: activeSlot,
               stage: candidate.outreach_stage || 'initial',
-              type: 'AUDIT_FAILED',
+              manualReason: 'Audit failed in TD',
               errorMessage: 'Technical audit failed for website',
+              failureType: 'AUDIT_FAILED',
               attempts: 1,
             });
             // Advance to next candidate immediately!
@@ -1429,21 +1546,6 @@ export class FiveSlotSenderService {
           );
 
           if (retries >= settings.max_audit_retries) {
-            const { leadIsolationService } = await import('./leadIsolationService');
-            await leadIsolationService.isolateFailedLead(
-              candidate.id,
-              `Audit timeout after ${retries} attempts (${candidate.audit_status})`
-            );
-            await query(
-              `UPDATE leads 
-               SET status = 'manual_review', 
-                   manual_review_reason = 'Audit not ready after 3 retries (Timeout / PDF Missing)',
-                   audit_retry_count = $1,
-                   updated_at = NOW() 
-               WHERE id = $2`,
-              [retries, candidate.id]
-            );
-
             const failureType: 'AUDIT_FAILED' | 'AUDIT_TIMEOUT' | 'PDF_MISSING' =
               !isValidPdfFile(candidate.audit_pdf_path) && isAuditComplete
                 ? 'PDF_MISSING'
@@ -1451,17 +1553,22 @@ export class FiveSlotSenderService {
                 ? 'AUDIT_FAILED'
                 : 'AUDIT_TIMEOUT';
 
-            await failureLogService.logFailure({
+            await this.isolateAuditFailure({
               leadId: candidate.id,
               company: candidate.business_name,
               website: candidate.website,
               email: candidate.email,
               slotId: activeSlot,
               stage: candidate.outreach_stage || 'initial',
-              type: failureType,
+              manualReason: 'Audit not ready after 3 retries (Timeout / PDF Missing)',
               errorMessage: `Audit incomplete after ${retries} retries: Status is "${candidate.audit_status}", reason: ${validation.reason || 'Timeout'}`,
+              failureType,
               attempts: retries,
             });
+            await query(
+              `UPDATE leads SET audit_retry_count = $1, updated_at = NOW() WHERE id = $2`,
+              [retries, candidate.id]
+            );
           } else {
             console.log(
               `[FiveSlotSenderService] ⏳ Slot ${activeSlot} lead "${candidate.business_name}" (${candidate.id}) audit not ready. Added to waiting list (will be sent in last).`
@@ -1542,6 +1649,24 @@ export class FiveSlotSenderService {
           await query(`UPDATE leads SET transient_retry_count = 0, send_retry_count = 0 WHERE id = $1`, [candidate.id]);
           console.log(`[FiveSlotSenderService] ✅ Slot ${activeSlot} successfully sent to "${candidate.business_name}" [${result.stageLabel}].`);
           return { activeSlot, dispatched: true, leadId: candidate.id };
+        } else if (
+          result.skipped &&
+          (result.stage === 'completed' || /maximum outreach touches|already reached|already replied|opted out/i.test(result.reason || ''))
+        ) {
+          const isCompleted = result.stage === 'completed' || /maximum outreach touches|already reached/i.test(result.reason || '');
+          const nextStage = isCompleted ? 'completed' : prevStage;
+          await query(
+            `UPDATE leads
+             SET outreach_stage = $1,
+                 status = CASE WHEN $2 THEN 'completed' ELSE status END,
+                 claimed_stage = NULL,
+                 claimed_at = NULL,
+                 updated_at = NOW()
+             WHERE id = $3`,
+            [nextStage, isCompleted, candidate.id]
+          );
+          console.log(`[FiveSlotSenderService] ⏭️ Slot ${activeSlot} skipped "${candidate.business_name}": ${result.reason}`);
+          return { activeSlot, dispatched: false, leadId: candidate.id, reason: result.reason || 'Lead skipped (completed/replied/opted out)' };
         } else {
           console.warn(`[FiveSlotSenderService] Slot ${activeSlot} send failed for lead ${candidate.id}: ${result.reason}`);
           return await this.handleDispatchFailure(candidate, prevStage, activeSlot, result.reason || 'Send failed in stage outreach service');
@@ -1570,6 +1695,25 @@ export class FiveSlotSenderService {
     activeSlot: SlotId,
     errorMessage: string
   ): Promise<{ activeSlot: SlotId; dispatched: false; leadId: string; reason: string; circuitBreakerTripped?: boolean }> {
+    if (/maximum outreach touches|already reached/i.test(errorMessage)) {
+      await query(
+        `UPDATE leads
+         SET outreach_stage = 'completed',
+             status = 'completed',
+             claimed_stage = NULL,
+             claimed_at = NULL,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [candidate.id]
+      );
+      return {
+        activeSlot,
+        dispatched: false,
+        leadId: candidate.id,
+        reason: errorMessage,
+      };
+    }
+
     const classification = classifySmtpError(errorMessage);
     console.warn(`[FiveSlotSenderService] Handling dispatch failure for lead ${candidate.id} [${classification.type}]: ${errorMessage}`);
 
@@ -1854,6 +1998,8 @@ export class FiveSlotSenderService {
     slots: SlotStatus[];
     settings: Omit<SlotSenderSettings, 'td_shared_secret'> & { td_shared_secret_masked: string };
     activeSlotNow: SlotId | null;
+    schedulerState: 'active' | 'standby' | 'stopped' | 'tripped';
+    hasPendingLeads: boolean;
     circuitBreaker: {
       tripped: boolean;
       failures: number;
@@ -1871,28 +2017,59 @@ export class FiveSlotSenderService {
       sent_count: string;
       received_json_count: string;
       waiting_count: string;
+      due_followup_count: string;
       last_sent_at: string | null;
     }>(
       `SELECT
          slot_id,
          -- Total active remaining to be sent (decreases as leads reach completed)
-         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed'))) as total_queued,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity'))) as total_queued,
          -- Ready to send with audit
-         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed')) AND audit_status IN ('ready', 'audit_completed') AND audit_pdf_path IS NOT NULL AND audit_pdf_path != '') as ready_count,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity')) AND audit_status IN ('ready', 'audit_completed') AND audit_pdf_path IS NOT NULL AND audit_pdf_path != '') as ready_count,
          -- Waiting for audit
-         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed')) AND (audit_status = 'pending' OR audit_status = 'none' OR audit_status IS NULL)) as waiting_audit_count,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity')) AND (audit_status = 'pending' OR audit_status = 'none' OR audit_status IS NULL)) as waiting_audit_count,
          -- Total emails sent successfully by this slot
          COUNT(*) FILTER (WHERE last_sent_at IS NOT NULL OR last_contacted_at IS NOT NULL OR outreach_stage IN ('followup_1', 'followup_2', 'followup_3', 'completed')) as sent_count,
          -- Total received JSON
          COUNT(*) FILTER (WHERE audit_status IN ('ready', 'audit_completed') OR (audit_findings IS NOT NULL AND audit_findings::text != '[]')) as received_json_count,
          -- Waiting count (decreases when sent/completed)
-         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed'))) as waiting_count,
+         COUNT(*) FILTER (WHERE (status = 'active' OR status = 'queued' OR status IS NULL) AND (consent_status = 'none' OR consent_status IS NULL) AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity'))) as waiting_count,
+         -- Due follow-ups (followup_1 >= 48h or followup_2 >= 72h with contactable channel)
+         COUNT(*) FILTER (
+           WHERE (status = 'active' OR status = 'queued' OR status IS NULL)
+             AND (consent_status = 'none' OR consent_status IS NULL)
+             AND (
+               (email IS NOT NULL AND email LIKE '%@%')
+               OR LENGTH(REGEXP_REPLACE(COALESCE(NULLIF(TRIM(whatsapp), ''), NULLIF(TRIM(phone), ''), ''), '[^0-9]', '', 'g')) >= 8
+             )
+             AND (
+               (outreach_stage = 'followup_1' AND last_contacted_at <= NOW() - INTERVAL '48 hours')
+               OR (outreach_stage = 'followup_2' AND last_contacted_at <= NOW() - INTERVAL '72 hours')
+             )
+         ) as due_followup_count,
          MAX(last_contacted_at) as last_sent_at
        FROM leads
        WHERE deleted_at IS NULL
          AND slot_id IS NOT NULL
        GROUP BY slot_id`
     );
+
+    // Check unassigned contactable active leads too so brand-new imports reflect active/pending status immediately
+    const unassignedPendingRes = await query<{ has_unassigned: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM leads
+         WHERE deleted_at IS NULL
+           AND slot_id IS NULL
+           AND (status = 'active' OR status = 'queued' OR status IS NULL)
+           AND (consent_status = 'none' OR consent_status IS NULL)
+           AND (outreach_stage IS NULL OR outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity'))
+           AND (
+             (email IS NOT NULL AND email LIKE '%@%')
+             OR LENGTH(REGEXP_REPLACE(COALESCE(NULLIF(TRIM(whatsapp), ''), NULLIF(TRIM(phone), ''), ''), '[^0-9]', '', 'g')) >= 8
+           )
+       ) AS has_unassigned`
+    );
+    const hasUnassignedPending = Boolean(unassignedPendingRes.rows[0]?.has_unassigned);
 
     // Fetch up to 5 recent leads per slot with detailed 4-step pipeline status
     const slotLeadsRes = await query<{
@@ -1944,6 +2121,7 @@ export class FiveSlotSenderService {
       sent: number;
       receivedJson: number;
       waitingCount: number;
+      dueFollowup: number;
       lastSent: string | null;
     }>();
 
@@ -1955,9 +2133,26 @@ export class FiveSlotSenderService {
         sent: parseInt(r.sent_count, 10),
         receivedJson: parseInt(r.received_json_count, 10),
         waitingCount: parseInt(r.waiting_count, 10),
+        dueFollowup: parseInt(r.due_followup_count || '0', 10),
         lastSent: r.last_sent_at,
       });
     });
+
+    let totalAssignedPending = 0;
+    countMap.forEach((v) => {
+      totalAssignedPending += v.waitingCount + v.dueFollowup;
+    });
+
+    const hasPendingLeads = totalAssignedPending > 0 || hasUnassignedPending;
+    const isStopped = !rawSettings.is_active;
+    const isTripped = Boolean(this.isCircuitBreakerTripped || rawSettings.circuit_breaker_tripped);
+    const schedulerState: 'active' | 'standby' | 'stopped' | 'tripped' = isStopped
+      ? 'stopped'
+      : isTripped
+      ? 'tripped'
+      : hasPendingLeads
+      ? 'active'
+      : 'standby';
 
     const slots: SlotStatus[] = [];
     for (let i = 0; i < SLOTS.length; i++) {
@@ -1970,6 +2165,7 @@ export class FiveSlotSenderService {
         sent: 0,
         receivedJson: 0,
         waitingCount: 0,
+        dueFollowup: 0,
         lastSent: null,
       };
       const nextTime = grid.slotTimes[slotId].nextDate.toISOString();
@@ -1987,9 +2183,10 @@ export class FiveSlotSenderService {
         sentCount: data.sent,
         receivedJsonCount: data.receivedJson,
         waitingCount: data.waitingCount,
+        dueFollowupCount: data.dueFollowup,
         nextSendTime: nextTime,
         lastSendTime: data.lastSent,
-        status: grid.currentActiveSlot === slotId ? 'active' : 'waiting',
+        status: schedulerState !== 'active' ? 'idle' : grid.currentActiveSlot === slotId ? 'active' : 'waiting',
         leads: slotLeadsMap.get(slotId) || [],
       });
     }
@@ -2004,7 +2201,9 @@ export class FiveSlotSenderService {
     return {
       slots,
       settings: safeSettings,
-      activeSlotNow: grid.currentActiveSlot,
+      activeSlotNow: schedulerState === 'active' ? grid.currentActiveSlot : null,
+      schedulerState,
+      hasPendingLeads,
       circuitBreaker: {
         tripped: this.isCircuitBreakerTripped,
         failures: this.consecutiveAuthFailures,
@@ -2084,12 +2283,20 @@ export class FiveSlotSenderService {
       clearInterval(this.timer);
     }
 
-    console.log(`[FiveSlotSenderService] 🚀 5-Slot Staggered Sender active (Single Timer, 10s tick interval).`);
+    console.log(`[FiveSlotSenderService] 🚀 5-Slot Staggered Sender loop armed (10s tick interval; sends only when active & leads queued).`);
 
-    // Run immediate startup checks: Stale Reaper + Rolling Audits + TD Connection Probe
-    this.reapStaleSendingClaims().catch(() => {});
-    this.dispatchRollingAudits().catch(() => {});
-    this.checkTdStartupConnection().catch(() => {});
+    // Only run startup reaper / rolling audit dispatch when scheduler is active in DB settings
+    this.getSettings()
+      .then((settings) => {
+        this.checkTdStartupConnection().catch(() => {});
+        if (!settings.is_active || settings.circuit_breaker_tripped || this.isCircuitBreakerTripped) {
+          console.log('[FiveSlotSenderService] ⏸️ Scheduler is stopped/paused in settings — skipping startup audit dispatch.');
+          return;
+        }
+        this.reapStaleSendingClaims().catch(() => {});
+        this.dispatchRollingAudits().catch(() => {});
+      })
+      .catch(() => {});
 
     this.timer = setInterval(() => {
       this.processGlobalTick().catch((err) => {

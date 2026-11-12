@@ -99,31 +99,17 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     return res.status(403).json({ success: false, error: 'Access forbidden: hidden resources restricted' });
   }
 
-  // Block source code, build configs, system scripts, and credentials
-  const forbiddenPatterns = [
-    '/server',
-    '/src',
-    '/node_modules',
-    'package.json',
-    'package-lock.json',
-    'tsconfig',
-    'dockerfile',
-    'render.yaml',
-    'vite.config',
-    'tailwind.config',
-    'render-build',
-    '.env',
-    '.git',
-    '.ts',
-    '.tsx',
-    '.sh',
-    '.log',
-  ];
+  // Block source code, build configs, system scripts, and credentials with boundary checks
+  const restrictedSegmentRegex = /(?:^|\/)(?:server|src|node_modules|\.git|\.env[^/]*)(?:\/|$)/i;
+  const restrictedFileRegex = /(?:package\.json|package-lock\.json|tsconfig[^/]*|dockerfile|render\.yaml|vite\.config[^/]*|tailwind\.config[^/]*|render-build[^/]*)$/i;
+  const restrictedExtRegex = /\.(?:ts|tsx|sh|log|env)$/i;
 
-  for (const pattern of forbiddenPatterns) {
-    if (lower.includes(pattern)) {
-      return res.status(403).json({ success: false, error: 'Access forbidden: restricted resource' });
-    }
+  if (
+    restrictedSegmentRegex.test(lower) ||
+    restrictedFileRegex.test(lower) ||
+    restrictedExtRegex.test(lower)
+  ) {
+    return res.status(403).json({ success: false, error: 'Access forbidden: restricted resource' });
   }
 
   next();
@@ -399,6 +385,15 @@ async function startServer() {
   const server = app.listen(env.PORT, '0.0.0.0', () => {
     console.log(`🚀 Express Backend running on http://localhost:${env.PORT}`);
     console.log(`📡 API Endpoints available at http://localhost:${env.PORT}/api`);
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[Server FATAL] Port ${env.PORT} is already in use. Exiting.`);
+    } else {
+      console.error('[Server FATAL] HTTP server error:', err);
+    }
+    process.exit(1);
   });
 
   // Graceful shutdown

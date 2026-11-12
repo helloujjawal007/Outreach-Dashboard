@@ -31,8 +31,15 @@ export interface DealRecord {
  * GET /api/deals
  * List all deals with joined lead business info and summary metrics
  */
-dealsRouter.get('/', async (_req: Request, res: Response) => {
+dealsRouter.get('/', async (req: Request, res: Response) => {
   try {
+    const rawLeadId = typeof req.query.leadId === 'string' ? req.query.leadId.trim() : '';
+    const params: any[] = [];
+    const whereClause = rawLeadId ? 'WHERE d.lead_id = $1' : '';
+    if (rawLeadId) {
+      params.push(rawLeadId);
+    }
+
     const dealsResult = await query<DealRecord>(`
       SELECT 
         d.*,
@@ -42,14 +49,16 @@ dealsRouter.get('/', async (_req: Request, res: Response) => {
         l.location
       FROM deals d
       LEFT JOIN leads l ON l.id = d.lead_id
+      ${whereClause}
       ORDER BY 
         CASE 
           WHEN d.stage = 'won' THEN 7
           WHEN d.stage = 'lost' THEN 8
           ELSE 1 
         END,
-        d.updated_at DESC;
-    `);
+        d.updated_at DESC
+      LIMIT 1000;
+    `, params);
 
     const deals = dealsResult.rows;
 
@@ -348,7 +357,7 @@ dealsRouter.patch('/:id', async (req: Request, res: Response) => {
           if (leadInfo.rows.length > 0) {
             const lead = leadInfo.rows[0];
             await query(
-              `INSERT INTO clients (original_lead_id, client_name, email, phone, mrr, status, onboarded_at)
+              `INSERT INTO clients (original_lead_id, business_name, email, phone, contract_value, status, onboarded_at)
                VALUES ($1, $2, $3, $4, $5, 'active', NOW());`,
               [updatedDeal.lead_id, lead.business_name, lead.email, lead.phone, updatedDeal.value || 0]
             );

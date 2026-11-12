@@ -118,7 +118,7 @@ export class FailureLogService {
   /**
    * Retrieves failure records with optional filtering
    */
-  async getFailures(filter: FailureFilter = {}): Promise<{
+  async getFailures(filter: FailureFilter & { maxLimit?: number } = {}): Promise<{
     failures: FailureLogEntry[];
     records: FailureLogEntry[];
     total: number;
@@ -169,8 +169,11 @@ export class FailureLogService {
     );
     const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
-    const limit = Math.min(200, Math.max(1, filter.limit || 50));
-    const offset = Math.max(0, filter.offset || 0);
+    const cap = filter.maxLimit && Number.isFinite(filter.maxLimit) ? filter.maxLimit : 200;
+    const rawLimit = Number(filter.limit);
+    const limit = Math.min(cap, Math.max(1, Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 50));
+    const rawOffset = Number(filter.offset);
+    const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : 0);
 
     const listSql = `
       SELECT * FROM failure_log 
@@ -377,7 +380,7 @@ export class FailureLogService {
    * Generates CSV export content with formula injection sanitization
    */
   async exportCsv(filter: FailureFilter = {}): Promise<string> {
-    const { failures } = await this.getFailures({ ...filter, limit: 10000, offset: 0 });
+    const { failures } = await this.getFailures({ ...filter, limit: 50000, maxLimit: 50000, offset: 0 });
 
     const sanitizeCell = (val: any): string => {
       if (val === null || val === undefined) return '""';

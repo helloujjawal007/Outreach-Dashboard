@@ -640,7 +640,10 @@ export class EmailAdapter {
                 connectionTimeout: 20000,
                 greetingTimeout: 15000,
                 socketTimeout: 25000,
-                tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' },
+                tls: {
+                  rejectUnauthorized: process.env.SMTP_ALLOW_SELF_SIGNED !== 'true',
+                  minVersion: 'TLSv1.2',
+                },
               }) as any
         );
 
@@ -741,26 +744,27 @@ export class EmailAdapter {
         [convId]
       );
 
-      // Increment daily sent metrics in database
-      await query(
-        `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
-         VALUES (CURRENT_DATE, 'email', 1, NOW())
-         ON CONFLICT (metric_date, channel)
-         DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`,
-        []
-      );
-
-      // Also increment total daily metrics
-      await query(
-        `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
-         VALUES (CURRENT_DATE, 'total', 1, NOW())
-         ON CONFLICT (metric_date, channel)
-         DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`,
-        []
-      );
-
       const isSuccess = liveDelivery === 'sent_live' || liveDelivery === 'simulated';
       const classification = liveError ? classifySmtpError(liveError) : null;
+
+      if (isSuccess) {
+        // Only increment daily sent metrics when the email actually dispatched
+        await query(
+          `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
+           VALUES (CURRENT_DATE, 'email', 1, NOW())
+           ON CONFLICT (metric_date, channel)
+           DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`,
+          []
+        );
+
+        await query(
+          `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
+           VALUES (CURRENT_DATE, 'total', 1, NOW())
+           ON CONFLICT (metric_date, channel)
+           DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`,
+          []
+        );
+      }
 
       if (params.leadId && isSuccess) {
         await query(

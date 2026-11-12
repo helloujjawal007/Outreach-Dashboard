@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import validator from 'validator';
 import { query } from '../config/db';
+import { softDeleteEntities } from '../services/softDeleteService';
 
 export function sanitizeCsvFormula(value: string): string {
   if (!value || typeof value !== 'string') return '';
@@ -22,6 +23,36 @@ import { humanCopywriterService } from '../services/humanCopywriterService';
 import { workflowRoutingService, type PdfValidationResult } from '../services/workflowRoutingService';
 
 export const leadsRouter = Router();
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function attachListsToLeads<T extends Record<string, any>>(rows: T[]): Promise<Array<T & { lists: Array<{ id: string; name: string }> }>> {
+  if (rows.length === 0) return [];
+  const leadIds = rows
+    .map((r) => r.id)
+    .filter((id): id is string => typeof id === 'string' && UUID_REGEX.test(id));
+
+  const membershipMap = new Map<string, Array<{ id: string; name: string }>>();
+  if (leadIds.length > 0) {
+    const membershipsRes = await query<{ lead_id: string; id: string; name: string }>(
+      `SELECT m.lead_id, lst.id, lst.name
+       FROM lead_list_memberships m
+       JOIN lists lst ON lst.id = m.list_id
+       WHERE m.lead_id = ANY($1::uuid[])`,
+      [leadIds]
+    );
+    for (const row of membershipsRes.rows) {
+      const listArr = membershipMap.get(row.lead_id) || [];
+      listArr.push({ id: row.id, name: row.name });
+      membershipMap.set(row.lead_id, listArr);
+    }
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    lists: membershipMap.get(row.id) || [],
+  }));
+}
 
 // GET /api/leads/by-channel - Automatically segregate leads into email and whatsapp sections
 leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
@@ -50,21 +81,19 @@ leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
       });
     }
 
-    const allLeadsRes = await query(`
-      SELECT l.*,
-             COALESCE(
-               (SELECT json_agg(json_build_object('id', lst.id, 'name', lst.name))
-                FROM lead_list_memberships m
-                JOIN lists lst ON lst.id = m.list_id
-                WHERE m.lead_id = l.id),
-               '[]'::json
-             ) AS lists
-      FROM leads l
-      WHERE l.deleted_at IS NULL
-      ORDER BY l.created_at DESC
-    `);
+    const rawLimit = req.query.limit ? parseInt(String(req.query.limit), 10) : NaN;
+    const channelLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(2000, rawLimit) : 500;
 
-    const leads = allLeadsRes.rows;
+    const allLeadsRes = await query(
+      `SELECT l.*
+       FROM leads l
+       WHERE l.deleted_at IS NULL
+       ORDER BY l.created_at DESC
+       LIMIT $1`,
+      [channelLimit]
+    );
+
+    const leads = await attachListsToLeads(allLeadsRes.rows);
 
     const emailLeads = leads.filter((l) => l.email && l.email.includes('@'));
     const whatsappLeads = leads.filter((l) => (l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
@@ -99,8 +128,10 @@ leadsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const { consent, category, search, listId, batchId, status, page, limit } = req.query;
 
-    const pageNum = page ? Math.max(1, parseInt(String(page), 10)) : undefined;
-    const limitNum = limit ? Math.max(1, parseInt(String(limit), 10)) : undefined;
+    const rawPage = page !== undefined ? parseInt(String(page), 10) : NaN;
+    const rawLimit = limit !== undefined ? parseInt(String(limit), 10) : NaN;
+    const pageNum = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : undefined;
+    const limitNum = Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(500, rawLimit) : undefined;
 
     let baseFilter = `WHERE 1=1 AND l.deleted_at IS NULL`;
     const filterParams: unknown[] = [];
@@ -142,7 +173,7 @@ leadsRouter.get('/', async (req: Request, res: Response) => {
     }
 
     // Conditional ETag calculation: hash of (total leads count + max updated timestamp + pagination)
-    const metaSql = `SELECT COUNT(*)::text as cnt, COALESCE(MAX(l.updated_at), NOW())::text as max_up FROM leads l ${joinClause} ${baseFilter}`;
+    const metaSql = `SELECT COUNT(*)::text as cnt, COALESCE(MAX(l.updated_at), '1970-01-01'::timestamptz)::text as max_up FROM leads l ${joinClause} ${baseFilter}`;
     const metaRes = await query<{ cnt: string; max_up: string }>(metaSql, filterParams);
     const totalCount = parseInt(metaRes.rows[0]?.cnt || '0', 10);
     const maxUp = metaRes.rows[0]?.max_up || '';
@@ -155,14 +186,7 @@ leadsRouter.get('/', async (req: Request, res: Response) => {
     }
 
     let sql = `
-      SELECT l.*,
-             COALESCE(
-               (SELECT json_agg(json_build_object('id', lst.id, 'name', lst.name))
-                FROM lead_list_memberships m
-                JOIN lists lst ON lst.id = m.list_id
-                WHERE m.lead_id = l.id),
-               '[]'::json
-             ) AS lists
+      SELECT l.*
       FROM leads l
       ${joinClause}
       ${baseFilter}
@@ -176,25 +200,29 @@ leadsRouter.get('/', async (req: Request, res: Response) => {
       filterParams.push(offset);
       const offsetParamIdx = filterParams.length;
       sql += ` LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`;
+    } else if (limitNum) {
+      filterParams.push(limitNum);
+      sql += ` LIMIT $${filterParams.length}`;
     }
 
     const result = await query(sql, filterParams);
+    const hydratedLeads = await attachListsToLeads(result.rows);
 
     if (pageNum && limitNum) {
       res.json({
         success: true,
-        count: result.rows.length,
+        count: hydratedLeads.length,
         totalCount,
         page: pageNum,
         totalPages: Math.ceil(totalCount / limitNum),
-        leads: result.rows,
+        leads: hydratedLeads,
       });
     } else {
       res.json({
         success: true,
-        count: result.rows.length,
-        totalCount: result.rows.length,
-        leads: result.rows,
+        count: hydratedLeads.length,
+        totalCount,
+        leads: hydratedLeads,
       });
     }
   } catch (error) {
@@ -274,6 +302,7 @@ leadsRouter.get('/trash', async (_req: Request, res: Response) => {
             AND (l.id = c.original_lead_id OR (c.email <> '' AND LOWER(l.email) = LOWER(c.email)))
         )
       ORDER BY deleted_at DESC
+      LIMIT 500
     `);
 
     res.json({ success: true, count: result.rows.length, leads: result.rows, trash: result.rows, trashLeads: result.rows });
@@ -363,7 +392,7 @@ leadsRouter.post('/trash/bulk-permanent-delete', async (req: Request, res: Respo
   }
 });
 
-// POST /api/leads/bulk-delete - Soft-delete multiple leads (preserved for 28 days, removes from everywhere)
+// POST /api/leads/bulk-delete - Soft-delete multiple leads (preserved for 28 days, removes from active queues)
 leadsRouter.post('/bulk-delete', async (req: Request, res: Response) => {
   try {
     const ids = req.body.ids || req.body.leadIds;
@@ -372,80 +401,10 @@ leadsRouter.post('/bulk-delete', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'ids or leadIds array is required' });
     }
 
-    // 1. Fetch lead & client details for audit history
-    const toDeleteLeads = await query(`SELECT * FROM leads WHERE id = ANY($1)`, [ids]);
-    for (const lead of toDeleteLeads.rows) {
-      await query(
-        `INSERT INTO deletion_history (entity_type, entity_id, business_name, email, phone, data, deleted_at, expires_at)
-         VALUES ('lead', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
-        [lead.id, lead.business_name, lead.email, lead.phone, JSON.stringify(lead)]
-      );
-    }
+    const result = await softDeleteEntities(ids);
+    const affectedCount = result.leadIds.length || result.clientIds.length;
 
-    const toDeleteClients = await query(
-      `SELECT * FROM clients 
-       WHERE id = ANY($1) 
-          OR original_lead_id = ANY($1) 
-          OR (email <> '' AND LOWER(email) IN (SELECT LOWER(email) FROM leads WHERE id = ANY($1) AND email <> ''))`,
-      [ids]
-    );
-    for (const client of toDeleteClients.rows) {
-      await query(
-        `INSERT INTO deletion_history (entity_type, entity_id, business_name, email, phone, data, deleted_at, expires_at)
-         VALUES ('client', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
-        [client.id, client.business_name, client.email, client.phone, JSON.stringify(client)]
-      );
-    }
-
-    const allTargetIds = [...new Set([...ids, ...toDeleteClients.rows.map((c: any) => c.id), ...toDeleteLeads.rows.map((l: any) => l.id)])];
-
-    // Cascading deletion: remove all messages, conversations, scheduled_dispatches, send_queue, follow_up_logs, and list memberships
-    await query(
-      `DELETE FROM messages WHERE conversation_id IN (
-         SELECT id FROM conversations WHERE lead_id = ANY($1) OR client_id = ANY($1)
-       )`,
-      [allTargetIds]
-    );
-    await query(
-      `DELETE FROM conversations WHERE (entity_type = 'lead' AND lead_id = ANY($1))
-         OR (entity_type = 'client' AND client_id = ANY($1))
-         OR lead_id = ANY($1) OR client_id = ANY($1)`,
-      [allTargetIds]
-    );
-    await query(`DELETE FROM scheduled_dispatches WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM send_queue WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM follow_up_logs WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
-
-    // 2. Mark soft-deleted in leads table & immediately unassign from 5-slot queues
-    const result = await query(
-      `UPDATE leads 
-       SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days',
-           slot_id = NULL,
-           slot_assigned_at = NULL,
-           claimed_stage = NULL,
-           claimed_at = NULL,
-           updated_at = NOW()
-       WHERE id = ANY($1)
-          OR id IN (SELECT original_lead_id FROM clients WHERE id = ANY($1) AND original_lead_id IS NOT NULL)
-          OR (email <> '' AND LOWER(email) IN (SELECT LOWER(email) FROM clients WHERE id = ANY($1) AND email <> ''))
-       RETURNING id`,
-      [allTargetIds]
-    );
-
-    // 3. Also soft-delete any matching clients from active client list
-    await query(
-      `UPDATE clients 
-       SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days'
-       WHERE id = ANY($1) 
-          OR original_lead_id = ANY($1) 
-          OR (email <> '' AND LOWER(email) IN (SELECT LOWER(email) FROM leads WHERE id = ANY($1) AND email <> ''))`,
-      [allTargetIds]
-    );
-
-    res.json({ success: true, deletedCount: result.rows.length, affectedCount: result.rows.length });
+    res.json({ success: true, deletedCount: affectedCount, affectedCount });
   } catch (error) {
     console.error('[leadsRouter.bulkDelete]', error);
     res.status(500).json({ success: false, error: 'Failed to bulk delete leads' });
@@ -844,124 +803,21 @@ leadsRouter.delete('/duplicates', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/leads/:id - Soft-delete single lead (preserved for 28 days, removes from everywhere)
+// DELETE /api/leads/:id - Soft-delete single lead or linked client (preserved for 28 days)
 leadsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const result = await softDeleteEntities([id]);
 
-    const leadRes = await query(`SELECT * FROM leads WHERE id = $1`, [id]);
-    if (leadRes.rows.length === 0) {
-      // Check if it's a client ID directly
-      const clientRes = await query(`SELECT * FROM clients WHERE id = $1`, [id]);
-      if (clientRes.rows.length > 0) {
-        const client = clientRes.rows[0];
-        const allTargetIds = [client.id];
-        if (client.original_lead_id) allTargetIds.push(client.original_lead_id);
-
-        await query(
-          `INSERT INTO deletion_history (entity_type, entity_id, business_name, email, phone, data, deleted_at, expires_at)
-           VALUES ('client', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
-          [client.id, client.business_name, client.email, client.phone, JSON.stringify(client)]
-        );
-
-        // Cascading deletion: remove all messages, conversations, dispatches, queues, follow-ups, and memberships
-        await query(
-          `DELETE FROM messages WHERE conversation_id IN (
-             SELECT id FROM conversations WHERE client_id = ANY($1) OR lead_id = ANY($1)
-           )`,
-          [allTargetIds]
-        );
-        await query(
-          `DELETE FROM conversations WHERE client_id = ANY($1) OR lead_id = ANY($1)
-             OR (entity_type = 'client' AND client_id = ANY($1))
-             OR (entity_type = 'lead' AND lead_id = ANY($1))`,
-          [allTargetIds]
-        );
-        await query(`DELETE FROM scheduled_dispatches WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-        await query(`DELETE FROM send_queue WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-        await query(`DELETE FROM follow_up_logs WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-        await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
-
-        await query(
-          `UPDATE clients SET deleted_at = NOW(), deleted_expires_at = NOW() + INTERVAL '28 days' WHERE id = ANY($1)`,
-          [allTargetIds]
-        );
-        await query(
-          `UPDATE leads
-           SET deleted_at = NOW(),
-               deleted_expires_at = NOW() + INTERVAL '28 days',
-               slot_id = NULL,
-               slot_assigned_at = NULL,
-               claimed_stage = NULL,
-               claimed_at = NULL,
-               updated_at = NOW()
-           WHERE id = ANY($1)`,
-          [allTargetIds]
-        );
-        return res.json({ success: true, message: 'Client soft-deleted (moved to Trash Bin for 28 days)' });
-      }
+    if (result.leadIds.length === 0 && result.clientIds.length === 0) {
       return res.status(404).json({ success: false, error: 'Lead not found' });
     }
 
-    const lead = leadRes.rows[0];
+    if (result.leadIds.length === 0 && result.clientIds.length > 0) {
+      return res.json({ success: true, message: 'Client soft-deleted (moved to Trash Bin for 28 days)' });
+    }
 
-    // Identify linked clients by original_lead_id or matching email
-    const clientMatches = await query(
-      `SELECT id FROM clients WHERE original_lead_id = $1 OR (email <> '' AND LOWER(email) = LOWER($2))`,
-      [lead.id, lead.email || '']
-    );
-    const allTargetIds = [...new Set([lead.id, ...clientMatches.rows.map((c: any) => c.id)])];
-
-    // Record in deletion_history
-    await query(
-      `INSERT INTO deletion_history (entity_type, entity_id, business_name, email, phone, data, deleted_at, expires_at)
-       VALUES ('lead', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
-      [lead.id, lead.business_name, lead.email, lead.phone, JSON.stringify(lead)]
-    );
-
-    // Cascading deletion: remove all messages, conversations, dispatches, queues, follow-ups, and memberships
-    await query(
-      `DELETE FROM messages WHERE conversation_id IN (
-         SELECT id FROM conversations WHERE lead_id = ANY($1) OR client_id = ANY($1)
-       )`,
-      [allTargetIds]
-    );
-    await query(
-      `DELETE FROM conversations WHERE lead_id = ANY($1) OR client_id = ANY($1)
-         OR (entity_type = 'lead' AND lead_id = ANY($1))
-         OR (entity_type = 'client' AND client_id = ANY($1))`,
-      [allTargetIds]
-    );
-    await query(`DELETE FROM scheduled_dispatches WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM send_queue WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM follow_up_logs WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
-
-    // Mark soft-deleted in leads & clear from 5-slot queues immediately
-    const updateRes = await query(
-      `UPDATE leads 
-       SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days',
-           slot_id = NULL,
-           slot_assigned_at = NULL,
-           claimed_stage = NULL,
-           claimed_at = NULL,
-           updated_at = NOW()
-       WHERE id = ANY($1)
-       RETURNING *`,
-      [allTargetIds]
-    );
-
-    // Also soft-delete any matching client from active client list
-    await query(
-      `UPDATE clients 
-       SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days'
-       WHERE id = ANY($1) OR original_lead_id = $2 OR (email <> '' AND LOWER(email) = LOWER($3))`,
-      [allTargetIds, lead.id, lead.email || '']
-    );
-
-    res.json({ success: true, lead: updateRes.rows[0], message: 'Lead soft-deleted (moved to Trash Bin for 28 days)' });
+    res.json({ success: true, lead: result.primaryLead, message: 'Lead soft-deleted (moved to Trash Bin for 28 days)' });
   } catch (error) {
     console.error('[leadsRouter.delete]', error);
     res.status(500).json({ success: false, error: 'Failed to delete lead' });

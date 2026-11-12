@@ -312,8 +312,8 @@ export class EmailInboundService {
       try {
         const totalExists = (client.mailbox && typeof client.mailbox === 'object') ? client.mailbox.exists : 0;
         if (totalExists > 0) {
-          // Fetch up to the last 40 messages to catch recent replies and bounces
-          const startSeq = Math.max(1, totalExists - 40);
+          // Fetch up to the last 200 messages to catch recent replies and bounces even during bursts
+          const startSeq = Math.max(1, totalExists - 200);
           const fetchRange = `${startSeq}:*`;
 
           // Pass 1: Fetch message envelopes into array first to avoid nested IMAP command deadlocks
@@ -892,7 +892,7 @@ export class EmailInboundService {
           try {
             const sentTotalExists = (client.mailbox && typeof client.mailbox === 'object') ? client.mailbox.exists : 0;
             if (sentTotalExists > 0) {
-              const startSentSeq = Math.max(1, sentTotalExists - 40);
+              const startSentSeq = Math.max(1, sentTotalExists - 200);
               const fetchRange = `${startSentSeq}:*`;
 
               // Pass 1: Fetch sent message envelopes into array first to avoid nested IMAP command deadlocks
@@ -996,10 +996,10 @@ export class EmailInboundService {
                         } else {
                           const newConv = await query<{ id: string }>(
                             entityType === 'lead'
-                              ? `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at, unread_count)
-                                 VALUES ('lead', $1, 'email', 'open', $2, 0) RETURNING id`
-                              : `INSERT INTO conversations (entity_type, client_id, channel, status, last_message_at, unread_count)
-                                 VALUES ('client', $1, 'email', 'open', $2, 0) RETURNING id`,
+                              ? `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
+                                 VALUES ('lead', $1, 'email', 'open', $2) RETURNING id`
+                              : `INSERT INTO conversations (entity_type, client_id, channel, status, last_message_at)
+                                 VALUES ('client', $1, 'email', 'open', $2) RETURNING id`,
                             [entityId, sentDate]
                           );
                           convId = newConv.rows[0].id;

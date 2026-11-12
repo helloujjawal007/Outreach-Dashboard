@@ -109,12 +109,19 @@ function renderPageHtml(title: string, contentHtml: string): string {
 </html>`;
 }
 
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // GET /api/unsubscribe
 // Renders confirmation page without automatically opting out on GET
 // (protects against email security bots that pre-fetch incoming links)
 unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const tokenParam = typeof req.query.token === 'string' ? req.query.token.trim() : (typeof req.query.t === 'string' ? req.query.t.trim() : '');
-  const emailParam = typeof req.query.email === 'string' ? req.query.email.trim() : '';
 
   let targetEmail = '';
   const validToken = tokenParam;
@@ -134,29 +141,28 @@ unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> =>
       );
       return;
     }
-  } else if (emailParam && validator.isEmail(emailParam)) {
-    targetEmail = emailParam;
   } else {
     res.status(400).send(
       renderPageHtml(
         'Unsubscribe Request',
         `<div class="icon error">!</div>
          <h1>Invalid Request</h1>
-         <p>No valid unsubscribe token or recipient address was provided.</p>`
+         <p>A valid signed unsubscribe token is required.</p>`
       )
     );
     return;
   }
 
   // Render Confirmation Page with POST form
+  const safeEmail = escapeHtmlAttr(targetEmail);
+  const safeToken = escapeHtmlAttr(validToken);
   const confirmationHtml = `
     <div class="icon">✉</div>
     <h1>Confirm Unsubscribe</h1>
-    <div class="email-badge">${targetEmail}</div>
+    <div class="email-badge">${safeEmail}</div>
     <p>Please confirm that you would like to unsubscribe from future outreach and email communications from Cloud Consultancy.</p>
     <form method="POST" action="/api/unsubscribe">
-      <input type="hidden" name="token" value="${validToken}" />
-      <input type="hidden" name="email" value="${targetEmail}" />
+      <input type="hidden" name="token" value="${safeToken}" />
       <button type="submit" class="btn-submit">Confirm Unsubscribe</button>
     </form>
   `;
@@ -165,10 +171,11 @@ unsubscribeRouter.get('/', async (req: Request, res: Response): Promise<void> =>
 });
 
 // POST /api/unsubscribe
-// Performs the actual opt-out and suppression
+// Performs the actual opt-out and suppression (requires valid signed unsubscribe token, including RFC 8058 One-Click query token)
 unsubscribeRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-  const tokenParam = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-  const emailParam = typeof req.body?.email === 'string' ? req.body.email.trim() : (typeof req.query.email === 'string' ? req.query.email.trim() : '');
+  const bodyToken = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const queryToken = typeof req.query.token === 'string' ? req.query.token.trim() : (typeof req.query.t === 'string' ? req.query.t.trim() : '');
+  const tokenParam = bodyToken || queryToken;
 
   let targetEmail = '';
   let leadId = '';
@@ -178,16 +185,26 @@ unsubscribeRouter.post('/', async (req: Request, res: Response): Promise<void> =
     if (verified.valid && verified.email) {
       targetEmail = verified.email;
       leadId = verified.leadId || '';
+    } else {
+      if (req.headers.accept?.includes('application/json')) {
+        res.status(403).json({ success: false, error: 'Invalid or expired unsubscribe token' });
+        return;
+      }
+      res.status(403).send(
+        renderPageHtml(
+          'Invalid Token',
+          `<div class="icon error">!</div>
+           <h1>Invalid or Expired Link</h1>
+           <p>This unsubscribe link is invalid or has expired. Please use the original link from your email.</p>`
+        )
+      );
+      return;
     }
-  }
-
-  if (!targetEmail && emailParam && validator.isEmail(emailParam)) {
-    targetEmail = emailParam;
   }
 
   if (!targetEmail || !validator.isEmail(targetEmail)) {
     if (req.headers.accept?.includes('application/json')) {
-      res.status(400).json({ success: false, error: 'Valid signed token or email address is required' });
+      res.status(400).json({ success: false, error: 'Valid signed unsubscribe token is required' });
       return;
     }
     res.status(400).send(

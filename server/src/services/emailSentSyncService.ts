@@ -71,41 +71,48 @@ export class EmailSentSyncService {
         console.warn('[EmailSentSyncService] IMAP socket event warning (handled):', err?.message || err);
       });
 
+      let timeoutHandle: NodeJS.Timeout | undefined;
       try {
-        await client.connect();
+        await Promise.race([
+          (async () => {
+            await client.connect();
 
-        // Find the Sent Mail mailbox
-        const mailboxes = await client.list();
-        const sentMailbox =
-          mailboxes.find((m) => m.specialUse === '\\Sent' || m.specialUse === '\\\\Sent') ||
-          mailboxes.find((m) => m.path === '[Gmail]/Sent Mail') ||
-          mailboxes.find((m) => /sent/i.test(m.path));
+            // Find the Sent Mail mailbox
+            const mailboxes = await client.list();
+            const sentMailbox =
+              mailboxes.find((m) => m.specialUse === '\\Sent' || m.specialUse === '\\\\Sent') ||
+              mailboxes.find((m) => m.path === '[Gmail]/Sent Mail') ||
+              mailboxes.find((m) => /sent/i.test(m.path));
 
-        const targetPath = sentMailbox ? sentMailbox.path : '[Gmail]/Sent Mail';
+            const targetPath = sentMailbox ? sentMailbox.path : '[Gmail]/Sent Mail';
 
-        // Compile RFC 822 MIME message buffer using MailComposer
-        const composer = new MailComposer({
-          from: params.from,
-          to: params.to,
-          subject: params.subject,
-          text: params.text || '',
-          html: params.html || undefined,
-          attachments: params.attachments,
-        });
+            // Compile RFC 822 MIME message buffer using MailComposer
+            const composer = new MailComposer({
+              from: params.from,
+              to: params.to,
+              subject: params.subject,
+              text: params.text || '',
+              html: params.html || undefined,
+              attachments: params.attachments,
+            });
 
-        const rawBuffer = await composer.compile().build();
+            const rawBuffer = await composer.compile().build();
 
-        // Append with \Seen flag so it shows as read in Sent Mail
-        await client.append(targetPath, rawBuffer, ['\\Seen']);
-        console.log(`[EmailSentSyncService] ✅ Synced sent email to "${targetPath}" for ${params.to} (${user})`);
+            // Append with \Seen flag so it shows as read in Sent Mail
+            await client.append(targetPath, rawBuffer, ['\\Seen']);
+            console.log(`[EmailSentSyncService] ✅ Synced sent email to "${targetPath}" for ${params.to} (${user})`);
 
-        await client.logout();
+            await client.logout();
+          })(),
+          new Promise<never>((_, reject) => {
+            timeoutHandle = setTimeout(() => reject(new Error('IMAP Sent Sync timed out after 25s')), 25000);
+          }),
+        ]);
         return true;
       } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
         try {
-          if (client.usable) {
-            client.close();
-          }
+          client.close();
         } catch {}
       }
     } catch (err: any) {

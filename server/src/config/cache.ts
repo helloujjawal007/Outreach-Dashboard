@@ -5,14 +5,35 @@ interface CacheEntry<T> {
 
 class MemoryCache {
   private cache = new Map<string, CacheEntry<any>>();
+  private readonly maxEntries = 500;
+
+  /**
+   * Prunes expired entries and evicts oldest entries if above capacity.
+   */
+  private pruneIfNeeded(now: number): void {
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        this.cache.delete(key);
+      }
+    }
+    while (this.cache.size >= this.maxEntries) {
+      const oldestKey = this.cache.keys().next().value;
+      if (!oldestKey) break;
+      this.cache.delete(oldestKey);
+    }
+  }
 
   /**
    * Sets cached data with TTL in milliseconds (default: 3000ms / 3 seconds)
    */
   set<T>(key: string, data: T, ttlMs: number = 3000): void {
+    const now = Date.now();
+    if (!this.cache.has(key) && this.cache.size >= this.maxEntries) {
+      this.pruneIfNeeded(now);
+    }
     this.cache.set(key, {
       data,
-      expiresAt: Date.now() + ttlMs,
+      expiresAt: now + ttlMs,
     });
   }
 

@@ -85,7 +85,7 @@ export class AutomatedIntakeEngine {
       customListId
     );
 
-    // 2. Email Verification & Lead Filtering
+    // 2. Email Verification & Lead Filtering (bounded concurrency of 5)
     const emailLeads = leads.filter((l) => (l.email || '').trim().includes('@'));
     let verifiedEmailCount = 0;
     let invalidEmailCount = 0;
@@ -96,49 +96,54 @@ export class AutomatedIntakeEngine {
       email: string;
     }> = [];
 
-    for (const lead of emailLeads) {
-      const rawEmail = (lead.email || '').trim();
-      const valResult = await emailValidatorService.verifyEmail(rawEmail);
+    for (let idx = 0; idx < emailLeads.length; idx += 5) {
+      const chunk = emailLeads.slice(idx, idx + 5);
+      await Promise.all(
+        chunk.map(async (lead) => {
+          const rawEmail = (lead.email || '').trim();
+          const valResult = await emailValidatorService.verifyEmail(rawEmail);
 
-      if (valResult.isValid) {
-        verifiedEmailCount++;
+          if (valResult.isValid) {
+            verifiedEmailCount++;
 
-        await query(
-          `UPDATE leads 
-           SET email_verified = true, 
-               email_verification_status = 'verified', 
-               updated_at = NOW() 
-           WHERE id = $1`,
-          [lead.id]
-        );
+            await query(
+              `UPDATE leads 
+               SET email_verified = true, 
+                   email_verification_status = 'verified', 
+                   updated_at = NOW() 
+               WHERE id = $1`,
+              [lead.id]
+            );
 
-        // State Locking & Trigger Gate (Checklist Items 1 & 2):
-        // Workflow A leads (with website) must wait for TA audit callback and PDF report before scheduling!
-        const hasWebsite = workflowRoutingService.hasValidWebsite(lead.website);
-        const isWorkflowA = lead.outreach_workflow === 'workflow_a' || lead.status === 'pending_audit' || hasWebsite;
+            // State Locking & Trigger Gate (Checklist Items 1 & 2):
+            // Workflow A leads (with website) must wait for TA audit callback and PDF report before scheduling!
+            const hasWebsite = workflowRoutingService.hasValidWebsite(lead.website);
+            const isWorkflowA = lead.outreach_workflow === 'workflow_a' || lead.status === 'pending_audit' || hasWebsite;
 
-        if (isWorkflowA && lead.audit_status !== 'audit_completed') {
-          console.log(
-            `[AutomatedIntakeEngine] Lead "${lead.businessName || lead.business_name || lead.id}" routed to Workflow A (State locked: PENDING_AUDIT). Email dispatch will trigger upon TA audit callback.`
-          );
-          continue;
-        }
+            if (isWorkflowA && lead.audit_status !== 'audit_completed') {
+              console.log(
+                `[AutomatedIntakeEngine] Lead "${lead.businessName || lead.business_name || lead.id}" routed to Workflow A (State locked: PENDING_AUDIT). Email dispatch will trigger upon TA audit callback.`
+              );
+              return;
+            }
 
-        verifiedLeads.push({
-          id: lead.id,
-          businessName: (lead.businessName || lead.business_name || 'Business').trim(),
-          category: (lead.category || 'General Business').trim(),
-          email: valResult.normalizedEmail,
-        });
-      } else {
-        invalidEmailCount++;
-        await emailValidatorService.flagAndMoveLeadToInvalidList(
-          lead.id,
-          rawEmail,
-          valResult.reason || 'Invalid email',
-          valResult.status
-        );
-      }
+            verifiedLeads.push({
+              id: lead.id,
+              businessName: (lead.businessName || lead.business_name || 'Business').trim(),
+              category: (lead.category || 'General Business').trim(),
+              email: valResult.normalizedEmail,
+            });
+          } else {
+            invalidEmailCount++;
+            await emailValidatorService.flagAndMoveLeadToInvalidList(
+              lead.id,
+              rawEmail,
+              valResult.reason || 'Invalid email',
+              valResult.status
+            );
+          }
+        })
+      );
     }
 
     if (!autoSend || verifiedLeads.length === 0) {
@@ -206,10 +211,38 @@ export class AutomatedIntakeEngine {
     let rolledOverCount = 0;
     const rolloverScheduleByDate: Record<string, number> = {};
 
-    // Track rollover day pointers (Day 1 = tomorrow, Day 2 = day after tomorrow, etc.)
-    let currentRolloverDayOffset = 1;
-    let rolloverCapacityThisDay = this.DAILY_EMAIL_LIMIT;
-    let rolloverPointer = this.getStartOfRolloverDay(currentRolloverDayOffset);
+    // Query future already-scheduled dispatches per local date to avoid double-booking rollover days
+    const futureSchedRes = await query<{ sched_date: string; cnt: number }>(
+      `SELECT TO_CHAR(scheduled_for, 'YYYY-MM-DD') as sched_date, COUNT(*)::int as cnt
+       FROM scheduled_dispatches
+       WHERE channel = 'email'
+         AND status IN ('scheduled', 'processing')
+         AND scheduled_for >= CURRENT_DATE + INTERVAL '1 day'
+       GROUP BY 1`
+    );
+    const futureDayBooked = new Map<string, number>();
+    for (const row of futureSchedRes.rows) {
+      futureDayBooked.set(row.sched_date, row.cnt);
+    }
+
+    const toLocalDateKey = (dt: Date): string => {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    // Track rollover day pointers starting from the next business morning
+    let rolloverPointer = this.getStartOfRolloverDay(1);
+    const getRolloverRemaining = (dt: Date): number => {
+      const key = toLocalDateKey(dt);
+      const alreadyBooked = futureDayBooked.get(key) || 0;
+      return Math.max(0, this.DAILY_EMAIL_LIMIT - alreadyBooked);
+    };
+    while (getRolloverRemaining(rolloverPointer) <= 0) {
+      rolloverPointer = this.getNextBusinessMorning(rolloverPointer);
+    }
+    let rolloverCapacityThisDay = getRolloverRemaining(rolloverPointer);
 
     // 4. Sequence each verified lead
     for (const vLead of verifiedLeads) {
@@ -224,11 +257,10 @@ export class AutomatedIntakeEngine {
         remainingCapacityToday--;
         scheduledTodayCount++;
       } else {
-        // Daily limit reached! Roll over to Next Day (or subsequent days)
-        if (rolloverCapacityThisDay <= 0) {
-          currentRolloverDayOffset++;
-          rolloverCapacityThisDay = this.DAILY_EMAIL_LIMIT;
-          rolloverPointer = this.getStartOfRolloverDay(currentRolloverDayOffset);
+        // Daily limit reached! Roll over to Next Business Day with remaining capacity
+        while (rolloverCapacityThisDay <= 0) {
+          rolloverPointer = this.getNextBusinessMorning(rolloverPointer);
+          rolloverCapacityThisDay = getRolloverRemaining(rolloverPointer);
         }
 
         const pacingMs = (25 + Math.floor(Math.random() * 10)) * 1000;
@@ -238,7 +270,8 @@ export class AutomatedIntakeEngine {
         rolloverCapacityThisDay--;
         rolledOverCount++;
 
-        const dateKey = sendTime.toISOString().split('T')[0];
+        const dateKey = toLocalDateKey(sendTime);
+        futureDayBooked.set(dateKey, (futureDayBooked.get(dateKey) || 0) + 1);
         rolloverScheduleByDate[dateKey] = (rolloverScheduleByDate[dateKey] || 0) + 1;
       }
 
@@ -334,11 +367,20 @@ export class AutomatedIntakeEngine {
   private getStartOfRolloverDay(dayOffset: number): Date {
     const d = new Date();
     d.setDate(d.getDate() + dayOffset);
-    // If rollover lands on Saturday (6), advance to Monday (+2 days)
-    if (d.getDay() === 6) d.setDate(d.getDate() + 2);
-    // If rollover lands on Sunday (0), advance to Monday (+1 day)
-    if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() + 1);
+    }
     d.setHours(9, 15, 0, 0); // 9:15 AM
+    return d;
+  }
+
+  private getNextBusinessMorning(fromDate: Date): Date {
+    const d = new Date(fromDate);
+    d.setDate(d.getDate() + 1);
+    while (d.getDay() === 0 || d.getDay() === 6) {
+      d.setDate(d.getDate() + 1);
+    }
+    d.setHours(9, 15, 0, 0);
     return d;
   }
 }

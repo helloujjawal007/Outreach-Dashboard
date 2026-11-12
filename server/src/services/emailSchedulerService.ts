@@ -944,7 +944,7 @@ export class EmailSchedulerService {
             recipientName,
             subject,
             body,
-            stage,
+            targetStage,
             style,
             leadTargetTime,
             assignedInboxId,
@@ -1279,13 +1279,10 @@ export class EmailSchedulerService {
             await this.executeWhatsAppDispatch(dispatch);
           } else if (channel === 'email') {
             if (pauseRemainingEmails) {
-              await query(
-                `UPDATE scheduled_dispatches
-                 SET status = 'scheduled', locked_at = NULL, updated_at = NOW()
-                 WHERE id = $1 AND status = 'processing'`,
-                [dispatch.id]
-              );
-              this.logTransition(dispatch.id, 'processing', 'scheduled', 'deferred after rate-limit/throttle in batch');
+              await this.releaseDispatch(dispatch.id, 'processing', 'scheduled', {
+                delaySeconds: 180,
+                detail: 'deferred after rate-limit/throttle in batch',
+              });
               continue;
             }
 
@@ -1427,30 +1424,37 @@ export class EmailSchedulerService {
         detail: `WhatsApp delivered to ${waEval.cleanNumber}`,
       });
 
-      // Record in conversation thread
-      let convId: string;
-      const convRes = await query<{ id: string }>(
-        `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'whatsapp' LIMIT 1`,
-        [dispatch.lead_id]
-      );
-      if (convRes.rows.length === 0) {
-        const newConv = await query<{ id: string }>(
-          `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
-           VALUES ('lead', $1, 'whatsapp', 'open', NOW()) RETURNING id`,
-          [dispatch.lead_id]
+      // Record in conversation thread (supports both lead and client dispatches)
+      const isClientEntity = dispatch.entity_type === 'client' && Boolean(dispatch.client_id);
+      const entityId = isClientEntity ? dispatch.client_id : dispatch.lead_id;
+
+      if (entityId) {
+        const entityType = isClientEntity ? 'client' : 'lead';
+        const entityCol = isClientEntity ? 'client_id' : 'lead_id';
+        let convId: string;
+        const convRes = await query<{ id: string }>(
+          `SELECT id FROM conversations WHERE entity_type = $1 AND ${entityCol} = $2 AND channel = 'whatsapp' LIMIT 1`,
+          [entityType, entityId]
         );
-        convId = newConv.rows[0].id;
-      } else {
-        convId = convRes.rows[0].id;
+        if (convRes.rows.length === 0) {
+          const newConv = await query<{ id: string }>(
+            `INSERT INTO conversations (entity_type, ${entityCol}, channel, status, last_message_at)
+             VALUES ($1, $2, 'whatsapp', 'open', NOW()) RETURNING id`,
+            [entityType, entityId]
+          );
+          convId = newConv.rows[0].id;
+        } else {
+          convId = convRes.rows[0].id;
+        }
+
+        await query(
+          `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
+           VALUES ($1, 'whatsapp', 'outbound', $2, 'delivered', $3, NOW())`,
+          [convId, dispatch.body, sendResult.messageId || '']
+        );
+
+        await query(`UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`, [convId]);
       }
-
-      await query(
-        `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
-         VALUES ($1, 'whatsapp', 'outbound', $2, 'delivered', $3, NOW())`,
-        [convId, dispatch.body, sendResult.messageId || '']
-      );
-
-      await query(`UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`, [convId]);
 
       if (dispatch.lead_id) {
         await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [dispatch.lead_id]);
@@ -1685,12 +1689,20 @@ export class EmailSchedulerService {
           }
         }
 
-        // Auto-compile missing audit PDF on-the-fly if needed for Workflow A leads
+        // Auto-compile missing audit PDF on-the-fly if needed for Workflow A leads (guarded with timeout)
         if (!leadAttachments && leadRow.website && workflowRoutingService.hasValidWebsite(leadRow.website)) {
+          let auditTimer: NodeJS.Timeout | undefined;
           try {
             console.log(`[Scheduler] Auto-compiling missing audit PDF for lead ${leadRow.business_name}...`);
-            const auditReport = await clientAuditService.auditWebsite(leadRow.website);
-            const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, leadRow.business_name);
+            const compilePromise = (async () => {
+              const auditReport = await clientAuditService.auditWebsite(leadRow.website!);
+              const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, leadRow.business_name);
+              return { auditReport, pdfGen };
+            })();
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              auditTimer = setTimeout(() => reject(new Error('On-the-fly audit compile timed out after 45s')), 45000);
+            });
+            const { auditReport, pdfGen } = await Promise.race([compilePromise, timeoutPromise]);
             leadAttachments = [{
               filename: pdfGen.pdfName,
               path: pdfGen.pdfPath,
@@ -1703,7 +1715,10 @@ export class EmailSchedulerService {
             leadRow.audit_key_takeaways = auditReport.auditKeyTakeaways;
             leadRow.audit_pdf_name = pdfGen.pdfName;
             leadRow.audit_pdf_path = pdfGen.pdfPath;
-          } catch (_) {}
+          } catch (_) {
+          } finally {
+            if (auditTimer) clearTimeout(auditTimer);
+          }
         }
 
         // Pre-send check: If this was scheduled as 'initial' but an older message has been sent, automatically switch to follow-up!

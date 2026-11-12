@@ -25,8 +25,10 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'State / Region or at least one Target Location is required' });
     }
 
-    const parsedLimit = Math.min(500, Math.max(1, parseInt(String(limit || 10), 10)));
-    const parsedLeadsPerLocation = leadsPerLocation ? Math.min(500, Math.max(1, parseInt(String(leadsPerLocation), 10))) : undefined;
+    const rawLimit = limit !== undefined ? parseInt(String(limit), 10) : 10;
+    const parsedLimit = Math.min(500, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 10));
+    const rawPerLoc = leadsPerLocation !== undefined ? parseInt(String(leadsPerLocation), 10) : NaN;
+    const parsedLeadsPerLocation = Number.isFinite(rawPerLoc) ? Math.min(500, Math.max(1, rawPerLoc)) : undefined;
 
     const leads = await gmbScraperService.searchGmb({
       categories: targetCategories,

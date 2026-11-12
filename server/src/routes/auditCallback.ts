@@ -307,12 +307,55 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     }
     await cleanupOldAuditPdfs(auditsDir, 28);
 
-    // 4. PDF Storage & Magic Byte Validation
+    // 4. Client-Friendly PDF Synthesis (preferred whenever TD delivers structured findings/metrics)
+    //    or validated Base64 PDF storage fallback when only a compiled PDF was returned
     let finalPdfPath = incomingPdfPath && typeof incomingPdfPath === 'string' ? incomingPdfPath : null;
     let finalPdfName = incomingPdfName && typeof incomingPdfName === 'string' ? incomingPdfName : null;
 
+    if (extractedFindings.length > 0) {
+      try {
+        const domain = (lead.website || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] || 'website';
+        const tdMetrics = (reportObj?.metrics || req.body?.metrics) as ClientAuditReport['metrics'] | undefined;
+        const tdRecs = Array.isArray(reportObj?.recommendations)
+          ? reportObj.recommendations.map((r: any) => ({
+              priority: r?.priority === 'low' || r?.priority === 'medium' ? r.priority : 'high',
+              title: String(r?.title || r?.name || ''),
+              detail: String(r?.detail || r?.description || ''),
+              odsSolution: r?.solution ? String(r.solution) : undefined,
+            })).filter((r: any) => r.title)
+          : [];
+
+        const regenReport: ClientAuditReport = {
+          targetUrl: lead.website || `https://${domain}`,
+          finalDestinationUrl: (reportObj?.finalDestinationUrl as string) || lead.website || `https://${domain}`,
+          domain,
+          hasWebsite: true,
+          auditToolUrl: '',
+          overallScore: finalScore,
+          grade: finalScore >= 80 ? 'Good' : finalScore >= 55 ? 'Needs Work' : 'Poor',
+          responseTimeMs: tdMetrics?.responseTimeMs || Number((reportObj as any)?.ttfbMs || req.body?.ttfbMs || 0),
+          mobileFriendly: tdMetrics?.hasViewport ?? !extractedFindings.some((f) => /mobile|viewport/i.test(f)),
+          metrics: tdMetrics,
+          checks: [],
+          criticalIssues: extractedFindings,
+          recommendations: tdRecs,
+          summary: finalTakeaways || `Website health summary for ${lead.business_name}`,
+          auditedAt: new Date().toISOString(),
+        };
+
+        const genResult = await technicalAuditPdfService.generateAuditPdf(regenReport, lead.business_name);
+        finalPdfPath = genResult.pdfPath;
+        finalPdfName = genResult.pdfName;
+        console.log(`[AuditCallback] 📄 Generated client-friendly audit PDF from TD JSON findings: ${finalPdfPath}`);
+        logPipeline('GENERATED_PDF', `Generated client-friendly PDF for ${slotLabel}: "${genResult.pdfName}" (${genResult.fileSize} bytes) | "${lead.business_name}"`);
+      } catch (genErr: any) {
+        console.warn(`[AuditCallback] ⚠️ Client-friendly PDF synthesis error:`, genErr?.message);
+        logPipelineError(`PDF Generation | ${slotLabel}`, `Failed synthesizing PDF for "${lead.business_name}"`, genErr);
+      }
+    }
+
     const base64Data = rawPdfBase64 || rawPdf || reportObj?.pdfBase64 || reportObj?.pdf;
-    if (base64Data && typeof base64Data === 'string') {
+    if (!finalPdfPath && base64Data && typeof base64Data === 'string') {
       const cleanBase64 = base64Data.replace(/^data:application\/pdf;base64,/i, '').trim();
       const pdfBuffer = Buffer.from(cleanBase64, 'base64');
 
@@ -337,47 +380,8 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
       finalPdfPath = targetPath;
       finalPdfName = filename;
       fs.writeFileSync(finalPdfPath, pdfBuffer);
-      console.log(`[AuditCallback] Stored valid audit PDF on disk: ${finalPdfPath} (${pdfBuffer.length} bytes)`);
+      console.log(`[AuditCallback] Stored fallback audit PDF on disk: ${finalPdfPath} (${pdfBuffer.length} bytes)`);
       logPipeline('GENERATED_PDF', `Stored audit PDF from TD for ${slotLabel}: "${filename}" (${pdfBuffer.length} bytes) | "${lead.business_name}"`);
-    }
-
-    // 4.1 On-the-fly PDF Generation if TD returned JSON without compiled PDF
-    if (!finalPdfPath && extractedFindings.length > 0) {
-      try {
-        const domain = (lead.website || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] || 'website';
-        const regenReport: ClientAuditReport = {
-          targetUrl: lead.website || `https://${domain}`,
-          finalDestinationUrl: lead.website || `https://${domain}`,
-          domain,
-          hasWebsite: true,
-          auditToolUrl: '',
-          overallScore: finalScore,
-          grade: finalScore >= 80 ? 'Good' : finalScore >= 55 ? 'Needs Work' : 'Poor',
-          responseTimeMs: 240,
-          mobileFriendly: true,
-          checks: [],
-          criticalIssues: extractedFindings,
-          recommendations: [
-            {
-              priority: 'high',
-              title: 'Remediate Critical Performance & Technical Issues',
-              detail: finalTakeaways || 'Audit optimizations and infrastructure remediation.',
-              odsSolution: 'Cloud Consultancy Engineering & Architecture Team',
-            },
-          ],
-          summary: finalTakeaways || `Technical audit summary for ${lead.business_name}`,
-          auditedAt: new Date().toISOString(),
-        };
-
-        const genResult = await technicalAuditPdfService.generateAuditPdf(regenReport, lead.business_name);
-        finalPdfPath = genResult.pdfPath;
-        finalPdfName = genResult.pdfName;
-        console.log(`[AuditCallback] 📄 Synthesized branded audit PDF on-the-fly from TD JSON findings: ${finalPdfPath}`);
-        logPipeline('GENERATED_PDF', `Synthesized PDF for ${slotLabel}: "${genResult.pdfName}" (${genResult.fileSize} bytes) | "${lead.business_name}"`);
-      } catch (genErr: any) {
-        console.warn(`[AuditCallback] ⚠️ On-the-fly PDF synthesis error:`, genErr?.message);
-        logPipelineError(`PDF Generation | ${slotLabel}`, `Failed synthesizing PDF for "${lead.business_name}"`, genErr);
-      }
     }
 
     // 5. Unified Audit Asset Validation

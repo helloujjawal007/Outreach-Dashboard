@@ -1,4 +1,14 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+  useContext,
+  createContext,
+  createElement,
+  type ReactNode,
+} from 'react';
 import type {
   Lead,
   ConversationMessage,
@@ -19,7 +29,19 @@ import type {
 } from './types';
 import { api, type HealthResponse, type SendReplyResult } from './services/api';
 
-export function useStore() {
+const MAX_CONVERSATION_CACHE = 500;
+
+function mergeEntityConversations(
+  prev: ConversationMessage[],
+  entityId: string,
+  msgs: ConversationMessage[],
+  maxEntries: number = MAX_CONVERSATION_CACHE
+): ConversationMessage[] {
+  const combined = [...prev.filter((m) => m.leadId !== entityId), ...msgs];
+  return combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
+}
+
+function useStoreInternal() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [lists, setLists] = useState<CustomList[]>([]);
   const [batches, setBatches] = useState<UploadBatch[]>([]);
@@ -35,9 +57,11 @@ export function useStore() {
   const [systemStatus, setSystemStatus] = useState<HealthResponse['system'] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   // Load all initial data from backend API
   const refreshAll = useCallback(async (listId?: string, batchId?: string) => {
+    const seq = ++requestSeqRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -45,19 +69,19 @@ export function useStore() {
       const [leadsData, clientsData, campaignsData, queueData, healthData, listsData, batchesData, trashData, inboundData, dispatchesData, autoStatusData] = await Promise.all([
         api.getLeads(listId, batchId).catch((err) => {
           console.error('Failed to load leads:', err);
-          return [] as Lead[];
+          return null;
         }),
         api.getClients().catch((err) => {
           console.error('Failed to load clients:', err);
-          return [] as Lead[];
+          return null;
         }),
         api.getCampaigns().catch((err) => {
           console.error('Failed to load campaigns:', err);
-          return [] as Campaign[];
+          return null;
         }),
         api.getQueue().catch((err) => {
           console.error('Failed to load queue:', err);
-          return [] as QueueItem[];
+          return null;
         }),
         api.getHealth().catch((err) => {
           console.error('Failed to load health:', err);
@@ -65,23 +89,23 @@ export function useStore() {
         }),
         api.getLists().catch((err) => {
           console.error('Failed to load lists:', err);
-          return [] as CustomList[];
+          return null;
         }),
         api.getBatches().catch((err) => {
           console.error('Failed to load batches:', err);
-          return [] as UploadBatch[];
+          return null;
         }),
         api.getTrashLeads().catch((err) => {
           console.error('Failed to load trash leads:', err);
-          return [] as Lead[];
+          return null;
         }),
         api.getInboundReplies().catch((err) => {
           console.error('Failed to load inbound replies:', err);
-          return [] as InboundReplyMessage[];
+          return null;
         }),
         api.getScheduledDispatches().catch((err) => {
           console.error('Failed to load scheduled dispatches:', err);
-          return [] as ScheduledDispatch[];
+          return null;
         }),
         api.getAutopilotStatus().catch((err) => {
           console.error('Failed to load autopilot status:', err);
@@ -89,34 +113,48 @@ export function useStore() {
         }),
       ]);
 
+      // Ignore stale responses if a newer fetch began while we awaited
+      if (seq !== requestSeqRef.current) return;
+
       if (autoStatusData) {
         setAutopilotStatus(autoStatusData);
       }
 
-      // If a specific list or batch is selected, only show leads matching that filter
-      if ((listId && listId !== 'all') || (batchId && batchId !== 'all')) {
-        setLeads(leadsData);
+      if (leadsData !== null) {
+        // If a specific list or batch is selected, only show leads matching that filter
+        if ((listId && listId !== 'all') || (batchId && batchId !== 'all')) {
+          setLeads(leadsData);
+        } else {
+          // Enforce single-entity view: distinct leads + clients (preserve existing clients if clientsData failed)
+          if (clientsData !== null) {
+            setLeads([...leadsData, ...clientsData]);
+          } else {
+            setLeads((prev) => [...leadsData, ...prev.filter((p) => p.entityType === 'client')]);
+          }
+        }
       } else {
-        // Enforce single-entity view: distinct leads + clients
-        setLeads([...leadsData, ...clientsData]);
+        setError('Failed to refresh leads from backend API. Showing cached view.');
       }
 
-      setLists(listsData);
-      setBatches(batchesData);
-      setTrashLeads(trashData);
-      setInboundReplies(inboundData);
-      setDispatches(dispatchesData);
-      setCampaigns(campaignsData);
-      setQueue(queueData);
+      if (listsData !== null) setLists(listsData);
+      if (batchesData !== null) setBatches(batchesData);
+      if (trashData !== null) setTrashLeads(trashData);
+      if (inboundData !== null) setInboundReplies(inboundData);
+      if (dispatchesData !== null) setDispatches(dispatchesData);
+      if (campaignsData !== null) setCampaigns(campaignsData);
+      if (queueData !== null) setQueue(queueData);
       if (healthData) {
         setHealth(healthData.health);
         setSystemStatus(healthData.system);
       }
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       console.error('[Store] refreshAll error:', err);
       setError(err instanceof Error ? err.message : 'Failed to connect to backend API');
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -246,6 +284,9 @@ export function useStore() {
       notes?: string;
       listId?: string;
       batchId?: string;
+      location?: string;
+      country?: string;
+      metadata?: Record<string, any>;
       enrichGoogle?: boolean;
     }) => {
       try {
@@ -326,10 +367,7 @@ export function useStore() {
           const msgs = params.clientId
             ? await api.getMessagesByClient(params.clientId)
             : await api.getMessagesByLead(params.leadId!);
-          setConversations((prev) => {
-            const others = prev.filter((m) => m.leadId !== entityId);
-            return [...others, ...msgs];
-          });
+          setConversations((prev) => mergeEntityConversations(prev, entityId, msgs));
         }
 
         // Inbound inbox update: Immediately mark answered inbound messages as replied and read in local state
@@ -446,10 +484,7 @@ export function useStore() {
   const fetchConversationsForEntity = useCallback(async (id: string, isClient: boolean = false) => {
     try {
       const msgs = isClient ? await api.getMessagesByClient(id) : await api.getMessagesByLead(id);
-      setConversations((prev) => {
-        const others = prev.filter((m) => m.leadId !== id);
-        return [...others, ...msgs];
-      });
+      setConversations((prev) => mergeEntityConversations(prev, id, msgs));
       return msgs;
     } catch (err) {
       console.error('[Store] fetchConversationsForEntity error:', err);
@@ -1146,10 +1181,7 @@ export function useStore() {
       try {
         const res = await api.submitWebsiteForm(leadId, payload);
         const msgs = await api.getMessagesByLead(leadId);
-        setConversations((prev) => {
-          const others = prev.filter((m) => m.leadId !== leadId);
-          return [...others, ...msgs];
-        });
+        setConversations((prev) => mergeEntityConversations(prev, leadId, msgs));
         return res;
       } catch (err) {
         console.error('[Store] submitWebsiteForm error:', err);
@@ -1160,22 +1192,29 @@ export function useStore() {
   );
 
   const fetchLeads = useCallback(async (listId?: string, batchId?: string) => {
+    const seq = ++requestSeqRef.current;
     try {
       const [leadsData, clientsData] = await Promise.all([
         api.getLeads(listId, batchId).catch((err) => {
           console.error('Failed to load leads:', err);
-          return [] as Lead[];
+          return null;
         }),
         api.getClients().catch((err) => {
           console.error('Failed to load clients:', err);
-          return [] as Lead[];
+          return null;
         }),
       ]);
 
-      if ((listId && listId !== 'all') || (batchId && batchId !== 'all')) {
-        setLeads(leadsData);
-      } else {
-        setLeads([...leadsData, ...clientsData]);
+      if (seq !== requestSeqRef.current) return;
+
+      if (leadsData !== null) {
+        if ((listId && listId !== 'all') || (batchId && batchId !== 'all')) {
+          setLeads(leadsData);
+        } else if (clientsData !== null) {
+          setLeads([...leadsData, ...clientsData]);
+        } else {
+          setLeads((prev) => [...leadsData, ...prev.filter((p) => p.entityType === 'client')]);
+        }
       }
     } catch (err) {
       console.error('[Store] fetchLeads error:', err);
@@ -1516,4 +1555,19 @@ export function useStore() {
   );
 }
 
-export type Store = ReturnType<typeof useStore>;
+export type Store = ReturnType<typeof useStoreInternal>;
+
+const StoreContext = createContext<Store | null>(null);
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const store = useStoreInternal();
+  return createElement(StoreContext.Provider, { value: store }, children);
+}
+
+export function useStore(): Store {
+  const ctx = useContext(StoreContext);
+  if (!ctx) {
+    throw new Error('useStore must be used within a StoreProvider');
+  }
+  return ctx;
+}

@@ -91,7 +91,7 @@ export class InboxRotationService {
         defaultEmail,
         env.SMTP_HOST || 'smtppro.zoho.in',
         env.SMTP_PORT || 465,
-        env.SMTP_SECURE || true,
+        env.SMTP_SECURE,
         cleanPass,
       ]);
       return inserted.rows;
@@ -162,8 +162,7 @@ export class InboxRotationService {
     `);
 
     if (res.rows.length === 0) {
-      const all = await this.getAllInboxes();
-      return all.find((i) => i.status === 'active') || all[0] || null;
+      return null;
     }
 
     return res.rows[0];
@@ -222,7 +221,7 @@ export class InboxRotationService {
               greetingTimeout: 15000,
               socketTimeout: 25000,
               tls: {
-                rejectUnauthorized: false,
+                rejectUnauthorized: process.env.SMTP_ALLOW_SELF_SIGNED !== 'true',
                 minVersion: 'TLSv1.2',
               },
               pool: false,

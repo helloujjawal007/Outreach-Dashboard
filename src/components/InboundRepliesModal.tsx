@@ -237,6 +237,22 @@ export function InboundRepliesModal({
   const [threadHistoryMap, setThreadHistoryMap] = useState<Record<string, InboundReplyMessage[]>>({});
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
+  // Keep open thread cache bounded to avoid unbounded memory growth on 10k+ contacts
+  const upsertThreadHistory = useCallback(
+    (prev: Record<string, InboundReplyMessage[]>, key: string, messages: InboundReplyMessage[]) => {
+      const next: Record<string, InboundReplyMessage[]> = { ...prev, [key]: messages };
+      const keys = Object.keys(next);
+      const MAX_CACHED_THREADS = 30;
+      if (keys.length > MAX_CACHED_THREADS) {
+        for (let i = 0; i < keys.length - MAX_CACHED_THREADS; i++) {
+          if (keys[i] !== key) delete next[keys[i]];
+        }
+      }
+      return next;
+    },
+    []
+  );
+
   // Fetch recent messages across all channels
   const fetchRecentMessages = useCallback(async () => {
     setIsLoading(true);
@@ -550,7 +566,7 @@ export function InboundRepliesModal({
         }
         if (!isMounted) return;
         const mapped = rawMsgs.map((m) => toThreadMessage(m, activeThread));
-        setThreadHistoryMap((prev) => ({ ...prev, [key]: mapped }));
+        setThreadHistoryMap((prev) => upsertThreadHistory(prev, key, mapped));
       } catch (err) {
         console.warn('Could not load extended thread history:', err);
       }
@@ -696,13 +712,14 @@ export function InboundRepliesModal({
         channel: msg.channel,
         text: replyText.trim(),
       });
-      if (res.success) {
+      const blockedReason = res.result && !res.result.allowed ? res.result.reason : undefined;
+      if (res.success && !blockedReason && res.result?.actionTaken !== 'smtp_failed') {
         setActionFeedback(`AI reply dispatched to ${msg.business_name} via ${msg.channel}!`);
         if (onMarkHandled) await onMarkHandled(msg.id);
         fetchRecentMessages();
         fetchInboundHistory();
       } else {
-        setActionFeedback(`Failed to send: ${res.message || 'Unknown error'}`);
+        setActionFeedback(`Blocked / Failed: ${blockedReason || res.result?.reason || res.message || 'Unknown error'}`);
       }
     } catch (err: any) {
       setActionFeedback(`Error: ${err.message || 'Failed to dispatch reply'}`);
@@ -725,7 +742,8 @@ export function InboundRepliesModal({
         text: textToSend,
       });
 
-      if (res.success) {
+      const blockedReason = res.result && !res.result.allowed ? res.result.reason : undefined;
+      if (res.success && !blockedReason && res.result?.actionTaken !== 'smtp_failed') {
         setComposerText('');
         setActionFeedback(`Sent via ${composerChannel.toUpperCase()} to ${activeThread.businessName}!`);
 
@@ -749,15 +767,14 @@ export function InboundRepliesModal({
         };
 
         setAllRecentMessages((prev) => [optimisticMsg, ...prev]);
-        setThreadHistoryMap((prev) => ({
-          ...prev,
-          [activeThread.key]: [...(prev[activeThread.key] || activeThread.messages), optimisticMsg],
-        }));
+        setThreadHistoryMap((prev) =>
+          upsertThreadHistory(prev, activeThread.key, [...(prev[activeThread.key] || activeThread.messages), optimisticMsg])
+        );
 
         setTimeout(() => setActionFeedback(null), 3500);
         fetchRecentMessages();
       } else {
-        setActionFeedback(`Send failed: ${res.message || 'Error'}`);
+        setActionFeedback(`Send blocked/failed: ${blockedReason || res.result?.reason || res.message || 'Error'}`);
       }
     } catch (err: any) {
       setActionFeedback(`Send error: ${err.message || 'Failed to dispatch'}`);

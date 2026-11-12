@@ -27,7 +27,7 @@ export interface TaskRecord {
  */
 tasksRouter.get('/', async (req: Request, res: Response) => {
   try {
-    const { status, filter } = req.query;
+    const { status, filter, leadId } = req.query;
 
     let queryText = `
       SELECT 
@@ -40,6 +40,11 @@ tasksRouter.get('/', async (req: Request, res: Response) => {
       WHERE 1=1
     `;
     const params: any[] = [];
+
+    if (leadId && typeof leadId === 'string' && leadId.trim()) {
+      params.push(leadId.trim());
+      queryText += ` AND t.lead_id = $${params.length}`;
+    }
 
     if (status && typeof status === 'string') {
       params.push(status);

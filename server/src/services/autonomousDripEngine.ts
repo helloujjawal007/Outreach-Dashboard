@@ -46,6 +46,7 @@ export interface AutopilotStatus {
 
 export class AutonomousDripEngine {
   private timer: NodeJS.Timeout | null = null;
+  private startupTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
   private lastRunAt: Date | null = null;
 
@@ -67,10 +68,14 @@ export class AutonomousDripEngine {
       if (res.rows.length > 0) {
         return {
           ...res.rows[0].value,
-          daily_limit: res.rows[0].value.daily_limit || 200,
-          followup_1_delay_days: res.rows[0].value.followup_1_delay_days || 2.5,
-          followup_2_delay_days: res.rows[0].value.followup_2_delay_days || 5.5,
-          followup_3_delay_days: res.rows[0].value.followup_3_delay_days || 10.0,
+          daily_limit: res.rows[0].value.daily_limit ?? 200,
+          batch_size: res.rows[0].value.batch_size ?? 5,
+          cycle_interval_seconds: res.rows[0].value.cycle_interval_seconds ?? 30,
+          followup_1_delay_days: res.rows[0].value.followup_1_delay_days ?? 2.5,
+          followup_2_delay_days: res.rows[0].value.followup_2_delay_days ?? 5.5,
+          followup_3_delay_days: res.rows[0].value.followup_3_delay_days ?? 10.0,
+          pacing_delay_min_seconds: res.rows[0].value.pacing_delay_min_seconds ?? 3,
+          pacing_delay_max_seconds: res.rows[0].value.pacing_delay_max_seconds ?? 7,
         };
       }
     } catch (err) {
@@ -278,28 +283,38 @@ export class AutonomousDripEngine {
       return { dispatchedCount: 0, skippedCount: 0, results: [] };
     }
 
-    const settings = await this.getSettings();
-    if (!settings.enabled) {
-      return { dispatchedCount: 0, skippedCount: 0, results: [] };
-    }
-
-    // Gate: If 5-slot sender engine is active, prevent autonomous drip engine from competing
-    const slotCheck = await query<{ is_active: boolean }>(
-      `SELECT is_active FROM slot_sender_settings WHERE id = 'default'`
-    ).catch(() => ({ rows: [] }));
-    if (slotCheck.rows.length > 0 && slotCheck.rows[0].is_active) {
-      // 5-slot engine is active: autonomous drip yields to 5-slot deterministic grid to prevent duplicate sending
-      return { dispatchedCount: 0, skippedCount: 0, results: [] };
-    }
-
     this.isProcessing = true;
-    this.lastRunAt = new Date();
-
     const cycleResults: any[] = [];
     let dispatchedCount = 0;
     let skippedCount = 0;
 
     try {
+      const settings = await this.getSettings();
+      if (!settings.enabled) {
+        return { dispatchedCount: 0, skippedCount: 0, results: [] };
+      }
+
+      // Honor working_hours_only (Mon-Fri 08:00-18:00 local)
+      if (settings.working_hours_only) {
+        const now = new Date();
+        const day = now.getDay();
+        const hour = now.getHours();
+        if (day === 0 || day === 6 || hour < 8 || hour >= 18) {
+          return { dispatchedCount: 0, skippedCount: 0, results: [] };
+        }
+      }
+
+      // Gate: If 5-slot sender engine is active, prevent autonomous drip engine from competing
+      const slotCheck = await query<{ is_active: boolean }>(
+        `SELECT is_active FROM slot_sender_settings WHERE id = 'default'`
+      ).catch(() => ({ rows: [] as Array<{ is_active: boolean }> }));
+      if (slotCheck.rows.length > 0 && slotCheck.rows[0].is_active) {
+        // 5-slot engine is active: autonomous drip yields to 5-slot deterministic grid to prevent duplicate sending
+        return { dispatchedCount: 0, skippedCount: 0, results: [] };
+      }
+
+      this.lastRunAt = new Date();
+
       // 1. Check capacity & throttling (Strict 200/day default limit)
       const poolSummary = await inboxRotationService.getPoolSummary().catch(() => null);
       const metricRes = await query<{ sent_count: number }>(
@@ -323,6 +338,10 @@ export class AutonomousDripEngine {
       // Priority 2: Followup 2 (Day 5.5 check-in)
       // Priority 3: Followup 1 (Day 2.5 check-in, strictly >= 48 hours delay)
       // Priority 4: Initial touches (Day 0)
+      const fu1Hours = Math.max(48, Math.round((settings.followup_1_delay_days ?? 2.5) * 24));
+      const fu2Hours = Math.max(fu1Hours + 24, Math.round((settings.followup_2_delay_days ?? 5.5) * 24));
+      const fu3Hours = Math.max(fu2Hours + 24, Math.round((settings.followup_3_delay_days ?? 10.0) * 24));
+
       const candidateLeads = await query<{ id: string; business_name: string; outreach_stage: string }>(
         `SELECT id, business_name, outreach_stage
          FROM leads
@@ -331,22 +350,22 @@ export class AutonomousDripEngine {
            AND consent_status = 'none'
            AND (outreach_stage IS NULL OR outreach_stage != 'sending')
            AND (
-             -- Followup 3 Due (10 days from first shoot or 108 hours after followup 2)
+             -- Followup 3 Due
              (outreach_stage = 'followup_3' AND (
-               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '240 hours')
+               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - make_interval(hours => $2))
                OR last_contacted_at <= NOW() - INTERVAL '108 hours'
              ))
              OR
-             -- Followup 2 Due (5.5 days from first shoot or 72 hours after followup 1)
+             -- Followup 2 Due
              (outreach_stage = 'followup_2' AND (
-               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '132 hours')
+               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - make_interval(hours => $3))
                OR last_contacted_at <= NOW() - INTERVAL '72 hours'
              ))
              OR
-             -- Followup 1 Due (2.5 days from first shoot, strictly >= 48 hours delay)
+             -- Followup 1 Due (strictly >= 48 hours safety minimum)
              (outreach_stage = 'followup_1' AND (
-               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - INTERVAL '60 hours')
-               OR last_contacted_at <= NOW() - INTERVAL '60 hours'
+               (first_contacted_at IS NOT NULL AND first_contacted_at <= NOW() - make_interval(hours => $4))
+               OR last_contacted_at <= NOW() - make_interval(hours => $4)
              ) AND last_contacted_at <= NOW() - INTERVAL '48 hours')
              OR
              -- Initial Touch Due
@@ -380,7 +399,7 @@ AND NOT EXISTS (
            END ASC,
            created_at ASC
          LIMIT $1`,
-        [batchLimit]
+        [batchLimit, fu3Hours, fu2Hours, fu1Hours]
       );
 
       if (candidateLeads.rows.length === 0) {
@@ -426,14 +445,13 @@ AND NOT EXISTS (
    * Starts recurring 24/7 background scheduler loop
    */
   startScheduler(intervalMs: number = 30000): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-    }
+    this.stopScheduler();
 
     console.log(`[AutonomousDripEngine] 🚀 24/7 Continuous Drip Outreach Engine active (interval: ${intervalMs / 1000}s).`);
 
     // Initial check after 5 seconds to let server finish booting
-    setTimeout(() => {
+    this.startupTimer = setTimeout(() => {
+      this.startupTimer = null;
       this.runDripCycle().catch(console.error);
     }, 5000);
 
@@ -446,6 +464,10 @@ AND NOT EXISTS (
    * Stops scheduler loop
    */
   stopScheduler(): void {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer);
+      this.startupTimer = null;
+    }
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;

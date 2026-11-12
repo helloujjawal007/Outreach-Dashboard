@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { query } from '../config/db';
+import { query, withTransaction } from '../config/db';
 
 export const campaignsRouter = Router();
 
@@ -49,33 +49,37 @@ campaignsRouter.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Campaign name is required' });
     }
 
-    const campRes = await query<{ id: string }>(
-      `INSERT INTO campaigns (name, target_category, target_channel, status)
-       VALUES ($1, $2, $3, 'active')
-       RETURNING *`,
-      [name.trim(), targetCategory || 'all', targetChannel || 'all']
-    );
+    const { campaign, steps: insertedSteps } = await withTransaction(async (client) => {
+      const campRes = await client.query<{ id: string }>(
+        `INSERT INTO campaigns (name, target_category, target_channel, status)
+         VALUES ($1, $2, $3, 'active')
+         RETURNING *`,
+        [name.trim(), targetCategory || 'all', targetChannel || 'all']
+      );
 
-    const campaignId = campRes.rows[0].id;
-    const insertedSteps: unknown[] = [];
+      const campaignId = campRes.rows[0].id;
+      const stepsOut: unknown[] = [];
 
-    if (Array.isArray(steps) && steps.length > 0) {
-      for (let i = 0; i < steps.length; i++) {
-        const s = steps[i];
-        const stepRes = await query(
-          `INSERT INTO campaign_steps (campaign_id, step_order, name, channel, delay_days, body)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [campaignId, i + 1, s.name || `Step ${i + 1}`, s.channel || 'email', s.delayDays ?? 0, s.body || '']
-        );
-        insertedSteps.push(stepRes.rows[0]);
+      if (Array.isArray(steps) && steps.length > 0) {
+        for (let i = 0; i < steps.length; i++) {
+          const s = steps[i];
+          const stepRes = await client.query(
+            `INSERT INTO campaign_steps (campaign_id, step_order, name, channel, delay_days, body)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             RETURNING *`,
+            [campaignId, i + 1, s.name || `Step ${i + 1}`, s.channel || 'email', s.delayDays ?? 0, s.body || '']
+          );
+          stepsOut.push(stepRes.rows[0]);
+        }
       }
-    }
+
+      return { campaign: campRes.rows[0], steps: stepsOut };
+    });
 
     res.status(201).json({
       success: true,
       campaign: {
-        ...campRes.rows[0],
+        ...campaign,
         steps: insertedSteps,
       },
     });

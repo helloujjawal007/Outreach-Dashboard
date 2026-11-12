@@ -90,6 +90,17 @@ export class WhatsAppSessionService {
     this.state.lastError = null;
 
     try {
+      // Tear down any stale socket instance cleanly before reconnecting
+      if (this.sock) {
+        try {
+          (this.sock.ev as any)?.removeAllListeners?.('creds.update');
+          (this.sock.ev as any)?.removeAllListeners?.('connection.update');
+          (this.sock.ev as any)?.removeAllListeners?.('messages.upsert');
+          this.sock.end(undefined);
+        } catch {}
+        this.sock = null;
+      }
+
       const { state: authState, saveCreds, clearAuth } = await usePostgresAuthState();
       this.clearAuthFn = clearAuth;
 
@@ -286,12 +297,15 @@ export class WhatsAppSessionService {
 
     let cleanDigits = recipientPhone.replace(/\D/g, '');
 
-    // Convert Australian leading 04xx to 614xx
     if (cleanDigits.startsWith('04') && cleanDigits.length === 10) {
+      // Australian mobile local format 04xx -> 614xx
       cleanDigits = '61' + cleanDigits.slice(1);
-    } else if (cleanDigits.length === 10 && !cleanDigits.startsWith('1')) {
-      // 10 digits without international country prefix: default to North American 1...
-      cleanDigits = '1' + cleanDigits;
+    } else if (!recipientPhone.trim().startsWith('+') && cleanDigits.length === 10) {
+      const { whatsappValidator } = await import('./whatsappValidator');
+      const evaluated = whatsappValidator.evaluate({ phone: recipientPhone });
+      if (evaluated.formattedInternational) {
+        cleanDigits = evaluated.formattedInternational.replace(/\D/g, '');
+      }
     }
 
     if (!cleanDigits || cleanDigits.length < 8) {

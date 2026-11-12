@@ -4,8 +4,26 @@ import { outreachEngine } from '../services/outreachService';
 
 export const conversationsRouter = Router();
 
-// In-memory idempotency cache for outbound replies (TTL: 5 minutes)
+// Bounded in-memory idempotency cache for outbound replies (TTL: 5 minutes)
+const IDEMPOTENCY_TTL_MS = 5 * 60 * 1000;
 const idempotencyStore = new Map<string, { status: number; body: any; timestamp: number }>();
+
+function setIdempotencyEntry(key: string, entry: { status: number; body: any; timestamp: number }): void {
+  const now = Date.now();
+  if (idempotencyStore.size >= 500) {
+    for (const [k, v] of idempotencyStore.entries()) {
+      if (now - v.timestamp >= IDEMPOTENCY_TTL_MS) {
+        idempotencyStore.delete(k);
+      }
+    }
+    while (idempotencyStore.size >= 500) {
+      const oldest = idempotencyStore.keys().next().value;
+      if (!oldest) break;
+      idempotencyStore.delete(oldest);
+    }
+  }
+  idempotencyStore.set(key, entry);
+}
 
 // GET /api/conversations/by-lead/:leadId
 conversationsRouter.get('/by-lead/:leadId', async (req: Request, res: Response) => {
@@ -215,7 +233,7 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
       };
 
       if (idempotencyKey) {
-        idempotencyStore.set(idempotencyKey, {
+        setIdempotencyEntry(idempotencyKey, {
           status: 200,
           body: responsePayload,
           timestamp: Date.now(),
@@ -228,7 +246,7 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
     // B) If recipient is a PAYING CLIENT: Direct conversation orchestrator message
     if (clientId) {
       const clientRes = await query<{ id: string; email: string; business_name: string }>(
-        `SELECT id, email, business_name FROM clients WHERE id = $1`,
+        `SELECT id, email, business_name FROM clients WHERE id = $1 AND deleted_at IS NULL`,
         [clientId]
       );
 
@@ -240,6 +258,7 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
 
       // If channel is email and live SMTP is configured, dispatch the live email
       let liveDeliveryStatus = 'sent_live';
+      let emailErrorReason = '';
       if (channel === 'email' && client.email) {
         try {
           const { emailAdapter } = await import('../adapters/emailAdapter');
@@ -249,10 +268,14 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
             subject: `Follow-up regarding ${client.business_name}`,
             body: text,
           });
-          liveDeliveryStatus = sendResult.liveDelivery || 'sent_live';
+          liveDeliveryStatus = sendResult.liveDelivery || (sendResult.success ? 'sent_live' : 'smtp_failed');
+          if (!sendResult.success) {
+            emailErrorReason = sendResult.reason || 'SMTP delivery failed';
+          }
         } catch (mailErr) {
           console.error('[conversationsRouter.reply] Error sending live email to client:', mailErr);
           liveDeliveryStatus = 'smtp_failed';
+          emailErrorReason = mailErr instanceof Error ? mailErr.message : 'SMTP delivery failed';
         }
       }
 
@@ -274,6 +297,9 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
         convId = convRes.rows[0].id;
       }
 
+      const isFailedDelivery = channel === 'email' && liveDeliveryStatus === 'smtp_failed';
+      const targetMsgStatus = isFailedDelivery ? 'failed' : 'sent';
+
       // Check if message was already created by emailAdapter
       const existingMsg = await query(
         `SELECT * FROM messages WHERE conversation_id = $1 AND text = $2 AND direction = 'outbound' AND sent_at >= NOW() - INTERVAL '10 seconds'`,
@@ -284,11 +310,20 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
       if (!savedMsg) {
         const msgRes = await query(
           `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at)
-           VALUES ($1, $2, 'outbound', $3, 'sent', NOW())
+           VALUES ($1, $2, 'outbound', $3, $4, NOW())
            RETURNING *`,
-          [convId, channel, text]
+          [convId, channel, text, targetMsgStatus]
         );
         savedMsg = msgRes.rows[0];
+      }
+
+      if (isFailedDelivery) {
+        return res.status(502).json({
+          success: false,
+          error: emailErrorReason || 'Failed to send email to client',
+          message: savedMsg,
+          liveDelivery: liveDeliveryStatus,
+        });
       }
 
       await query(
@@ -531,7 +566,8 @@ conversationsRouter.get('/recent-messages', async (req: Request, res: Response) 
   try {
     const channel = req.query.channel as string;
     const direction = req.query.direction as string;
-    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 150;
+    const parsedLimit = req.query.limit ? parseInt(String(req.query.limit), 10) : 150;
+    const limit = Number.isFinite(parsedLimit) ? Math.min(500, Math.max(1, parsedLimit)) : 150;
 
     let sql = `
       SELECT 
@@ -640,6 +676,12 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
       JOIN conversations c ON c.id = m.conversation_id
       LEFT JOIN leads l ON l.id = c.lead_id
       LEFT JOIN clients cl ON cl.id = c.client_id
+      LEFT JOIN (
+        SELECT conversation_id, MAX(sent_at) AS max_outbound_at
+        FROM messages
+        WHERE direction = 'outbound'
+        GROUP BY conversation_id
+      ) out_agg ON out_agg.conversation_id = m.conversation_id
       WHERE 1=1
         AND (
           (c.entity_type = 'lead' AND l.id IS NOT NULL AND l.deleted_at IS NULL)
@@ -666,22 +708,12 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
 
     if (!includeHandled) {
       if (status === 'handled') {
-        sql += ` AND (m.is_replied IS TRUE OR m.is_read IS TRUE OR m.is_seen IS TRUE OR EXISTS (
-          SELECT 1 FROM messages out_m 
-          WHERE out_m.conversation_id = m.conversation_id 
-            AND out_m.direction = 'outbound' 
-            AND out_m.sent_at >= m.sent_at
-        ))`;
+        sql += ` AND (m.is_replied IS TRUE OR m.is_read IS TRUE OR m.is_seen IS TRUE OR (out_agg.max_outbound_at IS NOT NULL AND out_agg.max_outbound_at >= m.sent_at))`;
       } else {
         // Pending queue: Not replied, not read, and no outbound reply sent after this inbound message
         sql += ` AND COALESCE(m.is_replied, false) = false 
                  AND COALESCE(m.is_read, false) = false
-                 AND NOT EXISTS (
-                   SELECT 1 FROM messages out_m 
-                   WHERE out_m.conversation_id = m.conversation_id 
-                     AND out_m.direction = 'outbound' 
-                     AND out_m.sent_at >= m.sent_at
-                 )`;
+                 AND (out_agg.max_outbound_at IS NULL OR out_agg.max_outbound_at < m.sent_at)`;
       }
     }
 
@@ -1179,9 +1211,18 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
           [convId]
         );
 
+        const nextStageName =
+          stageInfo.stage === 'initial'
+            ? 'followup_1'
+            : stageInfo.stage === 'followup_1'
+            ? 'followup_2'
+            : stageInfo.stage === 'followup_2'
+            ? 'followup_3'
+            : 'completed';
+
         await query(
-          `UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-          [lead.id]
+          `UPDATE leads SET first_contacted_at = COALESCE(first_contacted_at, NOW()), last_contacted_at = NOW(), outreach_stage = $1, updated_at = NOW() WHERE id = $2`,
+          [nextStageName, lead.id]
         );
 
         // Record daily metric

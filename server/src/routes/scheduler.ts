@@ -88,12 +88,13 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Invalid channel. Must be email or whatsapp.' });
     }
 
+    const parsedInterval = intervalSeconds !== undefined ? Number(intervalSeconds) : NaN;
     const result = await emailSchedulerService.scheduleBatchDispatch({
       leadIds,
       channel,
       inboxIds,
       scheduledFor,
-      intervalSeconds: intervalSeconds ? Number(intervalSeconds) : undefined,
+      intervalSeconds: Number.isFinite(parsedInterval) && parsedInterval > 0 ? parsedInterval : undefined,
       style,
       stage,
       customInstructions,
@@ -173,12 +174,13 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
       });
     }
 
+    const parsedInterval = intervalSeconds !== undefined ? Number(intervalSeconds) : NaN;
     const result = await emailSchedulerService.scheduleListDispatch({
       listId,
       channel,
       inboxIds,
       scheduledFor,
-      intervalSeconds: intervalSeconds ? Number(intervalSeconds) : undefined,
+      intervalSeconds: Number.isFinite(parsedInterval) && parsedInterval > 0 ? parsedInterval : undefined,
       style,
       stage,
       customInstructions,
@@ -199,11 +201,12 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
 schedulerRouter.get('/dispatches', async (req: Request, res: Response) => {
   try {
     const { status, channel, listId, limit } = req.query;
+    const parsedLimit = limit ? parseInt(String(limit), 10) : NaN;
     const dispatches = await emailSchedulerService.getDispatches({
       status: typeof status === 'string' ? status : undefined,
       channel: typeof channel === 'string' ? channel : undefined,
       listId: typeof listId === 'string' ? listId : undefined,
-      limit: limit ? parseInt(limit as string, 10) : undefined,
+      limit: Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(500, parsedLimit) : undefined,
     });
 
     res.json({ success: true, dispatches });

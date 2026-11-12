@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Calendar,
   Clock,
@@ -164,13 +164,14 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
   }, [open, defaultListId, store.lists]);
 
   // Auto-refresh Scheduled Dispatches Queue when modal is open on the dispatches tab
+  const fetchDispatchesStable = store.fetchDispatches;
   useEffect(() => {
     if (!open || activeTab !== 'dispatches') return;
     const interval = setInterval(() => {
-      store.fetchDispatches();
+      fetchDispatchesStable();
     }, 6000);
     return () => clearInterval(interval);
-  }, [open, activeTab, store]);
+  }, [open, activeTab, fetchDispatchesStable]);
 
   // Selected target list entity
   const targetList = useMemo(() => {
@@ -309,11 +310,23 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
     }
   }, [open, selectedListId, style, stage, customInstructions]);
 
-  // Regenerate preview when parameters change
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tabSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    if (open && activeTab === 'schedule') {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      if (tabSwitchTimerRef.current) clearTimeout(tabSwitchTimerRef.current);
+    };
+  }, []);
+
+  // Regenerate preview when parameters change (debounced to avoid rapid API churn)
+  useEffect(() => {
+    if (!open || activeTab !== 'schedule') return;
+    const timer = setTimeout(() => {
       fetchPreview();
-    }
+    }, 350);
+    return () => clearTimeout(timer);
   }, [open, activeTab, selectedListId, style, stage, fetchPreview]);
 
   // Handle Dispatch / Scheduling Submit
@@ -363,7 +376,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
           window.location.hash = '#crm';
         }
         onScheduled?.();
-        setTimeout(() => {
+        if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = setTimeout(() => {
           onClose();
         }, 400);
         return;
@@ -394,7 +408,8 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
           message: `${result.message} [Channel: WhatsApp (${intervalDesc} anti-ban pacing)]. Check the Dispatches tab to monitor live progress.`,
         });
         await store.fetchDispatches();
-        setTimeout(() => {
+        if (tabSwitchTimerRef.current) clearTimeout(tabSwitchTimerRef.current);
+        tabSwitchTimerRef.current = setTimeout(() => {
           setActiveTab('dispatches');
         }, 1200);
       } else {

@@ -7,8 +7,8 @@ import { gmbScraperService } from './gmbScraperService';
 export interface GoogleBusinessProfile {
   placeName: string;
   googleMapsUrl: string;
-  rating: number;
-  reviewsCount: number;
+  rating: number | null;
+  reviewsCount: number | null;
   formattedAddress: string;
   category: string;
   status: 'OPERATIONAL' | 'VERIFIED' | 'CLAIMED';
@@ -37,6 +37,7 @@ export class GoogleEnrichmentService {
   private syncedCount: number = 0;
   private isRunning: boolean = false;
   private syncTimer: NodeJS.Timeout | null = null;
+  private startupTimer: NodeJS.Timeout | null = null;
   private readonly TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 
   /**
@@ -168,9 +169,9 @@ export class GoogleEnrichmentService {
       matchedCategory = this.inferCategory(cleanName);
     }
 
-    // Rating and review count extraction from notes
-    let rating = extractedRating ?? (existingGp?.rating && existingGp.rating !== 4.8 ? existingGp.rating : null);
-    let reviewsCount = extractedReviews ?? (existingGp?.reviewsCount && existingGp.reviewsCount !== 40 ? existingGp.reviewsCount : null);
+    // Preserve existing rating and review count if already cached
+    let rating: number | null = extractedRating ?? existingGp?.rating ?? null;
+    let reviewsCount: number | null = extractedReviews ?? existingGp?.reviewsCount ?? null;
 
     // Verified Address formatting
     let formattedAddress = address.trim();
@@ -223,9 +224,11 @@ export class GoogleEnrichmentService {
       }
     }
 
-    // Ultimate fallback if Google is unreachable: use neutral real defaults, NEVER fake seed reviews
-    rating = rating ?? 4.9;
-    reviewsCount = reviewsCount ?? 0;
+    // Keep null when Google is unreachable instead of fabricating fake 4.9 ratings
+    const ratingSummary =
+      rating !== null
+        ? `Rated ${rating}★ across ${(reviewsCount ?? 0).toLocaleString()} reviews on Google Maps`
+        : 'Rating pending verification on Google Maps';
 
     // Verify website is live (fallback to normalized GMB link when DNS resolves)
     let verifiedLiveWebsite: string | undefined = undefined;
@@ -259,7 +262,7 @@ export class GoogleEnrichmentService {
       phone: verifiedPhone || undefined,
       hasGbpClaimed: true,
       matchedVia: extractedRating !== null ? 'exact_match' : phone ? 'name_and_phone' : 'name_and_category',
-      searchSummary: `Verified Google Business Profile for ${cleanName} (${matchedCategory}). Rated ${rating}★ across ${reviewsCount.toLocaleString()} reviews on Google Maps with operational local presence.`,
+      searchSummary: `Verified Google Business Profile for ${cleanName} (${matchedCategory}). ${ratingSummary} with operational local presence.`,
       lastEnrichedAt: now,
       lastCheckedAt: now,
     };
@@ -449,6 +452,8 @@ export class GoogleEnrichmentService {
         ? googleProfile.category
         : lead.category;
 
+    const websiteToSave = !lead.website && googleProfile.website ? googleProfile.website : lead.website || '';
+
     const updateRes = await query(
       `UPDATE leads 
        SET metadata = $1, 
@@ -456,8 +461,9 @@ export class GoogleEnrichmentService {
            whatsapp_eligible = $3,
            whatsapp_decision_reason = $4,
            category = $5,
+           website = CASE WHEN (website IS NULL OR TRIM(website) = '') AND $6 <> '' THEN $6 ELSE website END,
            updated_at = NOW() 
-       WHERE id = $6 
+       WHERE id = $7 
        RETURNING *`,
       [
         JSON.stringify(updatedMetadata),
@@ -465,6 +471,7 @@ export class GoogleEnrichmentService {
         waEval.isEligible,
         waEval.reason,
         categoryToSave,
+        websiteToSave,
         leadId,
       ]
     );
@@ -511,7 +518,7 @@ export class GoogleEnrichmentService {
 
     try {
       const activeLeadsRes = await query<{ id: string }>(
-        `SELECT id FROM leads WHERE deleted_at IS NULL ORDER BY updated_at ASC`
+        `SELECT id FROM leads WHERE deleted_at IS NULL ORDER BY updated_at ASC LIMIT 100`
       );
 
       let processed = 0;
@@ -546,15 +553,13 @@ export class GoogleEnrichmentService {
    * Starts the 12-hour background GMB update routine
    */
   public start12HourGmbSync(): void {
-    if (this.syncTimer) {
-      clearInterval(this.syncTimer);
-      this.syncTimer = null;
-    }
+    this.stop();
 
     this.nextSyncAt = new Date(Date.now() + this.TWELVE_HOURS_MS).toISOString();
 
     // Initial check: run sync after brief 15s startup delay
-    setTimeout(() => {
+    this.startupTimer = setTimeout(() => {
+      this.startupTimer = null;
       this.syncAllLeadsWithGmb().catch((err) => {
         console.error('[GMB 12h Startup Sync Error]', err);
       });
@@ -568,6 +573,20 @@ export class GoogleEnrichmentService {
     }, this.TWELVE_HOURS_MS);
 
     console.log('[GMB Auto-Sync Engine] Initialized 12-hour scheduled sync for Google Business Profiles.');
+  }
+
+  /**
+   * Stops background sync timers cleanly
+   */
+  public stop(): void {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer);
+      this.startupTimer = null;
+    }
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
   }
 
   /**

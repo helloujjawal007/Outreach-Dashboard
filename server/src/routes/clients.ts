@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
 import { conversationOrchestrator } from '../services/orchestratorService';
+import { softDeleteEntities } from '../services/softDeleteService';
 
 export const clientsRouter = Router();
 
@@ -26,7 +27,10 @@ clientsRouter.get('/', async (req: Request, res: Response) => {
       sql += ` AND (LOWER(business_name) LIKE $${params.length} OR LOWER(email) LIKE $${params.length} OR phone LIKE $${params.length})`;
     }
 
-    sql += ` ORDER BY onboarded_at DESC`;
+    const rawLimit = req.query.limit ? parseInt(String(req.query.limit), 10) : NaN;
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(1000, rawLimit) : 500;
+    params.push(limit);
+    sql += ` ORDER BY onboarded_at DESC LIMIT $${params.length}`;
 
     const result = await query(sql, params);
     res.json({ success: true, count: result.rows.length, clients: result.rows });
@@ -40,80 +44,16 @@ clientsRouter.get('/', async (req: Request, res: Response) => {
 clientsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const clientRes = await query(`SELECT * FROM clients WHERE id = $1`, [id]);
-    if (clientRes.rows.length === 0) {
+    const result = await softDeleteEntities([id]);
+    if (result.clientIds.length === 0) {
       return res.status(404).json({ success: false, error: 'Client not found' });
     }
 
-    const client = clientRes.rows[0];
-    const allTargetIds = [client.id];
-    if (client.original_lead_id) allTargetIds.push(client.original_lead_id);
-
-    // Log in deletion_history
-    await query(
-      `INSERT INTO deletion_history (entity_type, entity_id, business_name, email, phone, data, deleted_at, expires_at)
-       VALUES ('client', $1, $2, $3, $4, $5, NOW(), NOW() + INTERVAL '28 days')`,
-      [client.id, client.business_name, client.email, client.phone, JSON.stringify(client)]
-    );
-
-    // Cascading deletion: remove all messages, conversations, scheduled_dispatches, send_queue, follow-ups, and memberships
-    await query(
-      `DELETE FROM messages WHERE conversation_id IN (
-         SELECT id FROM conversations WHERE client_id = ANY($1) OR lead_id = ANY($1)
-       )`,
-      [allTargetIds]
-    );
-    await query(
-      `DELETE FROM conversations WHERE client_id = ANY($1) OR lead_id = ANY($1)
-         OR (entity_type = 'client' AND client_id = ANY($1))
-         OR (entity_type = 'lead' AND lead_id = ANY($1))`,
-      [allTargetIds]
-    );
-    await query(`DELETE FROM scheduled_dispatches WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM send_queue WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM follow_up_logs WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
-
-    // Soft-delete client
-    const updatedClient = await query(
-      `UPDATE clients 
-       SET deleted_at = NOW(), 
-           deleted_expires_at = NOW() + INTERVAL '28 days'
-       WHERE id = ANY($1)
-       RETURNING *`,
-      [allTargetIds]
-    );
-
-    // Soft-delete corresponding lead if exists and clear from 5-slot queues
-    if (client.original_lead_id) {
-      await query(
-        `UPDATE leads 
-         SET deleted_at = NOW(), 
-             deleted_expires_at = NOW() + INTERVAL '28 days',
-             slot_id = NULL,
-             slot_assigned_at = NULL,
-             claimed_stage = NULL,
-             claimed_at = NULL,
-             updated_at = NOW()
-         WHERE id = $1`,
-        [client.original_lead_id]
-      );
-    } else if (client.email) {
-      await query(
-        `UPDATE leads 
-         SET deleted_at = NOW(), 
-             deleted_expires_at = NOW() + INTERVAL '28 days',
-             slot_id = NULL,
-             slot_assigned_at = NULL,
-             claimed_stage = NULL,
-             claimed_at = NULL,
-             updated_at = NOW()
-         WHERE LOWER(email) = LOWER($1)`,
-        [client.email]
-      );
-    }
-
-    res.json({ success: true, client: updatedClient.rows[0], message: 'Client soft-deleted (moved to Trash Bin for 28 days)' });
+    res.json({
+      success: true,
+      client: result.primaryClient,
+      message: 'Client soft-deleted (moved to Trash Bin for 28 days)',
+    });
   } catch (error) {
     console.error('[clientsRouter.delete]', error);
     res.status(500).json({ success: false, error: 'Failed to delete client' });

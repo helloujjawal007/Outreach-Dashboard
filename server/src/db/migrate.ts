@@ -266,9 +266,20 @@ export async function runMigrations() {
           status VARCHAR(50) DEFAULT 'pending',
           due_date TIMESTAMPTZ,
           priority VARCHAR(20) DEFAULT 'medium',
+          task_type VARCHAR(50) DEFAULT 'follow_up',
+          notes TEXT,
+          completed_at TIMESTAMPTZ,
           created_at TIMESTAMPTZ DEFAULT NOW(),
           updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+
+      ALTER TABLE tasks
+        ADD COLUMN IF NOT EXISTS task_type VARCHAR(50) DEFAULT 'follow_up',
+        ADD COLUMN IF NOT EXISTS notes TEXT,
+        ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
+      ALTER TABLE lead_list_memberships
+        ADD COLUMN IF NOT EXISTS added_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
       -- WhatsApp session keys
       CREATE TABLE IF NOT EXISTS whatsapp_session_keys (
@@ -511,6 +522,14 @@ export async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_leads_deleted_at ON leads(deleted_at);
       CREATE INDEX IF NOT EXISTS idx_leads_batch_id ON leads(batch_id);
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+      CREATE INDEX IF NOT EXISTS idx_leads_lower_email ON leads(LOWER(email)) WHERE email <> '';
+      CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone) WHERE phone <> '';
+      CREATE INDEX IF NOT EXISTS idx_leads_outreach_stage ON leads(outreach_stage) WHERE deleted_at IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_scheduled_dispatches_status_for ON scheduled_dispatches(status, scheduled_for);
+      CREATE INDEX IF NOT EXISTS idx_conversations_lead_channel ON conversations(lead_id, channel);
+      CREATE INDEX IF NOT EXISTS idx_messages_conv_dir_sent ON messages(conversation_id, direction, sent_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
       CREATE INDEX IF NOT EXISTS idx_clients_deleted_at ON clients(deleted_at);
       CREATE INDEX IF NOT EXISTS idx_batches_created_at ON upload_batches(created_at);
       CREATE INDEX IF NOT EXISTS idx_deletion_history_expires ON deletion_history(expires_at);

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Pool, type QueryResult, type QueryResultRow } from 'pg';
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -55,6 +55,28 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   } catch (err) {
     console.error(`[PostgreSQL Query Error] Query: ${text}`, err);
     throw err;
+  }
+}
+
+/**
+ * Runs a callback inside an explicit BEGIN / COMMIT / ROLLBACK transaction.
+ */
+export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      console.error('[PostgreSQL Transaction Rollback Error]', rollbackErr);
+    }
+    throw err;
+  } finally {
+    client.release();
   }
 }
 

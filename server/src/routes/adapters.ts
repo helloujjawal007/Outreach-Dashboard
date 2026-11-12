@@ -79,7 +79,7 @@ adaptersRouter.get('/whatsapp/session-status', async (_req: Request, res: Respon
       success: true,
       ...state,
       isConnected: state.status === 'connected',
-      hasSavedSession: whatsappSessionService.hasSavedSession(),
+      hasSavedSession: await whatsappSessionService.hasSavedSession(),
     });
   } catch (error) {
     console.error('[adaptersRouter.whatsapp.session-status]', error);
@@ -103,7 +103,7 @@ adaptersRouter.post('/whatsapp/start-session', async (_req: Request, res: Respon
       success: true,
       ...updatedState,
       isConnected: updatedState.status === 'connected',
-      hasSavedSession: whatsappSessionService.hasSavedSession(),
+      hasSavedSession: await whatsappSessionService.hasSavedSession(),
     });
   } catch (error) {
     console.error('[adaptersRouter.whatsapp.start-session]', error);

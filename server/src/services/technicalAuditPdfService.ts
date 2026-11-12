@@ -71,75 +71,387 @@ export class TechnicalAuditPdfService {
   }
 
   /**
-   * Builds high-converting, agency-grade HTML audit document for PDF rendering
+   * Escapes dynamic strings before interpolating into HTML templates
+   */
+  private escapeHtml(value: unknown): string {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Translates raw technical audit findings into plain, client-friendly takeaways
+   */
+  private translateFindingForClient(rawIssue: string): {
+    severity: 'High Impact' | 'Important' | 'Quick Win';
+    title: string;
+    evidence: string;
+    businessImpact: string;
+  } {
+    const trimmed = rawIssue.trim();
+    const severityMatch = trimmed.match(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/i);
+    const rawLevel = (severityMatch?.[1] || 'HIGH').toUpperCase();
+    const body = trimmed.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/i, '').trim();
+
+    const severity: 'High Impact' | 'Important' | 'Quick Win' =
+      rawLevel === 'CRITICAL'
+        ? 'High Impact'
+        : rawLevel === 'HIGH'
+        ? 'Important'
+        : 'Quick Win';
+
+    const colonIdx = body.indexOf(':');
+    const rawTitle = colonIdx > 0 ? body.slice(0, colonIdx).trim() : body;
+    const rawDetail = colonIdx > 0 ? body.slice(colonIdx + 1).trim() : body;
+    const cleanEvidence = rawDetail.replace(/\s*\(([^)]*),\s*(measured|estimated)\)/gi, ' ($1)').trim();
+
+    const lower = body.toLowerCase();
+    if (lower.includes('ttfb') || lower.includes('server response') || lower.includes('latency') || lower.includes('lcp') || lower.includes('speed')) {
+      return {
+        severity: 'High Impact',
+        title: 'Website Takes Too Long to Respond & Load',
+        evidence: cleanEvidence,
+        businessImpact: 'Visitors on phones typically leave if a page pauses more than 3 seconds before appearing, costing calls and quote requests.',
+      };
+    }
+    if (lower.includes('https') || lower.includes('ssl') || lower.includes('insecure protocol')) {
+      return {
+        severity: 'High Impact',
+        title: 'Security Redirect Missing (HTTP to HTTPS)',
+        evidence: cleanEvidence,
+        businessImpact: 'Visitors who type your web address without "https://" can see browser security warnings instead of landing safely on your site.',
+      };
+    }
+    if (lower.includes('meta description')) {
+      return {
+        severity: 'Important',
+        title: 'Missing Search Summaries on Google (Meta Descriptions)',
+        evidence: cleanEvidence,
+        businessImpact: 'When Google has to guess a page description, search results look less inviting and fewer local searchers click through.',
+      };
+    }
+    if (lower.includes('h1') || lower.includes('heading structure')) {
+      return {
+        severity: 'Quick Win',
+        title: 'Unclear Page Headings (H1 Structure)',
+        evidence: cleanEvidence,
+        businessImpact: 'Clear page titles help both visitors and Google quickly understand the main service on each page.',
+      };
+    }
+    if (lower.includes('alt') || lower.includes('image')) {
+      return {
+        severity: 'Quick Win',
+        title: 'Images Missing Accessibility & Search Labels',
+        evidence: cleanEvidence,
+        businessImpact: 'Descriptive image tags improve accessibility and help your services appear in Google Image and local searches.',
+      };
+    }
+    if (lower.includes('schema') || lower.includes('localbusiness') || lower.includes('structured data')) {
+      return {
+        severity: 'Important',
+        title: 'Missing Local Business Details for Google Search',
+        evidence: cleanEvidence,
+        businessImpact: 'Adding structured business info helps Google display hours, location, and services clearly in local search results.',
+      };
+    }
+    if (lower.includes('nofollow') || lower.includes('outbound link')) {
+      return {
+        severity: 'Quick Win',
+        title: 'External Links Need SEO Cleanup',
+        evidence: cleanEvidence,
+        businessImpact: 'Cleaning up link attributes keeps search engine authority focused on your own pages rather than third-party sites.',
+      };
+    }
+    if (lower.includes('mobile') || lower.includes('viewport')) {
+      return {
+        severity: 'High Impact',
+        title: 'Mobile Screen Sizing Needs Adjustment',
+        evidence: cleanEvidence,
+        businessImpact: 'Most local service searches happen on mobile; awkward zooming or layout shifts make it harder to tap "Call" or book.',
+      };
+    }
+
+    return {
+      severity,
+      title: rawTitle.replace(/\s*\([^)]*\)\s*/g, '').trim() || 'Website Improvement Opportunity',
+      evidence: cleanEvidence,
+      businessImpact: 'Fixing this improves visitor trust, page usability, and how reliably search engines index your site.',
+    };
+  }
+
+  /**
+   * Builds tailored plain-English action plan steps from audit findings & metrics
+   */
+  private buildClientActionPlan(report: ClientAuditReport, pagesChecked?: number): Array<{
+    title: string;
+    whatWeDo: string;
+    businessResult: string;
+    timeframe: string;
+  }> {
+    const joined = (report.criticalIssues || []).join(' ').toLowerCase();
+    const steps: Array<{
+      title: string;
+      whatWeDo: string;
+      businessResult: string;
+      timeframe: string;
+    }> = [];
+
+    if (joined.includes('https') || joined.includes('ssl') || (report.metrics && !report.metrics.hasSsl)) {
+      steps.push({
+        title: 'Enforce Automatic HTTPS Security Redirects',
+        whatWeDo: 'Configure clean 301 redirects so every HTTP and www/non-www link loads over encrypted HTTPS automatically.',
+        businessResult: 'Eliminates browser "Not Secure" warnings and protects visitor trust on every page.',
+        timeframe: 'Quick Win (Day 1)',
+      });
+    }
+
+    if (joined.includes('ttfb') || joined.includes('latency') || joined.includes('speed') || joined.includes('lcp') || (report.metrics && report.metrics.responseTimeMs > 500)) {
+      steps.push({
+        title: 'Speed Up Initial Page Load with Caching & CDN',
+        whatWeDo: 'Enable full-page server caching, Cloudflare edge delivery, compression, and lightweight image/script loading.',
+        businessResult: 'Cuts multi-second waiting time down so mobile visitors stay, read your services, and convert.',
+        timeframe: 'Week 1',
+      });
+    }
+
+    if (joined.includes('meta description') || joined.includes('h1') || joined.includes('schema') || joined.includes('alt')) {
+      steps.push({
+        title: 'Clean Up Google Search Titles, Descriptions & Local Markup',
+        whatWeDo: `Write clear page descriptions, organize one main H1 heading per page, and add Local Business structured data${pagesChecked ? ` across your ${pagesChecked} site pages` : ''}.`,
+        businessResult: 'Makes your listings stand out in local Google searches and drives higher-quality clicks.',
+        timeframe: 'Week 1–2',
+      });
+    }
+
+    // Include custom report recommendations only if we still need steps up to 3
+    for (const rec of report.recommendations || []) {
+      if (steps.length >= 3) break;
+      const cleanTitle = (rec.title || '')
+        .replace(/ODS\s*Capabilities?/gi, '')
+        .replace(/Semantic Entity Graph Injection/gi, 'Google Business Info Setup')
+        .replace(/Remediation & Layout Stability/gi, 'Speed & Mobile Stability')
+        .trim();
+      const alreadySimilar = steps.some((s) => s.title.toLowerCase().includes(cleanTitle.toLowerCase().slice(0, 12)));
+      if (!cleanTitle || alreadySimilar) continue;
+      steps.push({
+        title: cleanTitle,
+        whatWeDo: rec.detail || 'Apply targeted performance and SEO best practices without changing your brand design.',
+        businessResult: 'Improves Google rankings, mobile speed, and visitor inquiry rates.',
+        timeframe: rec.priority === 'high' ? 'Week 1' : 'Week 2',
+      });
+    }
+
+    if (steps.length === 0) {
+      steps.push(
+        {
+          title: 'Speed & Mobile Experience Optimization',
+          whatWeDo: 'Enable page caching, compress heavy images/scripts, and optimize mobile layout stability.',
+          businessResult: 'Faster page loads and fewer visitors bouncing before calling or booking.',
+          timeframe: 'Week 1',
+        },
+        {
+          title: 'Local SEO & Search Snippet Polish',
+          whatWeDo: 'Ensure every key page has a clear heading, custom Google preview text, and Local Business schema.',
+          businessResult: 'Stronger visibility when nearby customers search for your services.',
+          timeframe: 'Week 1–2',
+        }
+      );
+    }
+
+    return steps.slice(0, 3);
+  }
+
+  /**
+   * Builds a clear, jargon-free client report HTML document for Headless Chrome PDF rendering
    */
   public buildAuditHtml(report: ClientAuditReport, businessName?: string): string {
-    const cleanBiz = (businessName || report.domain || 'Valued Business')
-      .replace(/\b(llc|inc|corp|ltd|pvt|co|company|services|solutions|group|holdings)\b/gi, '')
-      .trim();
+    const cleanBiz = (businessName || report.domain || 'Your Business')
+      .replace(/\b(llc|inc|corp|ltd|pvt|co|company|solutions|holdings)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim() || report.domain || 'Your Business';
 
-    const scoreColor =
-      report.overallScore >= 80 ? '#10b981' : report.overallScore >= 55 ? '#f59e0b' : '#ef4444';
+    const findingsList = (report.criticalIssues || []).filter(Boolean);
+    const allText = `${report.summary || ''} ${findingsList.join(' ')}`;
 
-    // Metrics formatting
+    const pagesMatch = allText.match(/(\d+)\s+pages?\s+(?:checked|evaluated|crawled)/i);
+    const pagesChecked = pagesMatch ? parseInt(pagesMatch[1], 10) : undefined;
+
+    const ttfbTextMatch = allText.match(/TTFB\s+(\d+)\s*ms/i);
+    const metaMissingMatch = allText.match(/(\d+)\s+pages?\s+missing\s+meta\s+descriptions?/i);
+    const h1IssueMatch = allText.match(/(\d+)\s+pages?\s+with\s+multiple\s+or\s+missing\s+H1s?/i);
+    const hasHttpsIssue = /no\s+https\s+redirect|insecure\s+protocol/i.test(allText);
+
+    const score = Math.max(0, Math.min(100, Math.round(Number(report.overallScore) || 0)));
+    const scoreBand =
+      score >= 80
+        ? { label: 'Strong Foundation', color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' }
+        : score >= 55
+        ? { label: 'Room to Improve', color: '#b45309', bg: '#fffbeb', border: '#fde68a' }
+        : { label: 'Needs Priority Attention', color: '#b91c1c', bg: '#fef2f2', border: '#fecaca' };
+
     const metrics = report.metrics || {
-      lcpEstimateMs: 2400,
-      clsScore: 0.12,
-      inpEstimateMs: 160,
-      responseTimeMs: report.responseTimeMs || 220,
-      imagesTotal: 12,
-      imagesMissingAlt: 5,
+      lcpEstimateMs: 0,
+      clsScore: 0,
+      inpEstimateMs: 0,
+      responseTimeMs: ttfbTextMatch ? parseInt(ttfbTextMatch[1], 10) : (report.responseTimeMs || 0),
+      imagesTotal: 0,
+      imagesMissingAlt: 0,
       hasLocalBusinessSchema: false,
       hasViewport: report.mobileFriendly,
-      hasSsl: report.targetUrl.startsWith('https://'),
-      pageWeightKb: 850,
+      hasSsl: report.targetUrl.startsWith('https://') && !hasHttpsIssue,
+      pageWeightKb: 0,
     };
 
-    const lcpSec = (metrics.lcpEstimateMs / 1000).toFixed(2);
-    const lcpColor = metrics.lcpEstimateMs <= 1500 ? '#10b981' : metrics.lcpEstimateMs <= 2500 ? '#f59e0b' : '#ef4444';
+    const effectiveTtfb = ttfbTextMatch ? parseInt(ttfbTextMatch[1], 10) : metrics.responseTimeMs;
 
-    const clsColor = metrics.clsScore <= 0.05 ? '#10b981' : metrics.clsScore <= 0.15 ? '#f59e0b' : '#ef4444';
+    const translatedFindings = findingsList.slice(0, 6).map((f) => this.translateFindingForClient(f));
+    const actionSteps = this.buildClientActionPlan(report, pagesChecked);
 
-    const ttfbColor = metrics.responseTimeMs <= 250 ? '#10b981' : metrics.responseTimeMs <= 600 ? '#f59e0b' : '#ef4444';
+    // Build clean plain-English overview paragraph (always consistent with header score!)
+    const overviewSentence =
+      pagesChecked
+        ? `We reviewed ${pagesChecked} pages across ${this.escapeHtml(report.domain || report.targetUrl)} and recorded an overall health score of ${score}/100.`
+        : `We reviewed ${this.escapeHtml(report.domain || report.targetUrl)} and recorded an overall health score of ${score}/100.`;
 
-    const altPercent = metrics.imagesTotal > 0
-      ? Math.round((metrics.imagesMissingAlt / metrics.imagesTotal) * 100)
-      : 0;
+    const keyBottleneckNames = translatedFindings
+      .slice(0, 3)
+      .map((t) => t.title.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase());
+    const impactSummary =
+      keyBottleneckNames.length > 0
+        ? `Fixing ${translatedFindings.length === 1 ? 'the top issue' : `these ${translatedFindings.length} priority items`} — including ${keyBottleneckNames.join(', ')} — will make your site faster on mobile phones and easier for local customers to find on Google.`
+        : 'Overall structure looks solid; a few targeted speed and local SEO enhancements can push conversions even higher.';
 
-    const criticalItemsHtml = (report.criticalIssues || [])
+    // Build clean At-A-Glance health rows using ONLY verified data
+    const healthRows: Array<{
+      area: string;
+      result: string;
+      goal: string;
+      statusLabel: string;
+      statusColor: string;
+      statusBg: string;
+    }> = [];
+
+    if (effectiveTtfb > 0) {
+      const ttfbSec = effectiveTtfb >= 1000 ? `${(effectiveTtfb / 1000).toFixed(1)}s (${effectiveTtfb} ms)` : `${effectiveTtfb} ms`;
+      const isSlow = effectiveTtfb > 600;
+      healthRows.push({
+        area: 'Server Response Speed (TTFB)',
+        result: ttfbSec,
+        goal: 'Under 0.5s',
+        statusLabel: isSlow ? 'Slow' : 'Good',
+        statusColor: isSlow ? '#b91c1c' : '#047857',
+        statusBg: isSlow ? '#fef2f2' : '#ecfdf5',
+      });
+    }
+
+    if (metrics.lcpEstimateMs > 0) {
+      const lcpSec = (metrics.lcpEstimateMs / 1000).toFixed(1);
+      const isSlow = metrics.lcpEstimateMs > 2500;
+      healthRows.push({
+        area: 'Main Page Load Speed (LCP)',
+        result: `${lcpSec}s`,
+        goal: 'Under 2.5s',
+        statusLabel: isSlow ? 'Needs Speedup' : 'Good',
+        statusColor: isSlow ? '#b91c1c' : '#047857',
+        statusBg: isSlow ? '#fef2f2' : '#ecfdf5',
+      });
+    }
+
+    healthRows.push({
+      area: 'HTTPS Security & Automatic Redirect',
+      result: hasHttpsIssue ? 'Missing auto HTTPS redirect' : metrics.hasSsl ? 'Secure (HTTPS active)' : 'Needs HTTPS check',
+      goal: 'Always enforce HTTPS',
+      statusLabel: hasHttpsIssue || !metrics.hasSsl ? 'Priority Fix' : 'Secure',
+      statusColor: hasHttpsIssue || !metrics.hasSsl ? '#b91c1c' : '#047857',
+      statusBg: hasHttpsIssue || !metrics.hasSsl ? '#fef2f2' : '#ecfdf5',
+    });
+
+    if (metaMissingMatch) {
+      const cnt = parseInt(metaMissingMatch[1], 10);
+      healthRows.push({
+        area: 'Google Search Preview Descriptions',
+        result: `${cnt} page${cnt === 1 ? '' : 's'} missing summaries`,
+        goal: 'Every key page covered',
+        statusLabel: 'Needs Attention',
+        statusColor: '#b45309',
+        statusBg: '#fffbeb',
+      });
+    }
+
+    if (h1IssueMatch) {
+      const cnt = parseInt(h1IssueMatch[1], 10);
+      healthRows.push({
+        area: 'Page Heading Clarity (H1)',
+        result: `${cnt} page${cnt === 1 ? '' : 's'} have missing/duplicate H1s`,
+        goal: '1 clear H1 per page',
+        statusLabel: 'Quick Win',
+        statusColor: '#b45309',
+        statusBg: '#fffbeb',
+      });
+    }
+
+    healthRows.push({
+      area: 'Mobile Screen Compatibility',
+      result: report.mobileFriendly ? 'Mobile-friendly layout detected' : 'Needs mobile viewport fix',
+      goal: 'Smooth phone browsing',
+      statusLabel: report.mobileFriendly ? 'Good' : 'Priority Fix',
+      statusColor: report.mobileFriendly ? '#047857' : '#b91c1c',
+      statusBg: report.mobileFriendly ? '#ecfdf5' : '#fef2f2',
+    });
+
+    const healthRowsHtml = healthRows
       .map(
-        (issue, idx) => `
-        <div style="padding: 10px 14px; background: #fafafa; border-left: 3px solid #dc2626; border-radius: 0 4px 4px 0; margin-bottom: 8px;">
-          <div style="font-weight: 700; font-size: 12px; color: #991b1b; margin-bottom: 2px;">Observation 0${idx + 1}</div>
-          <div style="font-size: 12px; color: #334155; line-height: 1.5;">${issue}</div>
-        </div>`
+        (r) => `
+      <tr>
+        <td style="font-weight: 600; color: #0f172a;">${this.escapeHtml(r.area)}</td>
+        <td style="color: #334155;">${this.escapeHtml(r.result)}</td>
+        <td style="color: #64748b;">${this.escapeHtml(r.goal)}</td>
+        <td style="text-align: right;">
+          <span style="display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 700; color: ${r.statusColor}; background: ${r.statusBg};">
+            ${this.escapeHtml(r.statusLabel)}
+          </span>
+        </td>
+      </tr>`
       )
       .join('');
 
-    const recommendationsHtml = (report.recommendations || [])
+    const findingsCardsHtml = translatedFindings
+      .map((item) => {
+        const badgeStyle =
+          item.severity === 'High Impact'
+            ? 'color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;'
+            : item.severity === 'Important'
+            ? 'color: #b45309; background: #fffbeb; border: 1px solid #fde68a;'
+            : 'color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd;';
+        return `
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: #ffffff; page-break-inside: avoid;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px;">
+            <span style="font-size: 11.5px; font-weight: 700; color: #0f172a;">${this.escapeHtml(item.title)}</span>
+            <span style="font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; ${badgeStyle}">${item.severity}</span>
+          </div>
+          <div style="font-size: 10.5px; color: #475569; margin-bottom: 3px;">
+            <strong style="color: #334155;">What we found:</strong> ${this.escapeHtml(item.evidence)}
+          </div>
+          <div style="font-size: 10.5px; color: #334155; background: #f8fafc; padding: 5px 8px; border-radius: 5px;">
+            <strong style="color: #0f172a;">Why it matters:</strong> ${this.escapeHtml(item.businessImpact)}
+          </div>
+        </div>`;
+      })
+      .join('');
+
+    const stepsHtml = actionSteps
       .map(
-        (rec, idx) => `
-        <div style="padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 10px; background: #ffffff; page-break-inside: avoid;">
-          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
-            <span style="font-weight: 700; font-size: 12px; color: #0f172a;">${idx + 1}. ${rec.title}</span>
-            <span style="font-size: 10px; font-weight: 600; text-transform: uppercase; color: ${
-              rec.priority === 'high' ? '#b91c1c' : '#b45309'
-            }; background: ${
-              rec.priority === 'high' ? '#fef2f2' : '#fffbeb'
-            }; padding: 2px 6px; border-radius: 3px;">
-              ${rec.priority} Priority
-            </span>
+        (step, idx) => `
+        <div style="border: 1px solid #cbd5e1; border-left: 3px solid #0d9488; border-radius: 7px; padding: 9px 12px; margin-bottom: 8px; background: #ffffff; page-break-inside: avoid;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+            <span style="font-size: 11.5px; font-weight: 700; color: #0f172a;">Step ${idx + 1}: ${this.escapeHtml(step.title)}</span>
+            <span style="font-size: 9px; font-weight: 700; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; padding: 1px 7px; border-radius: 999px;">${this.escapeHtml(step.timeframe)}</span>
           </div>
-          <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #475569; line-height: 1.5;">
-            ${rec.detail}
-          </p>
-          <div style="font-size: 11px; background: #f8fafc; border-left: 2px solid #0f172a; padding: 6px 10px; color: #1e293b; border-radius: 0 3px 3px 0;">
-            <strong>Implementation guidance:</strong> ${
-              rec.odsSolution
-                ? rec.odsSolution.replace(/(Cloud Consultancy|ODS Agency)\s*(Fix:?)?\s*/gi, '').trim()
-                : 'Optimize server compression, asset delivery, and schema markup to meet Google standards.'
-            }
-          </div>
+          <div style="font-size: 10.5px; color: #334155; margin-bottom: 2px;">${this.escapeHtml(step.whatWeDo)}</div>
+          <div style="font-size: 10px; color: #047857; font-weight: 600;">Result for ${this.escapeHtml(cleanBiz)}: ${this.escapeHtml(step.businessResult)}</div>
         </div>`
       )
       .join('');
@@ -147,7 +459,7 @@ export class TechnicalAuditPdfService {
     const auditDateSource = report.auditedAt ? new Date(report.auditedAt) : new Date();
     const formattedDate = auditDateSource.toLocaleDateString('en-US', {
       year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric',
     });
 
@@ -155,11 +467,11 @@ export class TechnicalAuditPdfService {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Technical Diagnostic Memo - ${report.domain}</title>
+  <title>Website Health Report - ${this.escapeHtml(report.domain)}</title>
   <style>
     @page {
       size: A4 portrait;
-      margin: 14mm 16mm;
+      margin: 12mm 14mm;
     }
     * {
       box-sizing: border-box;
@@ -172,77 +484,75 @@ export class TechnicalAuditPdfService {
       background: #ffffff;
       margin: 0;
       padding: 0;
-      font-size: 11.5px;
-      line-height: 1.55;
+      font-size: 11px;
+      line-height: 1.45;
     }
-    .memo-header {
-      border-bottom: 2px solid #0f172a;
-      padding-bottom: 12px;
-      margin-bottom: 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-    }
-    .brand-name {
-      font-size: 18px;
-      font-weight: 800;
-      color: #0f172a;
-      letter-spacing: -0.3px;
-    }
-    .brand-sub {
-      font-size: 10.5px;
-      color: #64748b;
-      margin-top: 2px;
-    }
-    .meta-box {
+    .header-bar {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 12px 16px;
-      margin-bottom: 16px;
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 16px;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
       align-items: center;
     }
-    .section-title {
+    .hero-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      display: grid;
+      grid-template-columns: 1fr 148px;
+      gap: 14px;
+      align-items: center;
+      background: #ffffff;
+    }
+    .section-heading {
       font-size: 11px;
       font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.5px;
       color: #0f172a;
-      margin: 16px 0 8px 0;
+      margin: 14px 0 8px 0;
       padding-bottom: 4px;
-      border-bottom: 1px solid #e2e8f0;
+      border-bottom: 1.5px solid #e2e8f0;
     }
-    table.data-table {
+    table.health-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 11px;
-      margin-bottom: 14px;
+      font-size: 10.5px;
+      margin-bottom: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      overflow: hidden;
     }
-    table.data-table th {
-      background: #f1f5f9;
-      color: #334155;
+    table.health-table th {
+      background: #f8fafc;
+      color: #475569;
       font-weight: 700;
       text-align: left;
       padding: 7px 10px;
-      border: 1px solid #e2e8f0;
-      font-size: 10px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 9.5px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
-    table.data-table td {
+    table.health-table td {
       padding: 7px 10px;
-      border: 1px solid #e2e8f0;
-      color: #1e293b;
+      border-bottom: 1px solid #f1f5f9;
     }
-    table.data-table tr:nth-child(even) td {
-      background: #fafafa;
+    .cta-box {
+      margin-top: 12px;
+      background: #f0fdfa;
+      border: 1px solid #99f6e4;
+      border-radius: 8px;
+      padding: 10px 14px;
+      page-break-inside: avoid;
     }
     .footer {
-      margin-top: 20px;
-      padding-top: 10px;
+      margin-top: 12px;
+      padding-top: 8px;
       border-top: 1px solid #e2e8f0;
       font-size: 9.5px;
       color: #64748b;
@@ -254,132 +564,72 @@ export class TechnicalAuditPdfService {
 </head>
 <body>
 
-  <!-- LETTERHEAD -->
-  <div class="memo-header">
+  <div class="header-bar">
     <div>
-      <div class="brand-name">Cloud Consultancy</div>
-      <div class="brand-sub">Engineering & Infrastructure Advisory • cloudconsultancy.ad@gmail.com</div>
+      <div style="font-size: 16px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px;">CLOUD CONSULTANCY</div>
+      <div style="font-size: 11px; font-weight: 600; color: #0d9488; margin-top: 2px;">Website Speed, Security &amp; Visibility Report</div>
     </div>
     <div style="text-align: right;">
-      <div style="font-weight: 800; font-size: 13px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Technical Site Diagnostic Memo</div>
-      <div style="font-size: 11px; font-weight: 600; color: #475569; margin-top: 4px;">Audit Date: <span style="color: #0f172a;">${formattedDate}</span></div>
+      <div style="font-size: 10.5px; font-weight: 600; color: #334155;">Prepared: ${this.escapeHtml(formattedDate)}</div>
+      <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">Confidential Report for ${this.escapeHtml(cleanBiz)}</div>
     </div>
   </div>
 
-  <!-- TARGET SUMMARY -->
-  <div class="meta-box">
+  <div class="hero-card">
     <div>
-      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.4px;">Target Organization</div>
-      <div style="font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px;">${cleanBiz}</div>
-      <div style="font-size: 11px; color: #475569; margin-top: 2px;">
-        URL: <strong>${report.targetUrl}</strong> • Crawl Status: ${report.crawlStatus?.httpStatus || 200} OK
-      </div>
-      <div style="font-size: 11px; color: #475569; margin-top: 6px; line-height: 1.45;">
-        ${report.summary}
-      </div>
+      <div style="font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.4px;">Prepared For</div>
+      <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 1px;">${this.escapeHtml(cleanBiz)}</div>
+      <div style="font-size: 10.5px; color: #0d9488; font-weight: 600; margin-top: 2px;">${this.escapeHtml(report.targetUrl)}${pagesChecked ? ` • ${pagesChecked} Pages Reviewed` : ''}</div>
+      <p style="margin: 8px 0 0 0; font-size: 10.5px; color: #334155; line-height: 1.5;">
+        ${overviewSentence} ${impactSummary}
+      </p>
     </div>
-    <div style="text-align: center; border-left: 1px solid #e2e8f0; padding-left: 16px;">
-      <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b;">Health Score</div>
-      <div style="font-size: 28px; font-weight: 900; color: ${scoreColor}; line-height: 1.1; margin: 4px 0;">
-        ${report.overallScore}<span style="font-size: 12px; font-weight: 700; color: #94a3b8;">/100</span>
+    <div style="text-align: center; background: ${scoreBand.bg}; border: 1px solid ${scoreBand.border}; border-radius: 8px; padding: 10px 8px;">
+      <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #475569;">Website Health Score</div>
+      <div style="font-size: 28px; font-weight: 900; color: ${scoreBand.color}; line-height: 1.1; margin: 4px 0;">
+        ${score}<span style="font-size: 12px; font-weight: 700; color: #64748b;">/100</span>
       </div>
-      <div style="font-size: 10px; font-weight: 700; color: ${scoreColor}; text-transform: uppercase;">
-        Status: ${report.grade}
+      <div style="font-size: 9.5px; font-weight: 700; color: ${scoreBand.color};">
+        ${scoreBand.label}
       </div>
     </div>
   </div>
 
-  <!-- CORE WEB VITALS TABLE -->
-  <div class="section-title">1. Core Web Vitals & Delivery Infrastructure</div>
-  <table class="data-table">
+  <div class="section-heading">1. Speed, Security &amp; Google Visibility Snapshot</div>
+  <table class="health-table">
     <thead>
       <tr>
-        <th style="width: 32%;">Diagnostic Signal</th>
-        <th style="width: 18%;">Measured Value</th>
-        <th style="width: 20%;">Recommended Baseline</th>
-        <th style="width: 30%;">Assessment</th>
+        <th style="width: 34%;">Area Checked</th>
+        <th style="width: 30%;">What We Found</th>
+        <th style="width: 18%;">Recommended Goal</th>
+        <th style="width: 18%; text-align: right;">Status</th>
       </tr>
     </thead>
     <tbody>
-      <tr>
-        <td><strong>Time to First Byte (TTFB)</strong></td>
-        <td style="font-weight: 700; color: ${ttfbColor};">${metrics.responseTimeMs}ms</td>
-        <td>&lt; 300ms</td>
-        <td>${metrics.responseTimeMs <= 300 ? 'Optimal server response' : 'Slow origin server response; edge caching advised'}</td>
-      </tr>
-      <tr>
-        <td><strong>Largest Contentful Paint (LCP)</strong></td>
-        <td style="font-weight: 700; color: ${lcpColor};">${lcpSec}s</td>
-        <td>&lt; 2.50s</td>
-        <td>${metrics.lcpEstimateMs <= 2500 ? 'Meets Google CWV standards' : 'Heavy unoptimized media or render-blocking scripts'}</td>
-      </tr>
-      <tr>
-        <td><strong>Cumulative Layout Shift (CLS)</strong></td>
-        <td style="font-weight: 700; color: ${clsColor};">${metrics.clsScore}</td>
-        <td>&lt; 0.10</td>
-        <td>${metrics.clsScore <= 0.10 ? 'Visual layout is stable' : 'Dynamic elements shifting during initial render'}</td>
-      </tr>
-      <tr>
-        <td><strong>Image Optimization & Alt Data</strong></td>
-        <td style="font-weight: 700; color: ${metrics.imagesMissingAlt > 0 ? '#ef4444' : '#10b981'};">
-          ${metrics.imagesMissingAlt} / ${metrics.imagesTotal} missing
-        </td>
-        <td>0 missing alt tags</td>
-        <td>${metrics.imagesMissingAlt > 0 ? `${altPercent}% of media lacks descriptive alt metadata` : 'All images labeled correctly'}</td>
-      </tr>
-      <tr>
-        <td><strong>LocalBusiness Schema (JSON-LD)</strong></td>
-        <td style="font-weight: 700; color: ${metrics.hasLocalBusinessSchema ? '#10b981' : '#ef4444'};">
-          ${metrics.hasLocalBusinessSchema ? 'Configured' : 'Missing'}
-        </td>
-        <td>Schema.org markup</td>
-        <td>${metrics.hasLocalBusinessSchema ? 'Rich snippet sync active' : 'Critical for Google Maps and local pack visibility'}</td>
-      </tr>
-      <tr>
-        <td><strong>Mobile Viewport & Responsiveness</strong></td>
-        <td style="font-weight: 700; color: ${report.mobileFriendly ? '#10b981' : '#ef4444'};">
-          ${report.mobileFriendly ? 'Responsive' : 'Non-responsive'}
-        </td>
-        <td>Mobile viewport</td>
-        <td>${report.mobileFriendly ? 'Adapts fluidly across devices' : 'Requires viewport reconfiguration for mobile indexing'}</td>
-      </tr>
-      <tr>
-        <td><strong>SSL / TLS Encryption</strong></td>
-        <td style="font-weight: 700; color: ${metrics.hasSsl ? '#10b981' : '#ef4444'};">
-          ${metrics.hasSsl ? 'Active (HTTPS)' : 'Insecure (HTTP)'}
-        </td>
-        <td>HTTPS enabled</td>
-        <td>${metrics.hasSsl ? 'Encrypted and secure' : 'Browser security warnings displayed to visitors'}</td>
-      </tr>
+      ${healthRowsHtml}
     </tbody>
   </table>
 
-  <!-- PRIMARY BOTTLENECKS -->
-  <div class="section-title">2. Engineering Observations & Technical Roadblocks</div>
-  <div style="margin-bottom: 14px;">
-    ${criticalItemsHtml || '<div style="padding: 10px; color: #10b981;">No critical roadblocks detected. Site architecture meets performance baselines.</div>'}
+  <div class="section-heading">2. Key Issues Affecting Visitors &amp; Local Search</div>
+  <div>
+    ${findingsCardsHtml || '<div style="padding: 10px; color: #047857; background: #ecfdf5; border-radius: 6px;">No major technical blockers detected on your website.</div>'}
   </div>
 
-  <!-- REMEDIATION ROADMAP -->
-  <div class="section-title">3. Action Plan & Recommended Implementation</div>
-  <div style="margin-bottom: 14px;">
-    ${recommendationsHtml}
+  <div class="section-heading">3. Simple 3-Step Fix Plan (No Website Rebuild Needed)</div>
+  <div>
+    ${stepsHtml}
   </div>
 
-  <!-- CONSULTANT NOTES & NEXT STEPS -->
-  <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px 14px; margin-top: 14px;">
-    <div style="font-weight: 700; font-size: 11px; color: #0f172a; margin-bottom: 4px;">
-      Consultant Summary & Remediation Scope
-    </div>
-    <div style="font-size: 10.5px; color: #475569; line-height: 1.5;">
-      This technical review was compiled by Cloud Consultancy for <strong>${cleanBiz}</strong> based on live diagnostic tests performed on <strong>${formattedDate}</strong>. These prioritized findings can typically be remediated within 1–2 development sprints without needing a full ground-up rebuild.
+  <div class="cta-box">
+    <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 2px;">Recommended Next Step</div>
+    <div style="font-size: 10.5px; color: #334155;">
+      Reply to our email for a complimentary 10-minute walkthrough where we show the exact pages affected and which 2–3 quick fixes will give <strong>${this.escapeHtml(cleanBiz)}</strong> the fastest boost.
     </div>
   </div>
 
-  <!-- FOOTER -->
   <div class="footer">
-    <div>${SENDER_CONFIG.pdfFooterText}</div>
-    <div>Confidential • Prepared for ${cleanBiz}</div>
+    <div><strong>${this.escapeHtml(SENDER_CONFIG.company)}</strong> • ${this.escapeHtml(SENDER_CONFIG.website)} • ${this.escapeHtml(SENDER_CONFIG.email)}</div>
+    <div>Prepared for ${this.escapeHtml(cleanBiz)}</div>
   </div>
 
 </body>
@@ -504,6 +754,7 @@ export class TechnicalAuditPdfService {
       return null;
     }
 
+    const resolvedScore = typeof lead.audit_score === 'number' ? lead.audit_score : 72;
     const domain = (lead.website || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] || 'website';
     const report: ClientAuditReport = {
       targetUrl: lead.website || `https://${domain}`,
@@ -511,16 +762,14 @@ export class TechnicalAuditPdfService {
       domain,
       hasWebsite: true,
       auditToolUrl: '',
-      overallScore: lead.audit_score || 72,
-      grade: (lead.audit_score || 72) >= 80 ? 'Good' : (lead.audit_score || 72) >= 55 ? 'Needs Work' : 'Poor',
-      responseTimeMs: 240,
-      mobileFriendly: true,
+      overallScore: resolvedScore,
+      grade: resolvedScore >= 80 ? 'Good' : resolvedScore >= 55 ? 'Needs Work' : 'Poor',
+      responseTimeMs: 0,
+      mobileFriendly: !findings.some((f) => /mobile|viewport/i.test(f)),
       checks: [],
       criticalIssues: findings,
-      recommendations: [
-        { priority: 'high', title: 'Optimize Mobile Speed & Delivery', detail: 'Compress unoptimized hero assets and inline critical CSS.', odsSolution: 'Next.js SSR & Edge Static Caching' }
-      ],
-      summary: `Technical audit summary for ${lead.business_name}`,
+      recommendations: [],
+      summary: lead.audit_key_takeaways || `Website audit summary for ${lead.business_name}`,
       auditedAt: lead.audit_ready_at || new Date().toISOString(),
     };
 

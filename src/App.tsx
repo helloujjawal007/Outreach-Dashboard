@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Sidebar, type PageId } from '@/components/Sidebar';
-import { useStore } from '@/store';
+import { StoreProvider, useStore } from '@/store';
 import { LeadImportPage } from '@/pages/LeadImportPage';
 import { LeadScraperPage } from '@/pages/LeadScraperPage';
 import { CampaignBuilderPage } from '@/pages/CampaignBuilderPage';
@@ -33,9 +33,7 @@ function getInitialPage(): PageId {
   return 'crm';
 }
 
-function App() {
-  // [TEMPORARY QA OVERRIDE: DEFAULT TO TRUE FOR AGENT QA - CHANGE BACK TO null TO RESTORE]
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(true);
+function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
   const [page, setPage] = useState<PageId>(getInitialPage);
   const [crmSubFilter, setCrmSubFilter] = useState<CrmSubFilter>('all');
   const [crmCountryFilter, setCrmCountryFilter] = useState<string>('all');
@@ -49,15 +47,6 @@ function App() {
   const store = useStore();
 
   useEffect(() => {
-    // Check initial authentication state with backend
-    api.checkAuth().then((authed) => {
-      setIsAuthenticated(authed);
-    });
-
-    const handleUnauthorized = () => {
-      setIsAuthenticated(false);
-    };
-
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -65,18 +54,11 @@ function App() {
       }
     };
 
-    window.addEventListener('ods:unauthorized', handleUnauthorized);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.removeEventListener('ods:unauthorized', handleUnauthorized);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
-
-  const handleLogout = async () => {
-    await api.logout();
-    setIsAuthenticated(false);
-  };
 
   useEffect(() => {
     const handlePopState = () => {
@@ -230,31 +212,6 @@ function App() {
     failures: 'Outreach Failures & 5-Slot Sender Log',
   };
 
-  // =========================================================================
-  // [TEMPORARY QA OVERRIDE: LOGIN GATE DISABLED FOR AGENT QA - UNCOMMENT TO RESTORE]
-  /*
-  if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
-        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <span className="text-xs font-mono tracking-wider">Verifying secure session...</span>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <LoginPage
-        onLoginSuccess={() => {
-          setIsAuthenticated(true);
-          store.refreshAll();
-        }}
-      />
-    );
-  }
-  */
-  // =========================================================================
-
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
       <Sidebar
@@ -269,7 +226,7 @@ function App() {
         onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
         onOpenSuppression={() => setIsSuppressionModalOpen(true)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
-        onLogout={handleLogout}
+        onLogout={onLogout}
         counts={counts}
       />
 
@@ -453,6 +410,55 @@ function App() {
         onClose={() => setIsSuppressionModalOpen(false)}
       />
     </div>
+  );
+}
+
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    api.checkAuth().then((authed) => {
+      setIsAuthenticated(authed);
+    });
+
+    const handleUnauthorized = () => {
+      setIsAuthenticated(false);
+    };
+
+    window.addEventListener('ods:unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('ods:unauthorized', handleUnauthorized);
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    await api.logout();
+    setIsAuthenticated(false);
+  };
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen w-full bg-slate-950 flex flex-col items-center justify-center text-slate-400 gap-3">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-mono tracking-wider">Verifying secure session...</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        onLoginSuccess={() => {
+          setIsAuthenticated(true);
+        }}
+      />
+    );
+  }
+
+  return (
+    <StoreProvider>
+      <AppShell onLogout={handleLogout} />
+    </StoreProvider>
   );
 }
 

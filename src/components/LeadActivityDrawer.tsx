@@ -119,8 +119,8 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
       const [actRes, seqRes, dealsRes, tasksRes] = await Promise.all([
         api.getLeadActivities(lead.id).catch(() => ({ success: false, activities: [] })),
         api.getLeadSequenceEnrollments(lead.id).catch(() => ({ enrollments: [] })),
-        api.getDeals().catch(() => ({ success: false, deals: [] })),
-        api.getTasks('all').catch(() => ({ success: false, tasks: [] })),
+        api.getDeals(lead.id).catch(() => ({ success: false, deals: [] })),
+        api.getTasks('all', lead.id).catch(() => ({ success: false, tasks: [] })),
       ]);
 
       if (actRes.activities) {
@@ -130,7 +130,7 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
         setEnrollments(seqRes.enrollments);
       }
       if (dealsRes.deals) {
-        setLeadDeals(dealsRes.deals.filter((d: Deal) => d.lead_id === lead.id || d.title.toLowerCase().includes(lead.businessName.toLowerCase())));
+        setLeadDeals(dealsRes.deals.filter((d: Deal) => d.lead_id === lead.id));
       }
       if (tasksRes.tasks) {
         setLeadTasks(tasksRes.tasks.filter((t: CrmTask) => t.lead_id === lead.id));

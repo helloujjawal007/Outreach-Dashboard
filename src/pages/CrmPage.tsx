@@ -294,6 +294,9 @@ export function CrmPage({
         whatsapp: newContactForm.whatsapp.trim() || undefined,
         website: newContactForm.website.trim() || undefined,
         category: newContactForm.category.trim() || undefined,
+        location: newContactForm.city.trim() || undefined,
+        country: newContactForm.country.trim() || undefined,
+        metadata: newContactForm.dealValue > 0 ? { deal_value: Number(newContactForm.dealValue) } : undefined,
         notes: newContactForm.notes.trim() || undefined,
         listId: newContactForm.listId || undefined,
       });
@@ -514,10 +517,10 @@ export function CrmPage({
 
     const activeLeadsCount = store.leads.filter((l) => !l.deletedAt && l.entityType === 'lead').length;
     const clientsCount = clientEntities.length;
-    const conversationsCount = store.inboundReplies.length || 18;
+    const conversationsCount = store.inboundReplies.length;
 
     return {
-      pipelineValue: pipelineValue > 0 ? pipelineValue : 1058700,
+      pipelineValue,
       activeLeadsCount,
       hotProspects,
       conversationsCount,
@@ -638,15 +641,24 @@ export function CrmPage({
     };
   }, [store.leads]);
 
-  // Dynamic counts for stage filter options
+  // Dynamic counts for stage filter options (unified outreachStage || stage)
   const stageCounts = useMemo(() => {
     const activeLeads = store.leads.filter((l) => !l.deletedAt);
-    const cold = activeLeads.filter((l) => !l.stage || l.stage === 'cold').length;
-    const initial = activeLeads.filter((l) => l.stage === 'initial').length;
-    const followup_1 = activeLeads.filter((l) => l.stage === 'followup_1').length;
-    const followup_2 = activeLeads.filter((l) => l.stage === 'followup_2').length;
-    const followup_3 = activeLeads.filter((l) => l.stage === 'followup_3').length;
-    const replied = activeLeads.filter((l) => l.consentStatus === 'replied').length;
+    let cold = 0;
+    let initial = 0;
+    let followup_1 = 0;
+    let followup_2 = 0;
+    let followup_3 = 0;
+    let replied = 0;
+    for (const l of activeLeads) {
+      const s = l.outreachStage || l.stage || 'cold';
+      if (s === 'cold') cold++;
+      else if (s === 'initial') initial++;
+      else if (s === 'followup_1') followup_1++;
+      else if (s === 'followup_2') followup_2++;
+      else if (s === 'followup_3') followup_3++;
+      if (l.consentStatus === 'replied' || s === 'replied') replied++;
+    }
     return {
       all: activeLeads.length,
       cold,
@@ -1048,12 +1060,12 @@ export function CrmPage({
         if (statusFilter === 'inactive' && s !== 'inactive' && s !== 'paused') return false;
       }
       if (stageFilter !== 'all') {
-        if (stageFilter === 'cold' && (l.stage || 'cold') !== 'cold') return false;
-        if (stageFilter === 'initial' && l.stage !== 'initial') return false;
-        if (stageFilter === 'followup_1' && l.stage !== 'followup_1') return false;
-        if (stageFilter === 'followup_2' && l.stage !== 'followup_2') return false;
-        if (stageFilter === 'followup_3' && l.stage !== 'followup_3') return false;
-        if (stageFilter === 'replied' && l.consentStatus !== 'replied') return false;
+        const effectiveStage = l.outreachStage || l.stage || 'cold';
+        if (stageFilter === 'replied') {
+          if (l.consentStatus !== 'replied' && effectiveStage !== 'replied') return false;
+        } else if (effectiveStage !== stageFilter) {
+          return false;
+        }
       }
       if (consentFilter !== 'all' && l.consentStatus !== consentFilter) return false;
       if (selectedBatchFilter !== 'all' && l.batchId !== selectedBatchFilter) return false;
@@ -1132,6 +1144,33 @@ export function CrmPage({
       return 0;
     });
   }, [filtered, sortField, sortDirection]);
+
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    entityFilter,
+    countryFilter,
+    cityFilter,
+    categoryFilter,
+    stageFilter,
+    statusFilter,
+    consentFilter,
+    selectedBatchFilter,
+    selectedListFilter,
+    channelFilter,
+    channelSubFilter,
+    search,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedLeads.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedLeads = useMemo(
+    () => sortedLeads.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [sortedLeads, safePage]
+  );
 
   const leadConversations = useMemo(() => {
     if (!selectedLead) return [];
@@ -1650,6 +1689,12 @@ export function CrmPage({
 
   // Client Edit Info
   const handleOpenEditClient = useCallback((lead: Lead) => {
+    const rawStatus = String((lead as any).status || lead.metadata?.client_status || 'active');
+    const safeStatus: 'active' | 'paused' | 'churned' =
+      rawStatus === 'paused' || rawStatus === 'churned' ? rawStatus : 'active';
+    const rawContract = Number(
+      (lead as any).contractValue ?? lead.metadata?.contract_value ?? lead.metadata?.deal_value ?? lead.metadata?.dealValue ?? 0
+    );
     setClientEditForm({
       businessName: lead.businessName,
       primaryContactName: lead.primaryContactName || lead.businessName,
@@ -1657,8 +1702,8 @@ export function CrmPage({
       phone: lead.phone,
       email: lead.email,
       whatsapp: lead.whatsapp,
-      status: 'active',
-      contractValue: 1500,
+      status: safeStatus,
+      contractValue: Number.isFinite(rawContract) ? rawContract : 0,
       notes: lead.notes || '',
     });
     setIsEditClientOpen(true);
@@ -1818,12 +1863,13 @@ export function CrmPage({
   }, [store]);
 
   // Auto-poll leads silently every 20 seconds so background 12h GMB updates stream into UI without user refresh
+  const fetchLeadsStable = store.fetchLeads;
   useEffect(() => {
     const timer = setInterval(() => {
-      store.fetchLeads();
+      fetchLeadsStable();
     }, 20000);
     return () => clearInterval(timer);
-  }, [store]);
+  }, [fetchLeadsStable]);
 
   // Reactively sync selectedLead whenever store.leads changes (e.g. background GMB update or edit)
   useEffect(() => {
@@ -2098,7 +2144,7 @@ export function CrmPage({
             <TrendingUp size={15} className="text-indigo-600" />
           </div>
           <p className="text-xl font-extrabold text-slate-900">
-            ${crmMetrics.pipelineValue > 0 ? (crmMetrics.pipelineValue >= 1000000 ? (crmMetrics.pipelineValue / 1000000).toFixed(2) + 'M' : crmMetrics.pipelineValue.toLocaleString()) : '1.06M'}
+            ${crmMetrics.pipelineValue >= 1000000 ? (crmMetrics.pipelineValue / 1000000).toFixed(2) + 'M' : crmMetrics.pipelineValue.toLocaleString()}
           </p>
           <p className="text-[10px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">
             <span>↑ High-Ticket B2B Retainers</span>
@@ -3455,7 +3501,7 @@ export function CrmPage({
                   </td>
                 </tr>
               ) : entityFilter === 'trash' ? (
-                sortedLeads.map((lead) => (
+                paginatedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => handleOpenLead(lead)}
@@ -3531,7 +3577,7 @@ export function CrmPage({
                   </tr>
                 ))
               ) : entityFilter === 'duplicates' ? (
-                sortedLeads.map((lead) => (
+                paginatedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => handleOpenLead(lead)}
@@ -3610,7 +3656,7 @@ export function CrmPage({
                   </tr>
                 ))
               ) : entityFilter === 'manual_review' || entityFilter === 'invalid_list' ? (
-                sortedLeads.map((lead) => (
+                paginatedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     onClick={() => handleOpenLead(lead)}
@@ -3707,7 +3753,7 @@ export function CrmPage({
                   </tr>
                 ))
               ) : (
-                sortedLeads.map((lead) => {
+                paginatedLeads.map((lead) => {
                   const isInactive = lead.status === 'inactive' || lead.status === 'paused';
                   return (
                     <tr
@@ -3816,18 +3862,31 @@ export function CrmPage({
 
                       {/* 3. Deal Value */}
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <DollarSign size={13} className="text-emerald-600 shrink-0" />
-                          <span className="font-extrabold text-xs text-emerald-700 font-mono">
-                            ${Number(lead.metadata?.deal_value || lead.metadata?.dealValue || 24000).toLocaleString()}
-                          </span>
-                        </div>
+                        {(() => {
+                          const rawVal = lead.metadata?.deal_value ?? lead.metadata?.dealValue;
+                          const val = rawVal !== undefined && rawVal !== null ? Number(rawVal) : 0;
+                          if (!Number.isFinite(val) || val <= 0) {
+                            return <span className="text-xs text-slate-400">—</span>;
+                          }
+                          return (
+                            <div className="flex items-center gap-1">
+                              <DollarSign size={13} className="text-emerald-600 shrink-0" />
+                              <span className="font-extrabold text-xs text-emerald-700 font-mono">
+                                ${val.toLocaleString()}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* 4. Score / Intent */}
                       <td className="px-4 py-3">
                         {(() => {
-                          const score = Number(lead.metadata?.lead_score || lead.metadata?.leadScore || 82);
+                          const rawScore = lead.metadata?.lead_score ?? lead.metadata?.leadScore;
+                          const score = rawScore !== undefined && rawScore !== null ? Number(rawScore) : null;
+                          if (score === null || !Number.isFinite(score)) {
+                            return <span className="text-xs text-slate-400">—</span>;
+                          }
                           return (
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -3839,7 +3898,7 @@ export function CrmPage({
                               }`}
                             >
                               <Flame size={11} className={score >= 80 ? 'text-amber-500 fill-amber-500' : 'text-slate-400'} />
-                              <span>{score} Hot</span>
+                              <span>{score}{score >= 80 ? ' Hot' : ''}</span>
                             </span>
                           );
                         })()}
@@ -3968,6 +4027,44 @@ export function CrmPage({
             </tbody>
           </table>
         </div>
+        {sortedLeads.length > 0 && (
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-600">
+            <span>
+              Showing{' '}
+              <span className="font-bold text-slate-900">
+                {(safePage - 1) * PAGE_SIZE + 1}
+              </span>
+              –
+              <span className="font-bold text-slate-900">
+                {Math.min(safePage * PAGE_SIZE, sortedLeads.length)}
+              </span>{' '}
+              of <span className="font-bold text-slate-900">{sortedLeads.length}</span> records
+            </span>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Previous
+                </button>
+                <span className="font-mono text-[11px] font-semibold text-slate-700">
+                  Page {safePage} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
         </>
       )}

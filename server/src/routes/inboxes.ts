@@ -3,15 +3,19 @@ import { inboxRotationService } from '../services/inboxRotationService';
 
 export const inboxesRouter = Router();
 
+function sanitizeInbox<T extends { smtp_pass?: string | null }>(inbox: T) {
+  return {
+    ...inbox,
+    has_password: Boolean(inbox.smtp_pass && inbox.smtp_pass.trim()),
+    smtp_pass: inbox.smtp_pass ? '••••••••' : '',
+  };
+}
+
 // GET /api/inboxes - List all connected inboxes
 inboxesRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const inboxes = await inboxRotationService.getAllInboxes();
-    const sanitizedInboxes = inboxes.map((inbox) => ({
-      ...inbox,
-      has_password: Boolean(inbox.smtp_pass && inbox.smtp_pass.trim()),
-      smtp_pass: inbox.smtp_pass ? '••••••••' : '',
-    }));
+    const sanitizedInboxes = inboxes.map(sanitizeInbox);
     const summary = await inboxRotationService.getPoolSummary();
     res.json({
       success: true,
@@ -109,7 +113,7 @@ inboxesRouter.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: result.error });
     }
 
-    res.json({ success: true, inbox: result.inbox });
+    res.json({ success: true, inbox: result.inbox ? sanitizeInbox(result.inbox) : result.inbox });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to connect inbox';
     console.error('[inboxesRouter.post]', err);
@@ -135,7 +139,7 @@ inboxesRouter.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Inbox not found' });
     }
 
-    res.json({ success: true, inbox: updated });
+    res.json({ success: true, inbox: sanitizeInbox(updated) });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to update inbox';
     res.status(500).json({ success: false, error: msg });

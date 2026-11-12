@@ -80,10 +80,12 @@ export function setStoredToken(token: string | null): void {
     localStorage.setItem(TOKEN_KEY, token);
   } else {
     localStorage.removeItem(TOKEN_KEY);
+    eTagCache.clear();
   }
 }
 
 const eTagCache = new Map<string, { etag: string; data: any }>();
+const MAX_ETAG_CACHE_ENTRIES = 100;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getStoredToken();
@@ -96,17 +98,34 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const isGet = !options?.method || options.method.toUpperCase() === 'GET';
+  const method = (options?.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
   const cached = isGet ? eTagCache.get(path) : undefined;
   if (cached?.etag) {
     headers['If-None-Match'] = cached.etag;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
-    ...options,
-    headers,
-  });
+  if (!isGet) {
+    eTagCache.clear();
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  if (options?.signal) {
+    options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
+      ...options,
+      signal: controller.signal,
+      headers,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (res.status === 304 && cached) {
     return cached.data as T;
@@ -131,9 +150,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(errorMsg);
   }
 
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    return (await res.text()) as unknown as T;
+  }
+
   const data = (await res.json()) as T;
   const etag = res.headers.get('ETag');
   if (isGet && etag) {
+    if (eTagCache.size >= MAX_ETAG_CACHE_ENTRIES) {
+      const oldestKey = eTagCache.keys().next().value;
+      if (oldestKey) eTagCache.delete(oldestKey);
+    }
     eTagCache.set(path, { etag, data });
   }
 
@@ -282,7 +310,7 @@ export interface SendReplyResult {
   result?: {
     allowed: boolean;
     channel: Channel;
-    actionTaken: 'sent_direct' | 'queued_draft' | 'blocked_consent' | 'blocked_channel_rule' | 'throttled_warmup';
+    actionTaken: 'sent_direct' | 'queued_draft' | 'blocked_consent' | 'blocked_channel_rule' | 'throttled_warmup' | 'smtp_failed';
     reason?: string;
     messageId?: string;
     queueId?: string;
@@ -474,6 +502,9 @@ export const api = {
     notes?: string;
     listId?: string;
     batchId?: string;
+    location?: string;
+    country?: string;
+    metadata?: Record<string, any>;
   }): Promise<Lead> {
     const data = await request<{ success: boolean; lead: BackendLead }>('/leads', {
       method: 'POST',
@@ -492,6 +523,10 @@ export const api = {
     if (updates.notes !== undefined) payload.notes = updates.notes;
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.consentStatus !== undefined) payload.consentStatus = updates.consentStatus;
+    if (updates.outreachStage !== undefined) payload.outreachStage = updates.outreachStage;
+    if (updates.stage !== undefined) payload.stage = updates.stage;
+    if (updates.primaryContactName !== undefined) payload.primaryContactName = updates.primaryContactName;
+    if (updates.location !== undefined) payload.location = updates.location;
     if (updates.googleProfile !== undefined) payload.googleProfile = updates.googleProfile;
     if (updates.metadata !== undefined) payload.metadata = updates.metadata;
     if (updates.website !== undefined) payload.website = updates.website;
@@ -1828,8 +1863,9 @@ export const api = {
   },
 
   // Deals Pipeline
-  async getDeals(): Promise<{ success: boolean; deals: Deal[]; summary: PipelineSummary }> {
-    return request<{ success: boolean; deals: Deal[]; summary: PipelineSummary }>('/deals');
+  async getDeals(leadId?: string): Promise<{ success: boolean; deals: Deal[]; summary: PipelineSummary }> {
+    const qs = leadId ? `?leadId=${encodeURIComponent(leadId)}` : '';
+    return request<{ success: boolean; deals: Deal[]; summary: PipelineSummary }>(`/deals${qs}`);
   },
 
   async createDeal(data: Partial<Deal> & { title: string; leadId?: string }): Promise<{ success: boolean; deal: Deal }> {
@@ -1853,9 +1889,12 @@ export const api = {
   },
 
   // Tasks & Reminders
-  async getTasks(filter?: 'today' | 'overdue' | 'upcoming' | 'all'): Promise<{ success: boolean; tasks: CrmTask[]; summary: TaskSummary }> {
-    const query = filter && filter !== 'all' ? `?filter=${filter}` : '';
-    return request<{ success: boolean; tasks: CrmTask[]; summary: TaskSummary }>(`/tasks${query}`);
+  async getTasks(filter?: 'today' | 'overdue' | 'upcoming' | 'all', leadId?: string): Promise<{ success: boolean; tasks: CrmTask[]; summary: TaskSummary }> {
+    const sp = new URLSearchParams();
+    if (filter && filter !== 'all') sp.set('filter', filter);
+    if (leadId) sp.set('leadId', leadId);
+    const qs = sp.toString() ? `?${sp.toString()}` : '';
+    return request<{ success: boolean; tasks: CrmTask[]; summary: TaskSummary }>(`/tasks${qs}`);
   },
 
   async createTask(data: Partial<CrmTask> & { title: string }): Promise<{ success: boolean; task: CrmTask }> {

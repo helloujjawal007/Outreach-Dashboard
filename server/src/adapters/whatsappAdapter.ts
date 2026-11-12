@@ -1,5 +1,6 @@
 import { query } from '../config/db';
 import { conversationOrchestrator, type ClientConversionResult } from '../services/orchestratorService';
+import { whatsappSessionService } from '../services/whatsappSessionService';
 
 export interface WhatsAppWindowStatus {
   hasInbound: boolean;
@@ -117,7 +118,30 @@ export class WhatsAppAdapter {
       };
     }
 
-    // If within active window (or active paying client): dispatch reply
+    // Look up recipient phone number before dispatching
+    const entityRes = isClient
+      ? await query<{ phone: string; whatsapp: string }>(`SELECT phone, whatsapp FROM clients WHERE id = $1 AND deleted_at IS NULL`, [entityId])
+      : await query<{ phone: string; whatsapp: string }>(`SELECT phone, whatsapp FROM leads WHERE id = $1 AND deleted_at IS NULL`, [entityId]);
+
+    const rawPhone = (entityRes.rows[0]?.whatsapp || entityRes.rows[0]?.phone || '').trim();
+    if (!rawPhone) {
+      return {
+        allowed: false,
+        code: 'SEND_FAILED',
+        reason: 'Recipient has no valid WhatsApp/phone number on record.',
+      };
+    }
+
+    const sendResult = await whatsappSessionService.sendMessage(rawPhone, text);
+    if (!sendResult.success) {
+      return {
+        allowed: false,
+        code: 'SEND_FAILED',
+        reason: sendResult.error || 'WhatsApp socket failed to deliver message.',
+      };
+    }
+
+    // Record real delivered outbound message in conversation thread
     const convQuery = isClient
       ? `SELECT id FROM conversations WHERE entity_type = 'client' AND client_id = $1 AND channel = 'whatsapp'`
       : `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'whatsapp'`;
@@ -138,10 +162,10 @@ export class WhatsAppAdapter {
     }
 
     const msgRes = await query<{ id: string }>(
-      `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at)
-       VALUES ($1, 'whatsapp', 'outbound', $2, 'delivered', NOW())
+      `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
+       VALUES ($1, 'whatsapp', 'outbound', $2, 'delivered', $3, NOW())
        RETURNING id`,
-      [convId, text]
+      [convId, text, sendResult.messageId || '']
     );
 
     // Mark all preceding inbound messages in this thread as replied & seen
@@ -187,12 +211,22 @@ export class WhatsAppAdapter {
   }> {
     const { fromPhone, text, externalMessageId } = params;
     const cleanDigits = fromPhone.replace(/\D/g, '');
+    const suffixDigits = cleanDigits.length >= 7 ? cleanDigits.slice(-10) : cleanDigits;
 
-    // 1. Locate lead or client matching phone
-    const leadRes = await query<{ id: string; consent_status: string }>(
-      `SELECT id, consent_status FROM leads WHERE phone LIKE '%' || $1 || '%' LIMIT 1`,
-      [cleanDigits.slice(-10)]
-    );
+    // 1. Locate active lead matching normalized phone digits (guard against empty/short strings matching all leads)
+    const leadRes = suffixDigits.length >= 7
+      ? await query<{ id: string; consent_status: string }>(
+          `SELECT id, consent_status FROM leads
+           WHERE deleted_at IS NULL
+             AND (
+               REGEXP_REPLACE(COALESCE(whatsapp, ''), '[^0-9]', '', 'g') LIKE '%' || $1
+               OR REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g') LIKE '%' || $1
+             )
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [suffixDigits]
+        )
+      : { rows: [] as Array<{ id: string; consent_status: string }> };
 
     let leadId: string;
     if (leadRes.rows.length === 0) {

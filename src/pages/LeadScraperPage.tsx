@@ -525,6 +525,10 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
     setImportSuccess(null);
     setScrapeStep('Connecting to Google Business Profiles & Maps engine...');
 
+    let stepTimer1: ReturnType<typeof setTimeout> | undefined;
+    let stepTimer2: ReturnType<typeof setTimeout> | undefined;
+    let stepTimer3: ReturnType<typeof setTimeout> | undefined;
+
     try {
       const locSummary =
         locationsToSend.length === 1
@@ -532,7 +536,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
           : `${locationsToSend.length} locations (${locationsToSend.slice(0, 2).map((l) => l.city || l.state || l.display).join(', ')}${locationsToSend.length > 2 ? '...' : ''})`;
 
       const estTotalMs = Math.max(2500, limit * 2500);
-      const stepTimer1 = setTimeout(() => {
+      stepTimer1 = setTimeout(() => {
         if (selectedCategories.length === 1) {
           setScrapeStep(`Searching verified GMB listings for "${selectedCategories[0]}" across ${locSummary}...`);
         } else {
@@ -540,11 +544,11 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         }
       }, Math.min(1000, Math.floor(estTotalMs * 0.15)));
 
-      const stepTimer2 = setTimeout(() => {
+      stepTimer2 = setTimeout(() => {
         setScrapeStep('Interpreting business ratings, phone numbers and official websites (~2–3s per lead)...');
       }, Math.min(2200, Math.floor(estTotalMs * 0.4)));
 
-      const stepTimer3 = setTimeout(() => {
+      stepTimer3 = setTimeout(() => {
         setScrapeStep('Crawling business homepages & contact pages to discover verified emails...');
       }, Math.min(4200, Math.floor(estTotalMs * 0.7)));
 
@@ -559,10 +563,6 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         limit,
         leadsPerLocation: leadsPerCity > 0 ? leadsPerCity : undefined,
       });
-
-      clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
-      clearTimeout(stepTimer3);
 
       if (res.success && res.leads) {
         setScrapedLeads(res.leads);
@@ -586,6 +586,9 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       console.error('[LeadScraperPage] Scrape error:', err);
       setError(err.message || 'Failed to search Google Business Profiles');
     } finally {
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
       setIsScraping(false);
       setScrapeStep('');
     }
@@ -610,11 +613,21 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   };
 
   const handleSelectAll = () => {
-    setSelectedIndices(new Set(scrapedLeads.map((_, i) => i)));
+    const visibleSet = new Set(filteredLeads);
+    const next = new Set<number>();
+    scrapedLeads.forEach((lead, idx) => {
+      if (visibleSet.has(lead)) next.add(idx);
+    });
+    setSelectedIndices(next);
   };
 
   const handleDeselectAll = () => {
-    setSelectedIndices(new Set());
+    const visibleSet = new Set(filteredLeads);
+    const next = new Set(selectedIndices);
+    scrapedLeads.forEach((lead, idx) => {
+      if (visibleSet.has(lead)) next.delete(idx);
+    });
+    setSelectedIndices(next);
   };
 
   // Import Selected Leads into CRM Database
@@ -1738,7 +1751,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                     <th className="py-3 px-4 w-10 text-center">
                       <input
                         type="checkbox"
-                        checked={selectedIndices.size === scrapedLeads.length && scrapedLeads.length > 0}
+                        checked={filteredLeads.length > 0 && filteredLeads.every((l) => selectedIndices.has(scrapedLeads.indexOf(l)))}
                         onChange={(e) => (e.target.checked ? handleSelectAll() : handleDeselectAll())}
                         className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                       />

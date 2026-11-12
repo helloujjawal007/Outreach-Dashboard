@@ -311,7 +311,7 @@ export class EmailValidatorService {
       // 2. Add to Invalid List in lead_list_memberships
       if (invalidListId) {
         await query(
-          `INSERT INTO lead_list_memberships (list_id, lead_id, created_at)
+          `INSERT INTO lead_list_memberships (list_id, lead_id, added_at)
            VALUES ($1, $2, NOW())
            ON CONFLICT (list_id, lead_id) DO NOTHING`,
           [invalidListId, leadId]

@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { env } from '../config/env';
-import { generateSessionToken, extractToken, verifySessionToken, revokeToken } from '../middleware/auth';
+import { generateSessionToken, extractToken, verifySessionToken, revokeToken, isAuthBypassed } from '../middleware/auth';
 
 export const authRouter = Router();
 
@@ -73,14 +73,15 @@ authRouter.post('/login', loginRateLimiter, (req: Request, res: Response) => {
  * Checks if current request has a valid session
  */
 authRouter.get('/me', (req: Request, res: Response) => {
-  // =========================================================================
-  // [TEMPORARY QA OVERRIDE: ALWAYS AUTHENTICATED FOR AGENT QA - UNCOMMENT TO RESTORE]
-  return res.json({
-    success: true,
-    authenticated: true,
-    role: 'admin',
-  });
-  /*
+  if (isAuthBypassed()) {
+    return res.json({
+      success: true,
+      authenticated: true,
+      role: 'admin',
+      bypassed: true,
+    });
+  }
+
   const token = extractToken(req);
   const isValid = token ? verifySessionToken(token) : false;
 
@@ -89,8 +90,6 @@ authRouter.get('/me', (req: Request, res: Response) => {
     authenticated: isValid,
     role: isValid ? 'admin' : null,
   });
-  */
-  // =========================================================================
 });
 
 /**

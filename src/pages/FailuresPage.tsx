@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/services/api';
+import { api, getStoredToken } from '@/services/api';
 import type { FailureRecord, FailureType, SlotId } from '@/types';
 import { SlotsPanel } from '@/components/SlotsPanel';
 import {
@@ -28,6 +28,14 @@ export function FailuresPage() {
   });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [selectedSlot, setSelectedSlot] = useState<string>('ALL');
   const [resolvedFilter, setResolvedFilter] = useState<string>('unresolved'); // 'all' | 'unresolved' | 'resolved'
@@ -46,7 +54,7 @@ export function FailuresPage() {
         resolved: resolvedFilter === 'all' ? undefined : resolvedFilter === 'resolved',
         startDate: startDate || undefined,
         endDate: endDate || undefined,
-        search: search.trim() || undefined,
+        search: debouncedSearch || undefined,
         limit: 100,
       });
 
@@ -61,7 +69,7 @@ export function FailuresPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedType, selectedSlot, resolvedFilter, startDate, endDate, search]);
+  }, [selectedType, selectedSlot, resolvedFilter, startDate, endDate, debouncedSearch]);
 
   useEffect(() => {
     fetchFailures();
@@ -134,16 +142,36 @@ export function FailuresPage() {
     }
   };
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
     const url = api.getFailuresExportUrl({
       type: selectedType,
       slotId: selectedSlot,
       resolved: resolvedFilter === 'all' ? undefined : resolvedFilter === 'resolved',
       startDate: startDate || undefined,
       endDate: endDate || undefined,
-      search: search.trim() || undefined,
+      search: debouncedSearch || undefined,
     });
-    window.open(url, '_blank');
+    try {
+      const token = getStoredToken();
+      const response = await fetch(url, {
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        throw new Error(`Export failed (HTTP ${response.status})`);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `outreach-failures-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err: any) {
+      setFeedback(`❌ Export error: ${err?.message || 'Failed to download CSV'}`);
+    }
   };
 
   const typeBadges: Record<FailureType | string, { bg: string; text: string; label: string }> = {
@@ -520,7 +548,7 @@ export function FailuresPage() {
             <strong className="text-slate-800">{total}</strong> failures
           </span>
           <span className="text-[11px] text-slate-400">
-            Auto-refreshes every 10 seconds with the 5-slot scheduler engine
+            Failure telemetry for the 5-slot scheduler engine (click Refresh for latest)
           </span>
         </div>
       </div>

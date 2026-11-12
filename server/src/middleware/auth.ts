@@ -5,9 +5,23 @@ import { env } from '../config/env';
 
 // Cut token lifetime from 30 days to 12 hours
 const TOKEN_EXPIRY_HOURS = 12;
+const MAX_REVOKED_ENTRIES = 10000;
 
-// Server-side revocation denylist (stores revoked token signatures)
-const revokedSignatures = new Set<string>();
+// Bounded server-side revocation denylist mapping signature -> expiration epoch ms
+const revokedSignatures = new Map<string, number>();
+
+function pruneRevokedSignatures(now = Date.now()): void {
+  for (const [sig, exp] of revokedSignatures.entries()) {
+    if (exp <= now) {
+      revokedSignatures.delete(sig);
+    }
+  }
+  while (revokedSignatures.size > MAX_REVOKED_ENTRIES) {
+    const oldestKey = revokedSignatures.keys().next().value;
+    if (!oldestKey) break;
+    revokedSignatures.delete(oldestKey);
+  }
+}
 
 /**
  * Revokes a session token so it cannot be used again
@@ -15,9 +29,18 @@ const revokedSignatures = new Set<string>();
 export function revokeToken(token: string): void {
   if (!token || typeof token !== 'string') return;
   const parts = token.split('.');
-  if (parts.length === 2) {
-    revokedSignatures.add(parts[1]);
+  if (parts.length !== 2) return;
+  pruneRevokedSignatures();
+  let exp = Date.now() + TOKEN_EXPIRY_HOURS * 60 * 60 * 1000;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    if (typeof payload.exp === 'number') {
+      exp = payload.exp;
+    }
+  } catch {
+    // Keep default expiration window
   }
+  revokedSignatures.set(parts[1], exp);
 }
 
 /**
@@ -26,7 +49,14 @@ export function revokeToken(token: string): void {
 export function isTokenRevoked(token: string): boolean {
   if (!token || typeof token !== 'string') return true;
   const parts = token.split('.');
-  return parts.length === 2 && revokedSignatures.has(parts[1]);
+  if (parts.length !== 2) return false;
+  const exp = revokedSignatures.get(parts[1]);
+  if (exp === undefined) return false;
+  if (exp <= Date.now()) {
+    revokedSignatures.delete(parts[1]);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -153,28 +183,29 @@ export function extractToken(req: Request): string | null {
 }
 
 /**
- * Shared flag reflecting whether the temporary QA auth bypass is active.
- * Keep routes (e.g. /api/audit/download) aligned with requireAuth until restored.
+ * Shared flag reflecting whether local development auth bypass is active.
+ * Strictly disabled in production regardless of env flags.
  */
 export function isAuthBypassed(): boolean {
-  return true;
+  if (env.NODE_ENV === 'production') {
+    return false;
+  }
+  return process.env.AUTH_BYPASS !== 'false';
 }
 
 /**
  * Express middleware to protect all /api routes except public endpoints
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  // =========================================================================
-  // [TEMPORARY QA OVERRIDE: AUTH DISABLED FOR AGENT QA - UNCOMMENT TO RESTORE]
   if (isAuthBypassed()) {
     next();
     return;
   }
-  /*
+
   const fullPath = (req.originalUrl ? req.originalUrl.split('?')[0] : req.path) || req.path;
   const reqPath = req.path;
 
-  // Whitelisted public endpoints
+  // Whitelisted public endpoints (callback routes verify their own shared secret/HMAC)
   const isPublic =
     fullPath === '/api/health' ||
     fullPath === '/health' ||
@@ -182,7 +213,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     fullPath.startsWith('/api/auth/') ||
     reqPath.startsWith('/auth/') ||
     fullPath.startsWith('/api/unsubscribe') ||
-    reqPath.startsWith('/unsubscribe');
+    reqPath.startsWith('/unsubscribe') ||
+    fullPath.startsWith('/api/audit/callback') ||
+    reqPath.startsWith('/audit/callback');
 
   if (isPublic) {
     next();
@@ -259,6 +292,4 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   next();
-  */
-  // =========================================================================
 }

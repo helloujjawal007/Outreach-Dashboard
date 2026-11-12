@@ -95,17 +95,25 @@ listsRouter.post('/:id/members', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'leadIds array is required' });
     }
 
-    let addedCount = 0;
-    for (const leadId of leadIds) {
-      const resInsert = await query(
-        `INSERT INTO lead_list_memberships (list_id, lead_id)
-         VALUES ($1, $2)
-         ON CONFLICT (list_id, lead_id) DO NOTHING
-         RETURNING lead_id`,
-        [listId, leadId]
-      );
-      if (resInsert.rows.length > 0) addedCount++;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const cleanLeadIds = [...new Set(
+      leadIds.filter((id): id is string => typeof id === 'string' && uuidRegex.test(id.trim())).map((id) => id.trim())
+    )];
+
+    if (cleanLeadIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one valid lead UUID is required' });
     }
+
+    const resInsert = await query(
+      `INSERT INTO lead_list_memberships (list_id, lead_id)
+       SELECT $1, id
+       FROM leads
+       WHERE id = ANY($2::uuid[]) AND deleted_at IS NULL
+       ON CONFLICT (list_id, lead_id) DO NOTHING
+       RETURNING lead_id`,
+      [listId, cleanLeadIds]
+    );
+    const addedCount = resInsert.rows.length;
 
     if (addedCount > 0) {
       const listInfo = await query<{ name: string }>(`SELECT name FROM lists WHERE id = $1`, [listId]).catch(() => ({ rows: [] as any[] }));

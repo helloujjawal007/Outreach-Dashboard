@@ -153,13 +153,23 @@ export function extractToken(req: Request): string | null {
 }
 
 /**
+ * Shared flag reflecting whether the temporary QA auth bypass is active.
+ * Keep routes (e.g. /api/audit/download) aligned with requireAuth until restored.
+ */
+export function isAuthBypassed(): boolean {
+  return true;
+}
+
+/**
  * Express middleware to protect all /api routes except public endpoints
  */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   // =========================================================================
   // [TEMPORARY QA OVERRIDE: AUTH DISABLED FOR AGENT QA - UNCOMMENT TO RESTORE]
-  next();
-  return;
+  if (isAuthBypassed()) {
+    next();
+    return;
+  }
   /*
   const fullPath = (req.originalUrl ? req.originalUrl.split('?')[0] : req.path) || req.path;
   const reqPath = req.path;

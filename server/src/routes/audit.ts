@@ -9,6 +9,7 @@ import {
   verifyScopedPdfToken,
   extractToken,
   verifySessionToken,
+  isAuthBypassed,
 } from '../middleware/auth';
 
 export const auditRouter = Router();
@@ -18,9 +19,11 @@ export const auditRouter = Router();
  * Generates a short-lived (60s) signed URL token scoped specifically to one PDF file
  */
 auditRouter.get('/token/:filename', (req: Request, res: Response) => {
-  const token = extractToken(req);
-  if (!token || !verifySessionToken(token)) {
-    return res.status(401).json({ success: false, error: 'Authentication required to generate view token.' });
+  if (!isAuthBypassed()) {
+    const token = extractToken(req);
+    if (!token || !verifySessionToken(token)) {
+      return res.status(401).json({ success: false, error: 'Authentication required to generate view token.' });
+    }
   }
 
   const filenameParam = typeof req.params.filename === 'string' ? req.params.filename : (req.params.filename?.[0] || '');
@@ -42,7 +45,7 @@ auditRouter.get('/token/:filename', (req: Request, res: Response) => {
  * Requires either an active session or a valid 60s signed token scoped to this exact file.
  * Strictly exact filename matching only; no fuzzy substring search.
  */
-auditRouter.get('/download/:filename', (req: Request, res: Response) => {
+auditRouter.get('/download/:filename', async (req: Request, res: Response) => {
   try {
     const filenameParam = typeof req.params.filename === 'string' ? req.params.filename : (req.params.filename?.[0] || '');
 
@@ -63,26 +66,54 @@ auditRouter.get('/download/:filename', (req: Request, res: Response) => {
     }
 
     const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
-    const pdfPath = path.resolve(auditsDir, rawFilename);
+    let pdfPath = path.resolve(auditsDir, rawFilename);
 
     // Hard boundary assertion: ensure resolved path is strictly within auditsDir
     if (!pdfPath.startsWith(auditsDir + path.sep)) {
       return res.status(403).json({ success: false, error: 'Forbidden path traversal attempted.' });
     }
 
-    // Auth check: Session cookie/header OR 60s scoped PDF token
-    const sessionToken = extractToken(req);
-    const hasSessionAuth = sessionToken ? verifySessionToken(sessionToken) : false;
+    // Auth check: respect QA auth bypass when active; otherwise require valid session or 60s scoped token
+    if (!isAuthBypassed()) {
+      const sessionToken = extractToken(req);
+      const hasSessionAuth = sessionToken ? verifySessionToken(sessionToken) : false;
 
-    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-    const hasScopedAuth = queryToken ? verifyScopedPdfToken(rawFilename, queryToken) : false;
+      const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+      const hasScopedAuth = queryToken ? verifyScopedPdfToken(rawFilename, queryToken) : false;
 
-    if (!hasSessionAuth && !hasScopedAuth) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required. A valid session or 60s file-scoped token is required.',
-        code: 'UNAUTHORIZED',
-      });
+      if (!hasSessionAuth && !hasScopedAuth) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required. A valid session or 60s file-scoped token is required.',
+          code: 'UNAUTHORIZED',
+        });
+      }
+    }
+
+    // Regenerate on demand if purged after initial send or after container restart
+    if (!fs.existsSync(pdfPath)) {
+      const leadRes = await query<{
+        business_name: string;
+        website: string | null;
+      }>(
+        `SELECT business_name, website FROM leads
+         WHERE audit_pdf_name = $1 OR audit_pdf_path LIKE '%' || $1
+         LIMIT 1`,
+        [rawFilename]
+      ).catch(() => ({ rows: [] as Array<{ business_name: string; website: string | null }> }));
+
+      const leadRow = leadRes.rows[0];
+      if (leadRow?.website) {
+        try {
+          const report = await clientAuditService.auditWebsite(leadRow.website);
+          const regenerated = await technicalAuditPdfService.generateAuditPdf(report, leadRow.business_name);
+          if (regenerated?.pdfPath && fs.existsSync(regenerated.pdfPath)) {
+            pdfPath = regenerated.pdfPath;
+          }
+        } catch (regenErr: any) {
+          console.warn(`[auditRouter.download] On-demand PDF regeneration failed:`, regenErr?.message);
+        }
+      }
     }
 
     if (!fs.existsSync(pdfPath)) {

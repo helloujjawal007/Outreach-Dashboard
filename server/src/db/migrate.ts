@@ -411,6 +411,102 @@ export async function runMigrations() {
       -- Pause or purge non-primary inboxes so all 5 virtual slots route through cloudconsultancy.ad@gmail.com
       UPDATE connected_inboxes SET is_default = false, status = 'paused' WHERE email != 'cloudconsultancy.ad@gmail.com';
 
+      -- Slot-wise outreach sending history (exact message, list name & lead count, slot, PDF)
+      CREATE TABLE IF NOT EXISTS slot_send_history (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        slot_id VARCHAR(4) NOT NULL,
+        lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+        list_id UUID REFERENCES lists(id) ON DELETE SET NULL,
+        list_name VARCHAR(255) NOT NULL DEFAULT 'Direct CRM Leads',
+        list_total_leads INTEGER NOT NULL DEFAULT 0,
+        business_name VARCHAR(255) NOT NULL DEFAULT '',
+        recipient_email VARCHAR(255),
+        recipient_phone VARCHAR(64),
+        mailbox_email VARCHAR(255),
+        channel VARCHAR(20) NOT NULL DEFAULT 'email',
+        stage VARCHAR(50) NOT NULL DEFAULT 'initial',
+        subject TEXT DEFAULT '',
+        message_body TEXT NOT NULL DEFAULT '',
+        pdf_filename VARCHAR(255),
+        status VARCHAR(20) NOT NULL DEFAULT 'sent',
+        error_message TEXT,
+        external_message_id VARCHAR(255),
+        sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_slot_send_history_slot_sent ON slot_send_history(slot_id, sent_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_slot_send_history_list_sent ON slot_send_history(list_id, sent_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_slot_send_history_lead_id ON slot_send_history(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_slot_send_history_sent_at ON slot_send_history(sent_at DESC);
+
+      -- Safe one-time idempotent backfill from prior outbound messages
+      INSERT INTO slot_send_history (
+        slot_id,
+        lead_id,
+        list_id,
+        list_name,
+        list_total_leads,
+        business_name,
+        recipient_email,
+        recipient_phone,
+        mailbox_email,
+        channel,
+        stage,
+        subject,
+        message_body,
+        pdf_filename,
+        status,
+        external_message_id,
+        sent_at
+      )
+      SELECT
+        COALESCE(NULLIF(l.slot_id, ''), 'A') AS slot_id,
+        l.id AS lead_id,
+        lst.id AS list_id,
+        COALESCE(lst.name, 'Direct CRM Leads') AS list_name,
+        COALESCE(lst.total_leads, 1) AS list_total_leads,
+        COALESCE(l.business_name, '') AS business_name,
+        l.email AS recipient_email,
+        COALESCE(NULLIF(l.whatsapp, ''), l.phone) AS recipient_phone,
+        NULLIF(m.inbox_email, '') AS mailbox_email,
+        m.channel AS channel,
+        COALESCE(NULLIF(m.metadata->>'stage', ''), NULLIF(l.outreach_stage, ''), 'initial') AS stage,
+        COALESCE(NULLIF(c.subject, ''), 'Outreach Follow-Up') AS subject,
+        COALESCE(m.text, '') AS message_body,
+        NULLIF(l.audit_pdf_name, '') AS pdf_filename,
+        CASE WHEN m.status = 'failed' THEN 'failed' ELSE 'sent' END AS status,
+        NULLIF(m.external_id, '') AS external_message_id,
+        COALESCE(m.sent_at, m.created_at) AS sent_at
+      FROM messages m
+      JOIN conversations c ON c.id = m.conversation_id
+      JOIN leads l ON l.id = c.lead_id
+      LEFT JOIN LATERAL (
+        SELECT
+          li.id,
+          li.name,
+          (
+            SELECT COUNT(*)::int
+            FROM lead_list_memberships llm2
+            JOIN leads l2 ON l2.id = llm2.lead_id
+            WHERE llm2.list_id = li.id AND l2.deleted_at IS NULL
+          ) AS total_leads
+        FROM lead_list_memberships llm
+        JOIN lists li ON li.id = llm.list_id
+        WHERE llm.lead_id = l.id
+        ORDER BY
+          CASE
+            WHEN li.name NOT IN ('Email Leads', 'WhatsApp Leads', 'Website Leads', 'Invalid List') THEN 0
+            ELSE 1
+          END ASC,
+          llm.added_at DESC
+        LIMIT 1
+      ) lst ON true
+      WHERE m.direction = 'outbound'
+        AND m.channel IN ('email', 'whatsapp')
+        AND c.entity_type = 'lead'
+        AND NOT EXISTS (SELECT 1 FROM slot_send_history);
+
       -- Performance indexes
       CREATE INDEX IF NOT EXISTS idx_leads_deleted_at ON leads(deleted_at);
       CREATE INDEX IF NOT EXISTS idx_leads_batch_id ON leads(batch_id);

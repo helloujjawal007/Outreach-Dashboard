@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/services/api';
-import type { SlotStatus, SlotSenderSettings, SlotId } from '@/types';
+import type { SlotStatus, SlotSenderSettings, SlotId, SlotHistoryResponse } from '@/types';
 import {
   Clock,
   Mail,
@@ -20,6 +20,7 @@ import {
   FileText,
   Send,
   CheckCircle2,
+  History,
 } from 'lucide-react';
 
 export function SlotsPanel() {
@@ -40,6 +41,11 @@ export function SlotsPanel() {
   const [showSettings, setShowSettings] = useState(false);
   const isSettingsOpenRef = useRef(false);
   const [expandedSlot, setExpandedSlot] = useState<SlotId | null>(null);
+  const [historyData, setHistoryData] = useState<SlotHistoryResponse | null>(null);
+  const [historySlotFilter, setHistorySlotFilter] = useState<'all' | SlotId>('all');
+  const [historyListFilter, setHistoryListFilter] = useState<string>('all');
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   
   // Settings Form State
   const [cycleMinInput, setCycleMinInput] = useState('10');
@@ -131,14 +137,39 @@ export function SlotsPanel() {
     }
   }, []);
 
+  const fetchHistory = useCallback(async (opts?: { slot?: 'all' | SlotId; list?: string }) => {
+    setLoadingHistory(true);
+    try {
+      const slot = opts?.slot ?? historySlotFilter;
+      const list = opts?.list ?? historyListFilter;
+      const res = await api.getSlotsHistory({
+        slotId: slot !== 'all' ? slot : undefined,
+        listId: list !== 'all' ? list : undefined,
+        limit: 150,
+      });
+      if (res) {
+        setHistoryData(res);
+      }
+    } catch (err: any) {
+      console.warn('[SlotsPanel] fetchHistory error:', err?.message);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [historySlotFilter, historyListFilter]);
+
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 10000);
+    fetchHistory();
+    const interval = setInterval(() => {
+      fetchStatus();
+      fetchHistory();
+    }, 10000);
     const clockInterval = setInterval(() => {
       setNowSec(Math.floor(Date.now() / 1000));
     }, 1000);
     const onSlotsUpdated = () => {
       fetchStatus();
+      fetchHistory();
     };
     window.addEventListener('od:slots-updated', onSlotsUpdated);
     return () => {
@@ -146,7 +177,7 @@ export function SlotsPanel() {
       clearInterval(clockInterval);
       window.removeEventListener('od:slots-updated', onSlotsUpdated);
     };
-  }, [fetchStatus]);
+  }, [fetchStatus, fetchHistory]);
 
   const handleTogglePause = async () => {
     setIsPausing(true);
@@ -772,13 +803,14 @@ export function SlotsPanel() {
       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {slots.map((s) => {
           const colors = slotColors[s.slotId] || slotColors.A;
-          const isActive = isActivelySending && activeSlotNow === s.slotId;
-          const countdown = isActivelySending ? formatCountdown(s.nextSendTime) : null;
+          const isSlotCompleted = s.status === 'completed';
+          const isActive = !isSlotCompleted && isActivelySending && (s.status === 'active' || activeSlotNow === s.slotId);
+          const countdown = isActivelySending && !isSlotCompleted ? formatCountdown(s.nextSendTime) : null;
 
           return (
             <div
               key={s.slotId}
-              className={`rounded-xl border ${colors.border} ${colors.bg} p-3.5 relative flex flex-col justify-between transition-all ${
+              className={`rounded-xl border ${isSlotCompleted ? 'border-emerald-300 bg-emerald-50/40' : `${colors.border} ${colors.bg}`} p-3.5 relative flex flex-col justify-between transition-all ${
                 isActive ? 'ring-2 ring-indigo-500 shadow-sm' : ''
               }`}
             >
@@ -798,7 +830,12 @@ export function SlotsPanel() {
                   </div>
                 </div>
 
-                {!isSenderActive ? (
+                {isSlotCompleted ? (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <CheckCircle2 size={10} />
+                    Completed
+                  </span>
+                ) : !isSenderActive ? (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-800">
                     Stopped
                   </span>
@@ -868,11 +905,13 @@ export function SlotsPanel() {
                 {expandedSlot === s.slotId ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
 
-              {/* Next turn timestamp */}
+              {/* Next turn timestamp / Completed state */}
               <div className="mt-2.5 pt-1.5 border-t border-slate-200/60 text-[10px] text-slate-400 flex items-center justify-between">
-                <span>Next turn:</span>
-                <span className="font-mono font-medium text-slate-600">
-                  {!isSenderActive
+                <span>{isSlotCompleted ? 'Status:' : 'Next turn:'}</span>
+                <span className={`font-mono font-medium ${isSlotCompleted ? 'text-emerald-700 font-bold' : 'text-slate-600'}`}>
+                  {isSlotCompleted
+                    ? `Completed (${s.leads_done ?? s.sentCount}/${s.leads_assigned ?? s.sentCount})`
+                    : !isSenderActive
                     ? 'Stopped'
                     : !isActivelySending
                     ? 'Standby'
@@ -1014,6 +1053,316 @@ export function SlotsPanel() {
           })()}
         </div>
       )}
+
+      {/* Slot Sending History & All Lists Breakdown */}
+      <div className="mt-5 pt-4 border-t border-slate-200 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+              <History size={14} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 leading-tight">
+                Slot Sending History &amp; List Breakdown
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                All outreach lists with lead counts, per-slot A–E completion, and exact messages sent per slot
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => fetchHistory()}
+            disabled={loadingHistory}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors"
+          >
+            <RefreshCw size={12} className={loadingHistory ? 'animate-spin' : ''} />
+            Refresh History
+          </button>
+        </div>
+
+        {/* All Lists Summary Table */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 overflow-hidden">
+          <div className="px-3.5 py-2 border-b border-slate-200 bg-white flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Layers size={13} className="text-indigo-600" />
+              All Lists ({historyData?.listsSummary?.length ?? 0})
+            </span>
+            {historyListFilter !== 'all' && (
+              <button
+                onClick={() => setHistoryListFilter('all')}
+                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800"
+              >
+                Show All Lists
+              </button>
+            )}
+          </div>
+
+          {!historyData || historyData.listsSummary.length === 0 ? (
+            <div className="p-4 text-xs text-slate-500 text-center">
+              No lists found yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100/80 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-2 font-bold">List Name</th>
+                    <th className="px-3 py-2 font-bold text-right">Total Leads</th>
+                    <th className="px-3 py-2 font-bold text-right">Sent</th>
+                    <th className="px-3 py-2 font-bold text-right">Pending</th>
+                    <th className="px-3 py-2 font-bold">Slot Breakdown (A–E)</th>
+                    <th className="px-3 py-2 font-bold text-right">Last Sent</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/70 bg-white">
+                  {historyData.listsSummary.map((lst) => {
+                    const key = lst.listId || '__direct__';
+                    const isSelected = historyListFilter === key;
+                    return (
+                      <tr
+                        key={key}
+                        onClick={() => setHistoryListFilter(isSelected ? 'all' : key)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected ? 'bg-indigo-50/80' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="px-3 py-2 font-semibold text-slate-900">
+                          <div className="flex items-center gap-1.5">
+                            <span>{lst.listName}</span>
+                            {isSelected && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700">
+                                Filtered
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-bold text-slate-800">
+                          {lst.totalLeads}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-emerald-700">
+                          {lst.sentCount}
+                          {lst.failedCount > 0 && (
+                            <span className="text-rose-600 ml-1">({lst.failedCount} failed)</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-slate-600">
+                          {lst.pendingCount}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap gap-1">
+                            {(['A', 'B', 'C', 'D', 'E'] as SlotId[]).map((sid) => {
+                              const sb = lst.slots[sid];
+                              if (!sb || (sb.assigned === 0 && sb.sent === 0 && sb.failed === 0)) {
+                                return (
+                                  <span
+                                    key={sid}
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-400"
+                                  >
+                                    {sid}:0
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span
+                                  key={sid}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border ${
+                                    sb.completed
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  }`}
+                                  title={`Slot ${sid}: ${sb.sent} sent, ${sb.remaining} pending of ${sb.assigned} assigned`}
+                                >
+                                  {sid}:{sb.sent}/{sb.assigned || sb.sent}
+                                  {sb.completed ? ' ✓' : ''}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right text-[11px] text-slate-500 whitespace-nowrap">
+                          {lst.lastSentAt
+                            ? new Date(lst.lastSentAt).toLocaleString([], {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Slot Filter Tabs & Message Log */}
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div className="px-3.5 py-2.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(['all', 'A', 'B', 'C', 'D', 'E'] as const).map((tab) => {
+                const agg = tab === 'all'
+                  ? null
+                  : historyData?.slotSummaries?.find((s) => s.slotId === tab);
+                const totalSent = tab === 'all'
+                  ? (historyData?.slotSummaries?.reduce((acc, s) => acc + s.totalSent, 0) ?? 0)
+                  : (agg?.totalSent ?? 0);
+                const active = historySlotFilter === tab;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setHistorySlotFilter(tab)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                      active
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {tab === 'all' ? 'All Slots' : `Slot ${tab}`} ({totalSent})
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={historyListFilter}
+                onChange={(e) => setHistoryListFilter(e.target.value)}
+                className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-[11px] text-slate-700"
+              >
+                <option value="all">All Lists</option>
+                {(historyData?.listsSummary || []).map((lst) => {
+                  const val = lst.listId || '__direct__';
+                  return (
+                    <option key={val} value={val}>
+                      {lst.listName} ({lst.totalLeads} leads)
+                    </option>
+                  );
+                })}
+              </select>
+              <span className="text-[11px] text-slate-500 font-medium">
+                {historyData?.totalEntries ?? 0} logs
+              </span>
+            </div>
+          </div>
+
+          {!historyData || historyData.entries.length === 0 ? (
+            <div className="p-6 text-center text-xs text-slate-500">
+              No outreach messages logged for the selected slot/list filters yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 max-h-[460px] overflow-y-auto">
+              {historyData.entries.map((entry) => {
+                const slotPalette = slotColors[entry.slotId] || slotColors.A;
+                const isExpanded = expandedHistoryId === entry.id;
+                return (
+                  <div key={entry.id} className="p-3 hover:bg-slate-50/70 transition-colors">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <span
+                          className={`h-6 w-6 rounded-md ${slotPalette.badge} text-white font-black text-xs flex items-center justify-center shrink-0 mt-0.5`}
+                        >
+                          {entry.slotId}
+                        </span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-900">
+                              {entry.businessName || 'Lead'}
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-mono truncate">
+                              {entry.recipientEmail || entry.recipientPhone || '—'}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                              List: {entry.listName} ({entry.listTotalLeads} leads)
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold uppercase">
+                              {entry.stage.replace('_', ' ')}
+                            </span>
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                entry.status === 'sent'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {entry.status}
+                            </span>
+                            {entry.pdfFilename && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-medium">
+                                <FileText size={10} />
+                                {entry.pdfFilename}
+                              </span>
+                            )}
+                          </div>
+
+                          {entry.subject && (
+                            <div className="text-xs font-semibold text-slate-800">
+                              Subject: <span className="font-medium text-slate-700">{entry.subject}</span>
+                            </div>
+                          )}
+
+                          {entry.messageBody && !isExpanded && (
+                            <p className="text-[11px] text-slate-600 line-clamp-2 whitespace-pre-line">
+                              {entry.messageBody}
+                            </p>
+                          )}
+
+                          {entry.errorMessage && (
+                            <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1">
+                              Error: {entry.errorMessage}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {new Date(entry.sentAt).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        {entry.mailboxEmail && (
+                          <span className="text-[10px] text-slate-500 truncate max-w-[180px]" title={entry.mailboxEmail}>
+                            via {entry.mailboxEmail}
+                          </span>
+                        )}
+                        {entry.messageBody && (
+                          <button
+                            onClick={() => setExpandedHistoryId(isExpanded ? null : entry.id)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <ChevronUp size={11} /> Hide Message
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown size={11} /> Full Message
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isExpanded && entry.messageBody && (
+                      <div className="mt-2 ml-8 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed font-sans">
+                        {entry.messageBody}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Terminate Schedule Confirmation Modal */}
       {showTerminateModal && (

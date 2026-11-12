@@ -88,8 +88,66 @@ export interface SlotStatus {
   in_flight: boolean;
   leads_assigned: number;
   leads_done: number;
-  status: 'active' | 'waiting' | 'idle';
+  status: 'active' | 'waiting' | 'completed' | 'idle';
   leads?: SlotLeadMilestone[];
+}
+
+export interface SlotSendHistoryEntry {
+  id: string;
+  slotId: SlotId;
+  leadId: string | null;
+  listId: string | null;
+  listName: string;
+  listTotalLeads: number;
+  businessName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  mailboxEmail: string | null;
+  channel: string;
+  stage: string;
+  subject: string;
+  messageBody: string;
+  pdfFilename: string | null;
+  status: 'sent' | 'failed';
+  errorMessage: string | null;
+  externalMessageId: string | null;
+  sentAt: string;
+}
+
+export interface SlotListSlotBreakdown {
+  slotId: SlotId;
+  assigned: number;
+  sent: number;
+  failed: number;
+  remaining: number;
+  completed: boolean;
+}
+
+export interface SlotListSummary {
+  listId: string | null;
+  listName: string;
+  totalLeads: number;
+  sentCount: number;
+  failedCount: number;
+  pendingCount: number;
+  lastSentAt: string | null;
+  slots: Record<SlotId, SlotListSlotBreakdown>;
+}
+
+export interface SlotHistorySummaryItem {
+  slotId: SlotId;
+  assignedMailboxEmail: string;
+  totalSent: number;
+  totalFailed: number;
+  lastSentAt: string | null;
+  status: 'active' | 'waiting' | 'completed' | 'idle';
+}
+
+export interface SlotHistoryResponse {
+  listsSummary: SlotListSummary[];
+  slotSummaries: SlotHistorySummaryItem[];
+  entries: SlotSendHistoryEntry[];
+  totalEntries: number;
 }
 
 export class FiveSlotSenderService {
@@ -2030,6 +2088,11 @@ export class FiveSlotSenderService {
           if (filterTestBatch) {
             queryParams.push(filterTestBatch);
           }
+          let unassignedScopeClause = '';
+          if (scopedListId && !filterTestBatch) {
+            queryParams.push(scopedListId);
+            unassignedScopeClause = ` AND id IN (SELECT lead_id FROM lead_list_memberships WHERE list_id = $${queryParams.length})`;
+          }
 
           const candidateQuery = await query<{
             id: string;
@@ -2057,7 +2120,7 @@ export class FiveSlotSenderService {
              WHERE deleted_at IS NULL
                AND (status = 'active' OR status = 'queued' OR status IS NULL)
                AND (consent_status = 'none' OR consent_status IS NULL)
-               AND (slot_id = $1 OR (slot_id IS NULL AND $1 = 'A'))
+               AND (slot_id = $1 OR (slot_id IS NULL AND $1 = 'A'${unassignedScopeClause}))
                AND (outreach_stage IS NULL OR outreach_stage NOT IN ('sending', 'completed', 'followup_3', 'skipped_no_opportunity'))
                AND (
                  ((outreach_stage IS NULL OR outreach_stage = 'initial') AND (last_contacted_at IS NULL OR last_contacted_at <= NOW() - INTERVAL '24 hours' OR $2 = true))
@@ -2348,6 +2411,27 @@ export class FiveSlotSenderService {
               this.lastGlobalSentEpochMs = now.getTime();
               dispatchedLeadIds.push(candidate.id);
               await query(`UPDATE leads SET transient_retry_count = 0, send_retry_count = 0 WHERE id = $1`, [candidate.id]);
+              const dispatchedChannels = result.channelsDispatched && result.channelsDispatched.length > 0
+                ? result.channelsDispatched
+                : ['email'];
+              for (const ch of dispatchedChannels) {
+                await this.recordSlotSendHistory({
+                  slotId: activeSlot,
+                  leadId: candidate.id,
+                  businessName: candidate.business_name,
+                  recipientEmail: candidate.email || null,
+                  recipientPhone: candidate.whatsapp || candidate.phone || null,
+                  mailboxEmail: result.mailboxEmail || null,
+                  channel: ch,
+                  stage: result.stage || prevStage || 'initial',
+                  subject: ch === 'email' ? (result.subject || '') : '',
+                  messageBody: result.body || '',
+                  pdfFilename: ch === 'email' ? (result.pdfFilename || candidate.audit_pdf_name || null) : null,
+                  status: 'sent',
+                  externalMessageId: ch === 'email' ? (result.externalMessageId || null) : null,
+                  preferredListId: scopedListId || null,
+                });
+              }
               console.log(`[FiveSlotSenderService] ✅ Slot ${activeSlot} successfully sent to "${candidate.business_name}" [${result.stageLabel}].`);
               logPipeline(
                 'EMAIL_SENT',
@@ -2373,10 +2457,41 @@ export class FiveSlotSenderService {
               lastSkipReason = result.reason || 'Lead skipped (completed/replied/opted out)';
             } else {
               console.warn(`[FiveSlotSenderService] Slot ${activeSlot} send failed for lead ${candidate.id}: ${result.reason}`);
+              await this.recordSlotSendHistory({
+                slotId: activeSlot,
+                leadId: candidate.id,
+                businessName: candidate.business_name,
+                recipientEmail: candidate.email || null,
+                recipientPhone: candidate.whatsapp || candidate.phone || null,
+                mailboxEmail: result.mailboxEmail || null,
+                channel: candidate.email ? 'email' : 'whatsapp',
+                stage: result.stage || prevStage || 'initial',
+                subject: result.subject || '',
+                messageBody: result.body || '',
+                pdfFilename: result.pdfFilename || candidate.audit_pdf_name || null,
+                status: 'failed',
+                errorMessage: result.reason || 'Send failed in stage outreach service',
+                preferredListId: scopedListId || null,
+              });
               lastFailureResult = await this.handleDispatchFailure(candidate, prevStage, activeSlot, result.reason || 'Send failed in stage outreach service');
             }
           } catch (sendErr: any) {
             console.error(`[FiveSlotSenderService] Dispatch exception for lead ${candidate.id}:`, sendErr?.message);
+            await this.recordSlotSendHistory({
+              slotId: activeSlot,
+              leadId: candidate.id,
+              businessName: candidate.business_name,
+              recipientEmail: candidate.email || null,
+              recipientPhone: candidate.whatsapp || candidate.phone || null,
+              channel: candidate.email ? 'email' : 'whatsapp',
+              stage: prevStage || 'initial',
+              subject: '',
+              messageBody: '',
+              pdfFilename: candidate.audit_pdf_name || null,
+              status: 'failed',
+              errorMessage: sendErr?.message || 'SMTP or dispatch exception',
+              preferredListId: scopedListId || null,
+            });
             lastFailureResult = await this.handleDispatchFailure(candidate, prevStage, activeSlot, sendErr?.message || 'SMTP or dispatch exception');
           }
         }
@@ -2964,6 +3079,12 @@ export class FiveSlotSenderService {
       const lastTurnAt = turn.lastTurnAt;
       const nextTurnAt = this.computeNextTurnAt(now, grid.slotTimes[slotId], lastTurnAt, cycleMs);
 
+      const isSlotCompleted =
+        !turn.inFlight &&
+        data.leadsAssigned > 0 &&
+        data.waitingCount === 0 &&
+        data.dueFollowup === 0;
+
       slots.push({
         slotId,
         assignedMailbox: {
@@ -2985,7 +3106,11 @@ export class FiveSlotSenderService {
         in_flight: turn.inFlight,
         leads_assigned: data.leadsAssigned,
         leads_done: data.leadsDone,
-        status: turn.inFlight || (schedulerState === 'active' && grid.currentActiveSlot === slotId)
+        status: turn.inFlight
+          ? 'active'
+          : isSlotCompleted
+          ? 'completed'
+          : schedulerState === 'active' && grid.currentActiveSlot === slotId
           ? 'active'
           : schedulerState !== 'active'
           ? 'idle'
@@ -3118,6 +3243,376 @@ export class FiveSlotSenderService {
         console.error('[FiveSlotSenderService] Scheduler tick error:', err?.message);
       });
     }, intervalMs);
+  }
+
+  async recordSlotSendHistory(params: {
+    slotId: SlotId;
+    leadId: string;
+    businessName: string;
+    recipientEmail?: string | null;
+    recipientPhone?: string | null;
+    mailboxEmail?: string | null;
+    channel?: string;
+    stage: string;
+    subject?: string | null;
+    messageBody?: string | null;
+    pdfFilename?: string | null;
+    status: 'sent' | 'failed';
+    errorMessage?: string | null;
+    externalMessageId?: string | null;
+    preferredListId?: string | null;
+  }): Promise<void> {
+    try {
+      let resolvedList: { id: string | null; name: string; total_leads: number } | null = null;
+
+      if (params.preferredListId) {
+        const prefRes = await query<{ id: string; name: string; total_leads: number }>(
+          `SELECT li.id, li.name,
+             (
+               SELECT COUNT(*)::int
+               FROM lead_list_memberships llm2
+               JOIN leads l2 ON l2.id = llm2.lead_id
+               WHERE llm2.list_id = li.id AND l2.deleted_at IS NULL
+             ) AS total_leads
+           FROM lists li
+           WHERE li.id = $1
+             AND EXISTS (
+               SELECT 1 FROM lead_list_memberships llm
+               WHERE llm.list_id = li.id AND llm.lead_id = $2
+             )
+           LIMIT 1`,
+          [params.preferredListId, params.leadId]
+        );
+        if (prefRes.rows[0]) {
+          resolvedList = prefRes.rows[0];
+        }
+      }
+
+      if (!resolvedList) {
+        const memRes = await query<{ id: string; name: string; total_leads: number }>(
+          `SELECT li.id, li.name,
+             (
+               SELECT COUNT(*)::int
+               FROM lead_list_memberships llm2
+               JOIN leads l2 ON l2.id = llm2.lead_id
+               WHERE llm2.list_id = li.id AND l2.deleted_at IS NULL
+             ) AS total_leads
+           FROM lead_list_memberships llm
+           JOIN lists li ON li.id = llm.list_id
+           WHERE llm.lead_id = $1
+           ORDER BY
+             CASE
+               WHEN li.name NOT IN ('Email Leads', 'WhatsApp Leads', 'Website Leads', 'Invalid List') THEN 0
+               WHEN li.name = 'Website Leads' THEN 1
+               WHEN li.name = 'Email Leads' THEN 2
+               WHEN li.name = 'WhatsApp Leads' THEN 3
+               ELSE 4
+             END ASC,
+             llm.added_at DESC
+           LIMIT 1`,
+          [params.leadId]
+        );
+        if (memRes.rows[0]) {
+          resolvedList = memRes.rows[0];
+        }
+      }
+
+      const listId = resolvedList?.id || null;
+      const listName = resolvedList?.name || 'Direct CRM Leads';
+      const listTotalLeads = resolvedList ? Math.max(1, Number(resolvedList.total_leads || 0)) : 1;
+
+      let mailboxEmail = params.mailboxEmail || null;
+      if (!mailboxEmail && params.channel !== 'whatsapp') {
+        const idx = SLOTS.indexOf(params.slotId);
+        if (idx >= 0) {
+          const mailbox = await this.getMailboxForSlot(idx).catch(() => null);
+          mailboxEmail = mailbox?.email || null;
+        }
+      }
+
+      await query(
+        `INSERT INTO slot_send_history (
+           slot_id, lead_id, list_id, list_name, list_total_leads,
+           business_name, recipient_email, recipient_phone, mailbox_email,
+           channel, stage, subject, message_body, pdf_filename,
+           status, error_message, external_message_id, sent_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())`,
+        [
+          params.slotId,
+          params.leadId,
+          listId,
+          listName,
+          listTotalLeads,
+          params.businessName || '',
+          params.recipientEmail || null,
+          params.recipientPhone || null,
+          mailboxEmail,
+          params.channel || 'email',
+          params.stage || 'initial',
+          params.subject || '',
+          params.messageBody || '',
+          params.pdfFilename || null,
+          params.status,
+          params.errorMessage || null,
+          params.externalMessageId || null,
+        ]
+      );
+    } catch (histErr: any) {
+      console.warn(`[FiveSlotSenderService] Failed to record slot send history:`, histErr?.message);
+    }
+  }
+
+  async getSlotSendingHistory(filters?: {
+    slotId?: string;
+    listId?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<SlotHistoryResponse> {
+    const overview = await this.getSlotsStatus();
+
+    const listsRes = await query<{
+      id: string;
+      name: string;
+      total_leads: number;
+    }>(
+      `SELECT li.id, li.name,
+         COUNT(DISTINCT l.id) FILTER (WHERE l.deleted_at IS NULL)::int AS total_leads
+       FROM lists li
+       LEFT JOIN lead_list_memberships llm ON llm.list_id = li.id
+       LEFT JOIN leads l ON l.id = llm.lead_id
+       GROUP BY li.id, li.name, li.created_at
+       ORDER BY
+         CASE WHEN li.name NOT IN ('Email Leads', 'WhatsApp Leads', 'Website Leads', 'Invalid List') THEN 0 ELSE 1 END ASC,
+         li.created_at DESC`
+    );
+
+    const listSlotLeadRes = await query<{
+      list_id: string;
+      slot_id: SlotId;
+      assigned: number;
+      remaining: number;
+    }>(
+      `SELECT llm.list_id, l.slot_id,
+         COUNT(*)::int AS assigned,
+         COUNT(*) FILTER (
+           WHERE (l.status IN ('active', 'queued') OR l.status IS NULL)
+             AND (l.consent_status = 'none' OR l.consent_status IS NULL)
+             AND (l.outreach_stage IS NULL OR l.outreach_stage NOT IN ('followup_1', 'followup_2', 'followup_3', 'completed', 'skipped_no_opportunity'))
+         )::int AS remaining
+       FROM lead_list_memberships llm
+       JOIN leads l ON l.id = llm.lead_id
+       WHERE l.deleted_at IS NULL AND l.slot_id IS NOT NULL
+       GROUP BY llm.list_id, l.slot_id`
+    );
+
+    const listSlotHistRes = await query<{
+      list_key: string;
+      list_id: string | null;
+      list_name: string;
+      slot_id: SlotId;
+      recorded_total_leads: number;
+      sent_count: number;
+      failed_count: number;
+      last_sent_at: string | null;
+    }>(
+      `SELECT COALESCE(list_id::text, '__direct__') AS list_key,
+         list_id,
+         MAX(list_name) AS list_name,
+         slot_id,
+         MAX(list_total_leads)::int AS recorded_total_leads,
+         COUNT(*) FILTER (WHERE status = 'sent')::int AS sent_count,
+         COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_count,
+         MAX(sent_at) AS last_sent_at
+       FROM slot_send_history
+       GROUP BY COALESCE(list_id::text, '__direct__'), list_id, slot_id`
+    );
+
+    const makeEmptySlotsRecord = (): Record<SlotId, SlotListSlotBreakdown> => {
+      const rec = {} as Record<SlotId, SlotListSlotBreakdown>;
+      for (const s of SLOTS) {
+        rec[s] = { slotId: s, assigned: 0, sent: 0, failed: 0, remaining: 0, completed: false };
+      }
+      return rec;
+    };
+
+    const listMap = new Map<string, SlotListSummary>();
+    for (const row of listsRes.rows) {
+      listMap.set(row.id, {
+        listId: row.id,
+        listName: row.name,
+        totalLeads: row.total_leads,
+        sentCount: 0,
+        failedCount: 0,
+        pendingCount: 0,
+        lastSentAt: null,
+        slots: makeEmptySlotsRecord(),
+      });
+    }
+
+    for (const row of listSlotLeadRes.rows) {
+      const entry = listMap.get(row.list_id);
+      if (!entry || !SLOTS.includes(row.slot_id)) continue;
+      entry.slots[row.slot_id].assigned = row.assigned;
+      entry.slots[row.slot_id].remaining = row.remaining;
+      entry.pendingCount += row.remaining;
+    }
+
+    for (const row of listSlotHistRes.rows) {
+      if (!SLOTS.includes(row.slot_id)) continue;
+      let entry = row.list_id ? listMap.get(row.list_id) : listMap.get(row.list_key);
+      if (!entry) {
+        entry = {
+          listId: row.list_id,
+          listName: row.list_name || 'Direct CRM Leads',
+          totalLeads: row.recorded_total_leads || 0,
+          sentCount: 0,
+          failedCount: 0,
+          pendingCount: 0,
+          lastSentAt: null,
+          slots: makeEmptySlotsRecord(),
+        };
+        listMap.set(row.list_id || row.list_key, entry);
+      } else if (entry.totalLeads === 0 && row.recorded_total_leads > 0) {
+        entry.totalLeads = row.recorded_total_leads;
+      }
+
+      entry.slots[row.slot_id].sent += row.sent_count;
+      entry.slots[row.slot_id].failed += row.failed_count;
+      entry.sentCount += row.sent_count;
+      entry.failedCount += row.failed_count;
+      if (row.last_sent_at && (!entry.lastSentAt || new Date(row.last_sent_at) > new Date(entry.lastSentAt))) {
+        entry.lastSentAt = row.last_sent_at;
+      }
+    }
+
+    const listsSummary: SlotListSummary[] = [];
+    for (const summary of listMap.values()) {
+      for (const s of SLOTS) {
+        const b = summary.slots[s];
+        b.completed = (b.assigned > 0 || b.sent > 0) && b.remaining === 0;
+      }
+      if (summary.listName === 'Invalid List' && summary.totalLeads === 0 && summary.sentCount === 0 && summary.failedCount === 0) {
+        continue;
+      }
+      listsSummary.push(summary);
+    }
+
+    const slotAggRes = await query<{
+      slot_id: SlotId;
+      total_sent: number;
+      total_failed: number;
+      last_sent_at: string | null;
+    }>(
+      `SELECT slot_id,
+         COUNT(*) FILTER (WHERE status = 'sent')::int AS total_sent,
+         COUNT(*) FILTER (WHERE status = 'failed')::int AS total_failed,
+         MAX(sent_at) AS last_sent_at
+       FROM slot_send_history
+       GROUP BY slot_id`
+    );
+
+    const slotAggMap = new Map(slotAggRes.rows.map((r) => [r.slot_id, r]));
+    const slotSummaries: SlotHistorySummaryItem[] = overview.slots.map((slot) => {
+      const agg = slotAggMap.get(slot.slotId);
+      return {
+        slotId: slot.slotId,
+        assignedMailboxEmail: slot.assignedMailbox.email,
+        totalSent: agg?.total_sent ?? 0,
+        totalFailed: agg?.total_failed ?? 0,
+        lastSentAt: agg?.last_sent_at || slot.lastSendTime || null,
+        status: slot.status,
+      };
+    });
+
+    const whereParts: string[] = [];
+    const params: any[] = [];
+    if (filters?.slotId && SLOTS.includes(filters.slotId.toUpperCase() as SlotId)) {
+      params.push(filters.slotId.toUpperCase());
+      whereParts.push(`slot_id = $${params.length}`);
+    }
+    if (filters?.listId) {
+      if (filters.listId === '__direct__') {
+        whereParts.push(`list_id IS NULL`);
+      } else {
+        params.push(filters.listId);
+        whereParts.push(`list_id = $${params.length}`);
+      }
+    }
+    if (filters?.status && (filters.status === 'sent' || filters.status === 'failed')) {
+      params.push(filters.status);
+      whereParts.push(`status = $${params.length}`);
+    }
+
+    const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : '';
+    const countRes = await query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM slot_send_history ${whereSql}`,
+      params
+    );
+    const totalEntries = countRes.rows[0]?.cnt ?? 0;
+
+    const limit = Math.min(500, Math.max(1, Number(filters?.limit || 150)));
+    const entryParams = [...params, limit];
+    const entriesRes = await query<{
+      id: string;
+      slot_id: SlotId;
+      lead_id: string | null;
+      list_id: string | null;
+      list_name: string;
+      list_total_leads: number;
+      business_name: string;
+      recipient_email: string | null;
+      recipient_phone: string | null;
+      mailbox_email: string | null;
+      channel: string;
+      stage: string;
+      subject: string;
+      message_body: string;
+      pdf_filename: string | null;
+      status: 'sent' | 'failed';
+      error_message: string | null;
+      external_message_id: string | null;
+      sent_at: string;
+    }>(
+      `SELECT id, slot_id, lead_id, list_id, list_name, list_total_leads,
+              business_name, recipient_email, recipient_phone, mailbox_email,
+              channel, stage, subject, message_body, pdf_filename,
+              status, error_message, external_message_id, sent_at
+       FROM slot_send_history
+       ${whereSql}
+       ORDER BY sent_at DESC
+       LIMIT $${entryParams.length}`,
+      entryParams
+    );
+
+    const entries: SlotSendHistoryEntry[] = entriesRes.rows.map((r) => ({
+      id: r.id,
+      slotId: r.slot_id,
+      leadId: r.lead_id,
+      listId: r.list_id,
+      listName: r.list_name,
+      listTotalLeads: r.list_total_leads,
+      businessName: r.business_name,
+      recipientEmail: r.recipient_email,
+      recipientPhone: r.recipient_phone,
+      mailboxEmail: r.mailbox_email,
+      channel: r.channel,
+      stage: r.stage,
+      subject: r.subject || '',
+      messageBody: r.message_body || '',
+      pdfFilename: r.pdf_filename,
+      status: r.status,
+      errorMessage: r.error_message,
+      externalMessageId: r.external_message_id,
+      sentAt: r.sent_at,
+    }));
+
+    return {
+      listsSummary,
+      slotSummaries,
+      entries,
+      totalEntries,
+    };
   }
 
   stopScheduler(): void {

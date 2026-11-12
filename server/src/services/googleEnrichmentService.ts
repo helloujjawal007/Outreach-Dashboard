@@ -227,15 +227,22 @@ export class GoogleEnrichmentService {
     rating = rating ?? 4.9;
     reviewsCount = reviewsCount ?? 0;
 
-    // Verify website is live and actually opening in backend
+    // Verify website is live (fallback to normalized GMB link when DNS resolves)
     let verifiedLiveWebsite: string | undefined = undefined;
     if (finalWebsite) {
-      try {
-        const liveCheck = await gmbScraperService.verifyWebsiteLive(finalWebsite);
-        if (liveCheck.isLive && liveCheck.verifiedUrl) {
-          verifiedLiveWebsite = liveCheck.verifiedUrl;
+      const normalizedUrl = gmbScraperService.normalizeGmbWebsiteUrl(finalWebsite);
+      if (normalizedUrl) {
+        try {
+          const liveCheck = await gmbScraperService.verifyWebsiteLive(normalizedUrl);
+          if (liveCheck.isLive && liveCheck.verifiedUrl) {
+            verifiedLiveWebsite = liveCheck.verifiedUrl;
+          } else if (liveCheck.dnsResolved !== false) {
+            verifiedLiveWebsite = normalizedUrl;
+          }
+        } catch (_) {
+          verifiedLiveWebsite = normalizedUrl;
         }
-      } catch (_) {}
+      }
     }
 
     const now = new Date().toISOString();

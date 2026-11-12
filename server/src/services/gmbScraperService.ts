@@ -316,39 +316,82 @@ export class GmbScraperService {
   }
 
   /**
+   * Unwraps Google Maps redirect wrappers (/url?q=...), ensures protocol,
+   * strips GMB tracking parameters, and validates business domain rules.
+   */
+  public normalizeGmbWebsiteUrl(rawUrl?: string | null): string {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+
+    let candidate = rawUrl.trim();
+    if (!candidate) return '';
+
+    if (candidate.startsWith('/url?') || candidate.startsWith('url?')) {
+      candidate = `https://www.google.com/${candidate.replace(/^\/+/, '')}`;
+    }
+
+    if (!/^https?:\/\//i.test(candidate)) {
+      candidate = `https://${candidate}`;
+    }
+
+    try {
+      const parsed = new URL(candidate);
+      if (
+        (parsed.hostname === 'google.com' || parsed.hostname.endsWith('.google.com')) &&
+        parsed.pathname === '/url'
+      ) {
+        const unwrapped = parsed.searchParams.get('q') || parsed.searchParams.get('url');
+        if (unwrapped) {
+          candidate = unwrapped.trim();
+          if (!/^https?:\/\//i.test(candidate)) {
+            candidate = `https://${candidate}`;
+          }
+        }
+      }
+
+      const finalUrl = new URL(candidate);
+      if (!['http:', 'https:'].includes(finalUrl.protocol)) return '';
+      if (!workflowRoutingService.hasValidWebsite(finalUrl.toString())) return '';
+
+      for (const param of [
+        'utm_source',
+        'utm_medium',
+        'utm_campaign',
+        'utm_content',
+        'utm_term',
+        'utm_id',
+        'gclid',
+        'fbclid',
+        'rwg_token',
+        'rclk',
+      ]) {
+        finalUrl.searchParams.delete(param);
+      }
+
+      const cleaned = finalUrl.toString();
+      return finalUrl.pathname === '/' && !finalUrl.search ? cleaned.replace(/\/$/, '') : cleaned;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Actively opens and verifies whether a website URL is genuinely live, resolving, and opening in the backend.
    * - Performs live DNS resolution to ensure hostname exists.
-   * - Sends an HTTP request with full browser headers and follow redirects.
-   * - If the website returns 200..399 or valid Cloudflare/WAF anti-bot challenge on live domain:
-   *   returns { isLive: true, verifiedUrl: finalUrl }
-   * - If the website fails DNS, returns 404, 500, dead link, connection refused, or timeout:
-   *   returns { isLive: false, verifiedUrl: '', error }
+   * - Sends an HTTP request with browser headers (8500ms timeout) + HEAD fallback on origin.
    */
-  public async verifyWebsiteLive(rawUrl: string): Promise<{ isLive: boolean; verifiedUrl: string; status?: number; error?: string }> {
-    if (!rawUrl || typeof rawUrl !== 'string') {
-      return { isLive: false, verifiedUrl: '', error: 'Empty URL' };
-    }
-
-    let targetUrl = rawUrl.trim();
-    if (!/^https?:\/\//i.test(targetUrl)) {
-      targetUrl = `https://${targetUrl}`;
-    }
-
-    if (!workflowRoutingService.hasValidWebsite(targetUrl)) {
-      return { isLive: false, verifiedUrl: '', error: 'Non-business or Google asset URL rejected' };
+  public async verifyWebsiteLive(
+    rawUrl: string
+  ): Promise<{ isLive: boolean; verifiedUrl: string; status?: number; error?: string; dnsResolved?: boolean }> {
+    const targetUrl = this.normalizeGmbWebsiteUrl(rawUrl);
+    if (!targetUrl) {
+      return { isLive: false, verifiedUrl: '', error: 'Empty, malformed, or non-business URL', dnsResolved: false };
     }
 
     let parsed: URL;
     try {
       parsed = new URL(targetUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        return { isLive: false, verifiedUrl: '', error: 'Unsupported protocol' };
-      }
-      if (parsed.hostname === 'localhost' || parsed.hostname.endsWith('.local') || !parsed.hostname.includes('.')) {
-        return { isLive: false, verifiedUrl: '', error: 'Invalid hostname' };
-      }
-    } catch (_e: any) {
-      return { isLive: false, verifiedUrl: '', error: 'Malformed URL' };
+    } catch {
+      return { isLive: false, verifiedUrl: '', error: 'Malformed URL', dnsResolved: false };
     }
 
     // 1. Live DNS Verification: check that the domain exists and resolves to an IP address (with 10-min cache)
@@ -359,14 +402,23 @@ export class GmbScraperService {
         await dns.lookup(parsed.hostname);
         this.dnsCache.set(parsed.hostname, { resolved: true, expires: now + 600000 });
       } catch (dnsErr: any) {
-        this.dnsCache.set(parsed.hostname, { resolved: false, expires: now + 600000 });
-        return { isLive: false, verifiedUrl: '', error: `DNS resolution failed: ${dnsErr.code || dnsErr.message}` };
+        const code = dnsErr?.code || '';
+        const isHardMissing = code === 'ENOTFOUND' || code === 'EAI_NONAME';
+        if (isHardMissing) {
+          this.dnsCache.set(parsed.hostname, { resolved: false, expires: now + 600000 });
+        }
+        return {
+          isLive: false,
+          verifiedUrl: '',
+          dnsResolved: isHardMissing ? false : undefined,
+          error: `DNS resolution failed: ${code || dnsErr.message}`,
+        };
       }
     } else if (!cachedDns.resolved) {
-      return { isLive: false, verifiedUrl: '', error: 'DNS resolution failed (cached)' };
+      return { isLive: false, verifiedUrl: '', dnsResolved: false, error: 'DNS resolution failed (cached)' };
     }
 
-    // 2. Fast HTTP connection check (opening the link in the backend with 3500ms timeout)
+    // 2. HTTP connection check (8500ms allows cross-region redirects & WordPress/CMS TTFB)
     const browserHeaders = {
       'User-Agent':
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -378,34 +430,38 @@ export class GmbScraperService {
       'Upgrade-Insecure-Requests': '1',
     };
 
-    try {
-      const res = await fetch(targetUrl, {
-        method: 'GET',
-        headers: browserHeaders,
-        redirect: 'follow',
-        signal: AbortSignal.timeout(3500),
-      });
+    const isAcceptableStatus = (status: number) =>
+      (status >= 200 && status < 400) || [401, 403, 405, 406, 429].includes(status);
 
-      const isLive = res.ok || (res.status >= 200 && res.status < 400) || res.status === 403;
-      if (isLive) {
-        let finalUrl = res.url || targetUrl;
-        try {
-          const u = new URL(finalUrl);
-          u.searchParams.delete('utm_source');
-          u.searchParams.delete('utm_medium');
-          u.searchParams.delete('utm_campaign');
-          u.searchParams.delete('utm_content');
-          u.searchParams.delete('rclk');
-          finalUrl = u.toString().replace(/\/$/, '') || finalUrl;
-        } catch (_) {}
+    let lastStatus: number | undefined;
+    let lastError = 'Connection failed';
 
-        return { isLive: true, verifiedUrl: finalUrl, status: res.status };
+    for (const attempt of [
+      { url: targetUrl, method: 'GET' as const, timeoutMs: 8500 },
+      { url: parsed.origin, method: 'HEAD' as const, timeoutMs: 5000 },
+    ]) {
+      try {
+        const res = await fetch(attempt.url, {
+          method: attempt.method,
+          headers: browserHeaders,
+          redirect: 'follow',
+          signal: AbortSignal.timeout(attempt.timeoutMs),
+        });
+        // Cancel body download immediately when checking reachability
+        res.body?.cancel().catch(() => {});
+        lastStatus = res.status;
+
+        if (res.ok || isAcceptableStatus(res.status)) {
+          const finalUrl = this.normalizeGmbWebsiteUrl(res.url || attempt.url) || targetUrl;
+          return { isLive: true, verifiedUrl: finalUrl, status: res.status, dnsResolved: true };
+        }
+        lastError = `HTTP ${res.status}`;
+      } catch (err: any) {
+        lastError = err?.message || 'Connection failed';
       }
-
-      return { isLive: false, verifiedUrl: '', status: res.status, error: `HTTP ${res.status}` };
-    } catch (err: any) {
-      return { isLive: false, verifiedUrl: '', error: err.message || 'Connection failed' };
     }
+
+    return { isLive: false, verifiedUrl: '', status: lastStatus, error: lastError, dnsResolved: true };
   }
 
   /**
@@ -574,27 +630,35 @@ export class GmbScraperService {
     // High-speed parallel verification of websites & genuine contact discovery
     console.log(`[GmbScraperService] ⚡ High-speed parallel verification & contact discovery for ${selected.length} listings...`);
     const enriched: ScrapedLeadItem[] = [];
-    const chunkSize = 25; // 5x concurrency boost for blazing-fast scraping
-
+    const chunkSize = 8; // Balanced concurrency prevents outbound TLS/socket timeout storms
 
     for (let i = 0; i < selected.length; i += chunkSize) {
       const chunk = selected.slice(i, i + chunkSize);
       const processedChunk = await Promise.all(
         chunk.map(async (item) => {
+          const normalizedGmbUrl = this.normalizeGmbWebsiteUrl(item.website);
           let verifiedWebsite = '';
+          let crawlTargetUrl = '';
 
           // Only test URL if one was genuinely provided by GMB
-          if (item.website) {
+          if (normalizedGmbUrl) {
             try {
-              const liveCheck = await this.verifyWebsiteLive(item.website);
+              const liveCheck = await this.verifyWebsiteLive(normalizedGmbUrl);
               if (liveCheck.isLive && liveCheck.verifiedUrl) {
                 verifiedWebsite = liveCheck.verifiedUrl;
+                crawlTargetUrl = liveCheck.verifiedUrl;
                 console.log(`[GmbScraperService] Verified live website for "${item.businessName}": ${verifiedWebsite} (Status: ${liveCheck.status || 'OK'})`);
+              } else if (liveCheck.dnsResolved !== false) {
+                // Keep valid GMB website link when HTTP check fails due to slow TTFB, timeout, or WAF/bot check
+                verifiedWebsite = normalizedGmbUrl;
+                crawlTargetUrl = normalizedGmbUrl;
+                console.log(`[GmbScraperService] Kept GMB website link for "${item.businessName}" despite HTTP probe notice (${liveCheck.error || 'unverified'}): ${verifiedWebsite}`);
               } else {
-                console.log(`[GmbScraperService] Website not opening for "${item.businessName}": ${item.website} (${liveCheck.error || 'unreachable'}). Setting website to empty.`);
+                console.log(`[GmbScraperService] Website DNS missing for "${item.businessName}": ${normalizedGmbUrl} (${liveCheck.error || 'NXDOMAIN'}). Setting website to empty.`);
               }
             } catch (err: any) {
-              console.warn(`[GmbScraperService] Website check exception for ${item.website}:`, err.message);
+              verifiedWebsite = normalizedGmbUrl;
+              console.warn(`[GmbScraperService] Website check exception for ${normalizedGmbUrl}, keeping GMB link:`, err.message);
             }
           }
 
@@ -602,10 +666,9 @@ export class GmbScraperService {
           let emailDiscovered = false;
           let emailSource: string | undefined = undefined;
 
-          // ONLY crawl website if it was verified live and opening in the backend!
-          if (verifiedWebsite) {
+          if (crawlTargetUrl) {
             try {
-              const { email } = await this.crawlWebsiteForContact(verifiedWebsite);
+              const { email } = await this.crawlWebsiteForContact(crawlTargetUrl);
               if (email) {
                 // Check email format & MX record
                 const emailValidation = await emailValidatorService.validateEmail(email);
@@ -614,17 +677,17 @@ export class GmbScraperService {
                   emailDiscovered = true;
                   emailSource = 'website_crawl';
                 } else {
-                  console.log(`[GmbScraperService] Email ${email} from ${verifiedWebsite} failed validation (${emailValidation.reason}). Discarded.`);
+                  console.log(`[GmbScraperService] Email ${email} from ${crawlTargetUrl} failed validation (${emailValidation.reason}). Discarded.`);
                 }
               }
             } catch (err: any) {
-              console.warn(`[GmbScraperService] Error crawling website ${verifiedWebsite}:`, err.message);
+              console.warn(`[GmbScraperService] Error crawling website ${crawlTargetUrl}:`, err.message);
             }
           }
 
           return {
             ...item,
-            website: verifiedWebsite, // Only added if URL is opening in backend!
+            website: verifiedWebsite,
             email: discoveredEmail || (item.email && this.isValidBusinessEmail(item.email) ? item.email : ''),
             emailDiscovered,
             emailSource,
@@ -878,20 +941,8 @@ export class GmbScraperService {
               website = findWebsite(b[8]) || findWebsite(b) || '';
             }
 
-            // Clean website URL
-            let cleanWeb = website.trim();
-            try {
-              if (cleanWeb) {
-                const u = new URL(cleanWeb);
-                if (!['http:', 'https:'].includes(u.protocol) || !workflowRoutingService.hasValidWebsite(cleanWeb)) {
-                  cleanWeb = '';
-                } else {
-                  cleanWeb = `${u.protocol}//${u.host}${u.pathname}${u.search}`;
-                }
-              }
-            } catch (_) {
-              cleanWeb = '';
-            }
+            // Clean & unwrap Google redirect website URLs (including bare domains / /url?q=...)
+            const cleanWeb = this.normalizeGmbWebsiteUrl(website);
 
             // Rating & Reviews
             let rating = 4.8;
@@ -1007,7 +1058,7 @@ export class GmbScraperService {
                 category: queryStr.split(' in ')[0] || 'Local Services',
                 phone: item.phone || '',
                 email: '',
-                website: item.website && workflowRoutingService.hasValidWebsite(item.website) ? item.website : '',
+                website: this.normalizeGmbWebsiteUrl(item.website),
                 address: item.address || queryStr.split(' in ')[1] || '',
                 country: targetCountry || 'USA',
                 rating: item.rating || 4.8,
@@ -1069,7 +1120,7 @@ export class GmbScraperService {
               'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             Accept: 'text/html,application/xhtml+xml',
           },
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(5000),
         });
 
         if (!res.ok) return '';
@@ -1277,7 +1328,7 @@ export class GmbScraperService {
       }
 
       const hasContactChannel = (Boolean(email) && email.includes('@')) || phoneDigits.length >= 8;
-      const validWebsiteUrl = item.website && workflowRoutingService.hasValidWebsite(item.website) ? item.website : null;
+      const validWebsiteUrl = this.normalizeGmbWebsiteUrl(item.website) || null;
 
       const googleProfile = {
         placeName: bName,

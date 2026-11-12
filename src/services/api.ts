@@ -49,6 +49,7 @@ import type {
   AiDiagnosticReport,
   SlotSenderSettings,
   SlotsOverviewResponse,
+  SlotHistoryResponse,
   FailureLogsResponse,
 } from '@/types';
 
@@ -1966,6 +1967,21 @@ export const api = {
   // 5-Slot Sender API
   async getSlotsStatus(): Promise<SlotsOverviewResponse> {
     return request<SlotsOverviewResponse>('/slots/status');
+  },
+
+  async getSlotsHistory(params?: {
+    slotId?: string;
+    listId?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<SlotHistoryResponse> {
+    const sp = new URLSearchParams();
+    if (params?.slotId) sp.set('slotId', params.slotId);
+    if (params?.listId) sp.set('listId', params.listId);
+    if (params?.status) sp.set('status', params.status);
+    if (params?.limit) sp.set('limit', String(params.limit));
+    const qs = sp.toString();
+    return request<SlotHistoryResponse>(`/slots/history${qs ? `?${qs}` : ''}`);
   },
 
   async updateSlotsSettings(settings: Partial<SlotSenderSettings>): Promise<{ success: boolean; settings: SlotSenderSettings }> {

@@ -24,6 +24,10 @@ export interface StageDispatchResult {
   stage: 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'completed';
   stageLabel: string;
   subject: string;
+  body?: string;
+  pdfFilename?: string;
+  mailboxEmail?: string;
+  externalMessageId?: string;
   success: boolean;
   liveDelivery?: string;
   skipped?: boolean;
@@ -730,6 +734,9 @@ export class StageOutreachService {
     const channelsDispatched: ('email' | 'whatsapp')[] = [];
     let emailResult: StageDispatchResult['emailResult'] = undefined;
     let whatsappResult: StageDispatchResult['whatsappResult'] = undefined;
+    let dispatchedPdfFilename: string | undefined = lead.audit_pdf_name || undefined;
+    let dispatchedMailboxEmail: string | undefined = undefined;
+    let dispatchedMessageId: string | undefined = undefined;
     let anySuccess = false;
 
     // 1. Channel: EMAIL DISPATCH
@@ -843,6 +850,9 @@ export class StageOutreachService {
         if (sendRes.success) {
           anySuccess = true;
           channelsDispatched.push('email');
+          dispatchedPdfFilename = attachments?.[0]?.filename || dispatchedPdfFilename;
+          dispatchedMailboxEmail = sendRes.inboxUsed?.email || dispatchedMailboxEmail;
+          dispatchedMessageId = sendRes.messageId || dispatchedMessageId;
           emailResult = {
             success: true,
             liveDelivery: sendRes.liveDelivery,
@@ -1054,6 +1064,10 @@ export class StageOutreachService {
         stage: stageInfo.stage,
         stageLabel: stageInfo.stageLabel,
         subject: stageInfo.subject,
+        body: stageInfo.body,
+        pdfFilename: dispatchedPdfFilename,
+        mailboxEmail: dispatchedMailboxEmail,
+        externalMessageId: dispatchedMessageId,
         success: true,
         channelsDispatched,
         liveDelivery: emailResult?.liveDelivery,
@@ -1081,6 +1095,9 @@ export class StageOutreachService {
       stage: stageInfo.stage,
       stageLabel: 'Need to Check',
       subject: stageInfo.subject,
+      body: stageInfo.body,
+      pdfFilename: dispatchedPdfFilename,
+      mailboxEmail: dispatchedMailboxEmail,
       success: false,
       reason: `Delivery failed: ${failureReason}. Lead has been removed from all lists and moved to 'Need to Check'.`,
       emailResult,

@@ -913,8 +913,67 @@ export interface SlotStatus {
   in_flight?: boolean;
   leads_assigned?: number;
   leads_done?: number;
-  status: 'active' | 'waiting' | 'idle';
+  status: 'active' | 'waiting' | 'completed' | 'idle';
   leads?: SlotLeadMilestone[];
+}
+
+export interface SlotSendHistoryEntry {
+  id: string;
+  slotId: SlotId;
+  leadId: string | null;
+  listId: string | null;
+  listName: string;
+  listTotalLeads: number;
+  businessName: string;
+  recipientEmail: string | null;
+  recipientPhone: string | null;
+  mailboxEmail: string | null;
+  channel: string;
+  stage: string;
+  subject: string;
+  messageBody: string;
+  pdfFilename: string | null;
+  status: 'sent' | 'failed';
+  errorMessage: string | null;
+  externalMessageId: string | null;
+  sentAt: string;
+}
+
+export interface SlotListSlotBreakdown {
+  slotId: SlotId;
+  assigned: number;
+  sent: number;
+  failed: number;
+  remaining: number;
+  completed: boolean;
+}
+
+export interface SlotListSummary {
+  listId: string | null;
+  listName: string;
+  totalLeads: number;
+  sentCount: number;
+  failedCount: number;
+  pendingCount: number;
+  lastSentAt: string | null;
+  slots: Record<SlotId, SlotListSlotBreakdown>;
+}
+
+export interface SlotHistorySummaryItem {
+  slotId: SlotId;
+  assignedMailboxEmail: string;
+  totalSent: number;
+  totalFailed: number;
+  lastSentAt: string | null;
+  status: 'active' | 'waiting' | 'completed' | 'idle';
+}
+
+export interface SlotHistoryResponse {
+  success?: boolean;
+  listsSummary: SlotListSummary[];
+  slotSummaries: SlotHistorySummaryItem[];
+  entries: SlotSendHistoryEntry[];
+  totalEntries: number;
 }
 
 export interface SlotsOverviewResponse {

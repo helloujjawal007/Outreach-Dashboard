@@ -163,3 +163,27 @@ slotsRouter.post('/test-td-connection', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * GET /api/slots/history
+ * Returns slot-wise sending history, all lists with total leads & per-slot breakdown, and exact sent message logs
+ */
+slotsRouter.get('/history', async (req: Request, res: Response) => {
+  try {
+    const slotId = typeof req.query.slotId === 'string' ? req.query.slotId : undefined;
+    const listId = typeof req.query.listId === 'string' ? req.query.listId : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
+
+    const history = await fiveSlotSenderService.getSlotSendingHistory({
+      slotId,
+      listId,
+      status,
+      limit: Number.isFinite(limit) ? limit : undefined,
+    });
+    res.json({ success: true, ...history });
+  } catch (err: any) {
+    console.error('[slotsRouter.history] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to fetch slot sending history' });
+  }
+});
+

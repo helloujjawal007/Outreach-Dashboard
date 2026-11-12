@@ -13,17 +13,6 @@
  */
 
 import { type GeneratedPdfResult } from './technicalAuditPdfService';
-import {
-  sitePageAuditService,
-  type MultiPageSeoAuditSummary,
-} from './sitePageAuditService';
-
-export type {
-  AuditedMajorPage,
-  DuplicateH1Cluster,
-  OfferedServiceSummary,
-  MultiPageSeoAuditSummary,
-} from './sitePageAuditService';
 
 export interface AuditCheckItem {
   id: string;
@@ -95,7 +84,6 @@ export interface ClientAuditReport {
   responseTimeMs: number;
   mobileFriendly: boolean;
   semrushAudit?: SemrushSiteAuditSummary;
-  multiPageAudit?: MultiPageSeoAuditSummary;
   crawlStatus?: AuditCrawlStatus;
   metrics?: AuditMetrics;
   checks: AuditCheckItem[];
@@ -191,7 +179,7 @@ export class ClientAuditIntelligenceService {
       let pathname = parsed.pathname.replace(/\/+$/, '');
       if (!pathname) pathname = '';
 
-      const normalizedUrl = `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
+      const normalizedUrl = `${parsed.protocol}//${parsed.hostname}${pathname}${parsed.search}`;
 
       return {
         normalizedUrl,
@@ -260,16 +248,7 @@ export class ClientAuditIntelligenceService {
 
       if (resp.ok) {
         const data = await resp.json();
-        const remoteReport = this.normalizeRemoteAuditData(normalizedUrl, domain, data);
-        if (!remoteReport.crawlStatus?.isParked) {
-          const multiPage = await sitePageAuditService
-            .analyzeSitePages(remoteReport.finalDestinationUrl || normalizedUrl, domain)
-            .catch(() => null);
-          if (multiPage) {
-            this.applyMultiPageAuditFindings(remoteReport, multiPage);
-          }
-        }
-        return remoteReport;
+        return this.normalizeRemoteAuditData(normalizedUrl, domain, data);
       }
     } catch (err) {
       console.warn(
@@ -916,34 +895,15 @@ export class ClientAuditIntelligenceService {
       score -= 10;
     }
 
-    // E. H1 Heading Tag (presence & single-H1 check on landing page)
-    const homeH1Matches = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi) || [];
-    const nonEmptyHomeH1s = homeH1Matches
-      .map((tag) => tag.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
-      .filter(Boolean);
-    if (nonEmptyHomeH1s.length > 1) {
-      checks.push({
-        id: 'h1',
-        label: 'H1 Header Tag',
-        category: 'on-page',
-        status: 'warn',
-        detail: `Homepage contains ${nonEmptyHomeH1s.length} H1 tags ("${nonEmptyHomeH1s.slice(0, 2).join('", "')}"). Expected 1 primary H1.`,
-      });
-      criticalIssues.push(`Multiple H1 tags (${nonEmptyHomeH1s.length}) detected on Homepage — dilutes primary keyword focus`);
-      recommendations.push({
-        priority: 'high',
-        title: 'Consolidate to One Unique H1 Per Page',
-        detail: 'Use a single semantic H1 defining the main service and target location, converting secondary headings to H2/H3.',
-        odsSolution: 'Cloud Consultancy Semantic HTML5 Heading Hierarchy & On-Page Keyword Alignment.',
-      });
-      score -= 8;
-    } else if (nonEmptyHomeH1s.length === 1) {
+    // E. H1 Heading Tag
+    const h1Match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+    if (h1Match && h1Match[1].replace(/<[^>]+>/g, '').trim()) {
       checks.push({
         id: 'h1',
         label: 'H1 Header Tag',
         category: 'on-page',
         status: 'pass',
-        detail: `Primary H1 tag detected ("${nonEmptyHomeH1s[0].slice(0, 80)}").`,
+        detail: 'Primary H1 tag detected.',
       });
     } else {
       checks.push({
@@ -1331,13 +1291,6 @@ export class ClientAuditIntelligenceService {
       criticalIssuesSummary.push(`${issue.title} (Affects ${issue.affectedPagesCount} pages) - ${issue.detail}`);
     });
 
-    // Include homepage-specific critical issues (e.g., Missing/Multiple H1, Missing Schema) too
-    for (const ci of criticalIssues) {
-      if (!criticalIssuesSummary.includes(ci)) {
-        criticalIssuesSummary.push(ci);
-      }
-    }
-
     const odsSolutions = [
       'Next.js SSR & Static Edge Deployment on Global CDN (sub-second LCP < 1.2s)',
       'Headless CMS & Decoupled Architecture eliminating monolithic script overhead',
@@ -1373,7 +1326,7 @@ export class ClientAuditIntelligenceService {
       isDnsFailure,
     };
 
-    const report: ClientAuditReport = {
+    return {
       targetUrl: url,
       finalDestinationUrl: finalUrl,
       domain: finalDomain,
@@ -1394,181 +1347,6 @@ export class ClientAuditIntelligenceService {
       summary: `Automated SEMrush-style whole site audit of ${finalDomain} scanned ${pagesCrawled}/100 pages with ${score}% Health Score. Discovered ${errorsCount} Critical Errors and ${warningsCount} Warnings.`,
       auditedAt: new Date().toISOString(),
     };
-
-    // Perform real multi-page crawl of Home + Main Service Pages for Duplicate H1s, Services Offered (up to 10) & Target Keywords
-    const multiPage = await sitePageAuditService
-      .analyzeSitePages(finalUrl, finalDomain, html, httpStatus)
-      .catch(() => null);
-    if (multiPage) {
-      this.applyMultiPageAuditFindings(report, multiPage);
-    }
-
-    return report;
-  }
-
-  /**
-   * Merges real multi-page H1 uniqueness, offered services (up to 10), and on-page keyword findings
-   * into both remote-assisted and local audit reports without paid SERP APIs.
-   */
-  private applyMultiPageAuditFindings(report: ClientAuditReport, multiPage: MultiPageSeoAuditSummary): void {
-    report.multiPageAudit = multiPage;
-
-    const pushUniqueCritical = (msg: string) => {
-      if (!report.criticalIssues.includes(msg)) {
-        // Insert right after the SEMrush summary banner if present so top takeaways surface real H1/keyword flaws
-        if (report.criticalIssues.length > 0 && /^SEMrush Site Audit/i.test(report.criticalIssues[0])) {
-          report.criticalIssues.splice(1, 0, msg);
-        } else {
-          report.criticalIssues.unshift(msg);
-        }
-      }
-    };
-
-    // 1. Cross-Page Duplicate H1 Check
-    if (multiPage.duplicateH1Clusters.length > 0) {
-      const top = multiPage.duplicateH1Clusters[0];
-      const samplePaths = top.paths.slice(0, 4).join(', ');
-      const detail = `Identical H1 ("${top.h1Text.slice(0, 75)}") is repeated across ${top.pagesCount} of ${multiPage.pagesAudited} audited pages (${samplePaths}${top.paths.length > 4 ? ', ...' : ''}). Each service page needs a unique keyword-targeted H1.`;
-
-      report.checks.push({
-        id: 'duplicate-h1',
-        label: 'Cross-Page H1 Uniqueness',
-        category: 'on-page',
-        status: 'fail',
-        detail,
-      });
-
-      if (report.semrushAudit) {
-        report.semrushAudit.errorsCount += multiPage.duplicateH1AcrossPagesCount;
-        report.semrushAudit.topSiteIssues.unshift({
-          type: 'error',
-          title: 'Duplicate <h1> Headings Repeated Across Multiple Pages',
-          affectedPagesCount: multiPage.duplicateH1AcrossPagesCount,
-          detail,
-        });
-      }
-
-      pushUniqueCritical(`Duplicate H1 tag ("${top.h1Text.slice(0, 60)}") repeated across ${top.pagesCount} pages (${samplePaths}) — weakens service-page keyword relevance`);
-
-      report.recommendations.unshift({
-        priority: 'high',
-        title: 'Assign Unique Service-Specific <h1> Headings Per Page',
-        detail,
-        odsSolution: 'Cloud Consultancy Semantic HTML5 Heading Hierarchy & Service-Page Keyword Alignment.',
-      });
-
-      report.overallScore = Math.max(25, report.overallScore - 10);
-    } else if (multiPage.pagesAudited >= 2) {
-      report.checks.push({
-        id: 'duplicate-h1',
-        label: 'Cross-Page H1 Uniqueness',
-        category: 'on-page',
-        status: 'pass',
-        detail: `No cross-page duplicate H1 tags found across ${multiPage.pagesAudited} key pages audited.`,
-      });
-    }
-
-    // 2. Multiple H1 Tags on Single Pages
-    if (multiPage.multipleH1PagesCount > 0) {
-      const msg = `${multiPage.multipleH1PagesCount} audited page(s) contain multiple <h1> tags — keep strictly one primary <h1> per URL`;
-      report.checks.push({
-        id: 'multiple-h1',
-        label: 'Single H1 Per Page',
-        category: 'on-page',
-        status: 'warn',
-        detail: msg,
-      });
-      if (report.semrushAudit) {
-        report.semrushAudit.warningsCount += multiPage.multipleH1PagesCount;
-        report.semrushAudit.topSiteIssues.push({
-          type: 'warning',
-          title: 'Multiple <h1> Tags on Single Pages',
-          affectedPagesCount: multiPage.multipleH1PagesCount,
-          detail: msg,
-        });
-      }
-      pushUniqueCritical(msg);
-      report.overallScore = Math.max(25, report.overallScore - 5);
-    }
-
-    // 3. Missing H1 on Key Subpages
-    if (multiPage.missingH1PagesCount > 0) {
-      const msg = `${multiPage.missingH1PagesCount} key page(s) lack a primary <h1> heading`;
-      if (report.semrushAudit) {
-        report.semrushAudit.warningsCount += multiPage.missingH1PagesCount;
-        report.semrushAudit.topSiteIssues.push({
-          type: 'warning',
-          title: 'Missing <h1> Tags on Key Service/Subpages',
-          affectedPagesCount: multiPage.missingH1PagesCount,
-          detail: msg,
-        });
-      }
-      pushUniqueCritical(msg);
-      report.overallScore = Math.max(25, report.overallScore - 4);
-    }
-
-    // 4. Real Cross-Page Duplicate <title> Detection
-    if (multiPage.duplicateTitlePagesCount > 0) {
-      const msg = `${multiPage.duplicateTitlePagesCount} crawled pages share identical <title> tags, risking internal keyword cannibalization.`;
-      if (report.semrushAudit) {
-        // Replace generic heuristic duplicate title issue if present
-        const existingIdx = report.semrushAudit.topSiteIssues.findIndex((i) => /duplicate.*title/i.test(i.title));
-        const issue = {
-          type: 'warning' as const,
-          title: 'Duplicate <title> Tags Across Crawled Pages',
-          affectedPagesCount: multiPage.duplicateTitlePagesCount,
-          detail: msg,
-        };
-        if (existingIdx >= 0) report.semrushAudit.topSiteIssues[existingIdx] = issue;
-        else report.semrushAudit.topSiteIssues.push(issue);
-      }
-    } else if (multiPage.pagesAudited >= 2 && report.semrushAudit) {
-      // Remove estimated duplicate title warning when verified unique titles across crawled pages
-      report.semrushAudit.topSiteIssues = report.semrushAudit.topSiteIssues.filter(
-        (i) => !/suboptimal \/ duplicate titles|duplicate or short title/i.test(i.title)
-      );
-    }
-
-    // 5. Offered Services & Target Keyword Alignment Check
-    const servicePagesMissingKwTitle = multiPage.majorPages.filter(
-      (p) => p.pageType === 'service' && p.targetKeywords.length > 0 && !p.keywordSignals.inTitle
-    );
-    if (servicePagesMissingKwTitle.length > 0) {
-      const sample = servicePagesMissingKwTitle.slice(0, 3).map((p) => `${p.serviceName} (${p.path})`).join(', ');
-      const detail = `${servicePagesMissingKwTitle.length} main service page(s) do not clearly align their <title> tag with their target service keywords: ${sample}.`;
-      report.checks.push({
-        id: 'service-keywords',
-        label: 'Service Page Keyword Alignment',
-        category: 'on-page',
-        status: 'warn',
-        detail,
-      });
-      if (report.semrushAudit) {
-        report.semrushAudit.topSiteIssues.push({
-          type: 'warning',
-          title: 'Service Pages Missing Target Keywords in <title>',
-          affectedPagesCount: servicePagesMissingKwTitle.length,
-          detail,
-        });
-      }
-    } else if (multiPage.offeredServices.length > 0) {
-      report.checks.push({
-        id: 'service-keywords',
-        label: 'Service Pages & Target Keywords',
-        category: 'on-page',
-        status: 'pass',
-        detail: `Extracted ${multiPage.offeredServices.length} offered services across ${multiPage.pagesAudited} audited major pages.`,
-      });
-    }
-
-    report.recommendations = report.recommendations.slice(0, 6);
-    report.grade = report.overallScore >= 80 ? 'Good' : report.overallScore >= 55 ? 'Needs Work' : 'Poor';
-    if (report.semrushAudit) {
-      report.semrushAudit.healthScore = report.overallScore;
-    }
-    report.auditKeyTakeaways =
-      report.criticalIssues.filter((c) => !/^SEMrush Site Audit/i.test(c)).slice(0, 2).join(' and ') ||
-      report.auditKeyTakeaways;
   }
 
   /**

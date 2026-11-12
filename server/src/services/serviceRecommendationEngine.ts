@@ -163,7 +163,7 @@ export class ServiceRecommendationEngine {
 
       // Technical SEO
       if (
-        /seo|meta description|title tag|open graph|schema\.org|structured data|json-ld|canonical|sitemap|indexing|robots\.txt|h1 tag|h1|duplicate h1|multiple h1|heading hierarchy|keyword|service page|alt attribute/i.test(
+        /seo|meta description|title tag|open graph|schema\.org|structured data|json-ld|canonical|sitemap|indexing|robots\.txt|h1 tag|alt attribute/i.test(
           lower
         )
       ) {

@@ -713,60 +713,6 @@ export interface SemrushSiteAuditSummary {
   topSiteIssues: SemrushSiteIssue[];
 }
 
-export interface AuditedMajorPage {
-  url: string;
-  path: string;
-  pageType: 'home' | 'service' | 'location' | 'about' | 'contact' | 'other';
-  serviceName: string;
-  httpStatus: number;
-  title: string;
-  titleLength: number;
-  metaDescriptionPresent: boolean;
-  h1s: string[];
-  primaryH1: string;
-  h1Count: number;
-  h2s: string[];
-  targetKeywords: string[];
-  keywordSignals: {
-    inTitle: boolean;
-    inH1: boolean;
-    inUrl: boolean;
-    inMetaDesc: boolean;
-  };
-  duplicateH1Group?: string;
-  duplicateH1PagesCount?: number;
-  duplicateTitle?: boolean;
-  issues: string[];
-}
-
-export interface DuplicateH1Cluster {
-  h1Text: string;
-  pagesCount: number;
-  paths: string[];
-}
-
-export interface OfferedServiceSummary {
-  name: string;
-  pagePath: string;
-  pageUrl: string;
-  targetKeywords: string[];
-  h1: string;
-  title: string;
-  issues: string[];
-}
-
-export interface MultiPageSeoAuditSummary {
-  pagesAudited: number;
-  majorPages: AuditedMajorPage[];
-  offeredServices: OfferedServiceSummary[];
-  duplicateH1AcrossPagesCount: number;
-  duplicateH1Clusters: DuplicateH1Cluster[];
-  multipleH1PagesCount: number;
-  missingH1PagesCount: number;
-  duplicateTitlePagesCount: number;
-  missingMetaDescPagesCount: number;
-}
-
 export interface ClientAuditReport {
   targetUrl: string;
   finalDestinationUrl?: string;
@@ -778,7 +724,6 @@ export interface ClientAuditReport {
   responseTimeMs: number;
   mobileFriendly: boolean;
   semrushAudit?: SemrushSiteAuditSummary;
-  multiPageAudit?: MultiPageSeoAuditSummary;
   crawlStatus?: {
     httpStatus: number;
     redirectFollowed: boolean;

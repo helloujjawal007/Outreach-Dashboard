@@ -10,6 +10,7 @@ import { whatsappValidator } from './whatsappValidator';
 import { automatedIntakeEngine } from './automatedIntakeEngine';
 import { emailValidatorService } from './emailValidatorService';
 import { workflowRoutingService } from './workflowRoutingService';
+import { logPipeline } from '../utils/pipelineLogger';
 
 export interface ScrapedLeadItem {
   id?: string;
@@ -28,12 +29,6 @@ export interface ScrapedLeadItem {
   placeId?: string;
   emailDiscovered: boolean;
   emailSource?: string;
-  discoveredSocials?: {
-    facebook?: string;
-    instagram?: string;
-    linkedin?: string;
-    whatsapp?: string;
-  };
 }
 
 export interface GmbLocationTarget {
@@ -604,14 +599,13 @@ export class GmbScraperService {
           }
 
           let discoveredEmail = '';
-          let discoveredSocials = { ...item.discoveredSocials };
           let emailDiscovered = false;
           let emailSource: string | undefined = undefined;
 
           // ONLY crawl website if it was verified live and opening in the backend!
           if (verifiedWebsite) {
             try {
-              const { email, socials } = await this.crawlWebsiteForContact(verifiedWebsite);
+              const { email } = await this.crawlWebsiteForContact(verifiedWebsite);
               if (email) {
                 // Check email format & MX record
                 const emailValidation = await emailValidatorService.validateEmail(email);
@@ -623,7 +617,6 @@ export class GmbScraperService {
                   console.log(`[GmbScraperService] Email ${email} from ${verifiedWebsite} failed validation (${emailValidation.reason}). Discarded.`);
                 }
               }
-              discoveredSocials = { ...discoveredSocials, ...socials };
             } catch (err: any) {
               console.warn(`[GmbScraperService] Error crawling website ${verifiedWebsite}:`, err.message);
             }
@@ -635,7 +628,6 @@ export class GmbScraperService {
             email: discoveredEmail || (item.email && this.isValidBusinessEmail(item.email) ? item.email : ''),
             emailDiscovered,
             emailSource,
-            discoveredSocials,
           };
         })
       );
@@ -643,6 +635,12 @@ export class GmbScraperService {
     }
 
     console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} genuine businesses ready.`);
+    const withEmailCount = enriched.filter((l) => Boolean(l.email)).length;
+    const withSiteCount = enriched.filter((l) => Boolean(l.website)).length;
+    logPipeline(
+      'LEAD_SCRAPED',
+      `Scraped ${enriched.length} lead(s) for "${params.categories?.join(', ') || params.category}" (${params.country || 'USA'}) [Email: ${withEmailCount}, Website: ${withSiteCount}]`
+    );
     return enriched;
   }
 
@@ -1043,11 +1041,10 @@ export class GmbScraperService {
   }
 
   /**
-   * Crawls a business website and discovers contact email & socials
+   * Crawls a business website and discovers contact email
    */
-  public async crawlWebsiteForContact(siteUrl: string): Promise<{ email: string; socials: Record<string, string> }> {
-    const socials: Record<string, string> = {};
-    if (!siteUrl) return { email: '', socials };
+  public async crawlWebsiteForContact(siteUrl: string): Promise<{ email: string }> {
+    if (!siteUrl) return { email: '' };
 
     const emailsFound = new Set<string>();
     const pagesToTry = [siteUrl];
@@ -1103,25 +1100,11 @@ export class GmbScraperService {
             emailsFound.add(lower);
           }
         }
-
-        // 3. Social media links
-        if (!socials.facebook) {
-          const fb = html.match(/https?:\/\/(www\.)?(facebook\.com|fb\.com)\/[a-zA-Z0-9._-]+/i);
-          if (fb && !fb[0].includes('/sharer')) socials.facebook = fb[0];
-        }
-        if (!socials.instagram) {
-          const ig = html.match(/https?:\/\/(www\.)?instagram\.com\/[a-zA-Z0-9._-]+/i);
-          if (ig) socials.instagram = ig[0];
-        }
-        if (!socials.linkedin) {
-          const li = html.match(/https?:\/\/(www\.)?linkedin\.com\/(company|in)\/[a-zA-Z0-9._-]+/i);
-          if (li) socials.linkedin = li[0];
-        }
       }
     }
 
     const email = Array.from(emailsFound)[0] || '';
-    return { email, socials };
+    return { email };
   }
 
   /**
@@ -1248,6 +1231,7 @@ export class GmbScraperService {
 
     let importedCount = 0;
     let duplicateCount = 0;
+    let customListAddedCount = 0;
     const insertedLeads: any[] = [];
 
     for (const item of rawLeads) {
@@ -1313,7 +1297,6 @@ export class GmbScraperService {
       const metadata = {
         source: 'gmb_scraper',
         google_profile: googleProfile,
-        discovered_socials: item.discoveredSocials || {},
       };
 
       const location = [item.city, item.state, item.country].filter(Boolean).join(', ') || item.address;
@@ -1321,14 +1304,14 @@ export class GmbScraperService {
       const insertRes = await query<any>(
         `INSERT INTO leads (
           business_name, category, phone, email, website, location, country,
-          whatsapp, instagram, facebook, linkedin,
+          whatsapp,
           status, consent_status, batch_id, whatsapp_eligible, whatsapp_decision_reason,
-          metadata, discovered_emails, discovered_socials, last_enriched_at
+          metadata, discovered_emails, last_enriched_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10, $11,
-          $12, 'none', $13, $14, $15,
-          $16, $17, $18, NOW()
+          $8,
+          $9, 'none', $10, $11, $12,
+          $13, $14, NOW()
         ) RETURNING *`,
         [
           bName,
@@ -1339,16 +1322,12 @@ export class GmbScraperService {
           location,
           item.country || 'USA',
           phone || null,
-          item.discoveredSocials?.instagram || null,
-          item.discoveredSocials?.facebook || null,
-          item.discoveredSocials?.linkedin || null,
           hasContactChannel ? 'active' : 'inactive',
           batchId,
           waEligible,
           waReason,
           JSON.stringify(metadata),
           email ? JSON.stringify([email]) : JSON.stringify([]),
-          JSON.stringify(item.discoveredSocials || {}),
         ]
       );
 
@@ -1364,12 +1343,14 @@ export class GmbScraperService {
       // If user selected a specific list, assign lead to list
       if (listId && listId !== 'none' && listId !== 'all') {
         try {
-          await query(
+          const memberRes = await query(
             `INSERT INTO lead_list_memberships (lead_id, list_id)
              VALUES ($1, $2)
-             ON CONFLICT DO NOTHING`,
+             ON CONFLICT DO NOTHING
+             RETURNING lead_id`,
             [createdLead.id, listId]
           );
+          if (memberRes.rows.length > 0) customListAddedCount++;
         } catch (_) {}
       }
     }
@@ -1382,7 +1363,17 @@ export class GmbScraperService {
       [importedCount, duplicateCount, batchId]
     );
 
-    // Auto-assign to platform channel lists (Email, WhatsApp, LinkedIn, IG, FB) and execute automated intake & outreach
+    if (importedCount > 0) {
+      logPipeline(
+        'LEAD_SCRAPED',
+        `Imported ${importedCount} scraped lead(s) into CRM (skipped ${duplicateCount} duplicates, batch: "${formattedBatchName}")`
+      );
+      if (customListAddedCount > 0 && listId) {
+        logPipeline('ADDED_TO_LIST', `Added ${customListAddedCount} scraped lead(s) to selected list (${listId})`);
+      }
+    }
+
+    // Auto-assign to platform channel lists (Email, WhatsApp, Website) and execute automated intake & outreach
     let intakeResult = null;
     if (insertedLeads.length > 0) {
       try {

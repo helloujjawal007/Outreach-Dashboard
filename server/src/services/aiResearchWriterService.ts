@@ -1,7 +1,7 @@
 import { ollamaService } from './ollamaService';
 import { humanizerService } from './humanizerService';
 
-export type OutreachChannel = 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+export type OutreachChannel = 'email' | 'whatsapp';
 
 export interface ResearchBrief {
   cleanBusinessName: string;
@@ -50,8 +50,6 @@ export class AiResearchWriterService {
     phone?: string;
     whatsapp?: string;
     email?: string;
-    instagram?: string;
-    facebook?: string;
     notes?: string;
   }): ResearchBrief {
     const cleanBusinessName = humanizerService.cleanBusinessName(contact.businessName || 'Business');
@@ -156,8 +154,6 @@ export class AiResearchWriterService {
       phone?: string;
       whatsapp?: string;
       email?: string;
-      instagram?: string;
-      facebook?: string;
       notes?: string;
     },
     channel: OutreachChannel,
@@ -195,9 +191,6 @@ export class AiResearchWriterService {
         const channelRules: Record<OutreachChannel, string> = {
           email: 'Write a subject line on the first line (Subject: ...) and a 2-paragraph email pitch under 90 words. Professional and direct with a low-friction CTA question.',
           whatsapp: 'Write a punchy, warm, conversational WhatsApp message under 45 words (2-3 sentences max). Sound human, not like automated spam. Mention their business naturally and ask a quick, low-friction question.',
-          facebook: 'Write a direct message for Facebook Messenger under 60 words. Friendly and focused on page and local discovery.',
-          instagram: 'Write an engaging Instagram DM under 50 words. Casual, complimentary of their profile, and straight to the point.',
-          linkedin: 'Write a concise LinkedIn outreach message under 75 words. Thoughtful, professional, peer-level, and conversational with a low-friction invite.',
         };
 
         const prompt = `You are a professional outreach consultant for Cloud Consultancy.
@@ -273,12 +266,6 @@ Return only the final message text.`;
       body = `Hi ${salutation},\n\n${personalizedHook} We work with teams across ${industry} to address ${detectedPainPoints[0].toLowerCase()}.\n\nSpecifically, ${recommendedValueProp.toLowerCase()}\n\nWould you be open to a quick 3-minute walkthrough this Thursday to see if this could be relevant for ${cleanBusinessName}?\n\nBest regards,\nCloud Consultancy\ncloudconsultancy.ad@gmail.com`;
     } else if (channel === 'whatsapp') {
       body = `Hi ${salutation}! ${personalizedHook} We've been helping similar ${industry.toLowerCase()} teams solve ${detectedPainPoints[0].toLowerCase()} by ${recommendedValueProp.toLowerCase()} Open to a quick 60-second summary on how it works for ${cleanBusinessName}?`;
-    } else if (channel === 'facebook') {
-      body = `Hi ${salutation}, came across your page for ${cleanBusinessName}. We specialize in helping ${industry.toLowerCase()} businesses optimize their local search presence, modern websites, and client inquiries. Open to a quick chat on how this could help your team this month?`;
-    } else if (channel === 'instagram') {
-      body = `Hey ${salutation}! Love the presence you've built with ${cleanBusinessName}. We help similar brands turn search and social visitors into booked clients with zero friction. Would you be open to taking a quick look at a brief review?`;
-    } else if (channel === 'linkedin') {
-      body = `Hi ${salutation}, noticed ${cleanBusinessName}’s work in ${contact.category || industry}. We specialize in helping businesses optimize their Google Maps ranking, build ultra-fast modern websites, and set up client inquiry automations. Open to connecting and sharing a brief note?`;
     }
 
     return {
@@ -310,9 +297,6 @@ Return only the final message text.`;
     const channelRules: Record<OutreachChannel, string> = {
       email: 'Format as an email with a Subject line on the very first line (Subject: ...). Keep the body under 85 words, polite, professional, and conclude with a low-friction question.',
       whatsapp: 'Format as a warm, conversational WhatsApp message under 45 words (2-3 sentences max). Clear, friendly, zero marketing hype.',
-      facebook: 'Format as a Facebook Messenger message under 55 words. Engaging, friendly, and focused on local visibility.',
-      instagram: 'Format as an Instagram DM under 45 words. Casual, complimentary, and direct.',
-      linkedin: 'Format as a professional LinkedIn outreach note under 70 words. Thoughtful, peer-level, and conversational.',
     };
 
     if (ollamaHealth.online) {
@@ -405,12 +389,6 @@ Return ONLY the message text.`;
       }
     } else if (channel === 'whatsapp') {
       improvedText = `Hi ${salutation}! Saw ${cleanBusinessName} and had a quick thought regarding ${cleanSnippet}. We put together a complimentary 2-minute overview with no strings attached. Open to taking a quick look?`;
-    } else if (channel === 'linkedin') {
-      improvedText = `Hi ${salutation}, saw what you're building with ${cleanBusinessName}. Regarding ${cleanSnippet}, we recently noticed some low-hanging local visibility opportunities. Open to connecting and sharing a brief note?`;
-    } else if (channel === 'instagram') {
-      improvedText = `Hey ${salutation}! Love what you're doing with ${cleanBusinessName}. Quick note regarding ${cleanSnippet}—we put together a quick review of your local presence. Mind if we share a brief summary with you?`;
-    } else if (channel === 'facebook') {
-      improvedText = `Hi ${salutation}, came across your page for ${cleanBusinessName}. On the note of ${cleanSnippet}, we put together a brief review to help local clients find you faster. Open to a quick chat?`;
     }
 
     return {
@@ -433,8 +411,6 @@ Return ONLY the message text.`;
       category?: string;
       phone?: string;
       email?: string;
-      instagram?: string;
-      facebook?: string;
       notes?: string;
     }>,
     channel: OutreachChannel

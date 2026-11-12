@@ -1,4 +1,4 @@
-import { Mail, MessageCircle, Instagram, Facebook, Linkedin, Globe } from 'lucide-react';
+import { Mail, MessageCircle, Globe } from 'lucide-react';
 import type { Channel } from '@/types';
 
 interface ChannelIconProps {
@@ -7,21 +7,15 @@ interface ChannelIconProps {
   size?: number;
 }
 
-const iconMap = {
+const iconMap: Record<Channel, typeof Mail> = {
   email: Mail,
   whatsapp: MessageCircle,
-  instagram: Instagram,
-  facebook: Facebook,
-  linkedin: Linkedin,
   website_form: Globe,
 };
 
-const colorMap = {
+const colorMap: Record<Channel, string> = {
   email: 'text-brand-600',
   whatsapp: 'text-emerald-600',
-  instagram: 'text-violet-600',
-  facebook: 'text-indigo-600',
-  linkedin: 'text-blue-700',
   website_form: 'text-teal-600',
 };
 

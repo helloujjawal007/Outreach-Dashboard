@@ -3,7 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { env } from './config/env';
-import { testConnection, query } from './config/db';
+import { testConnection, query, pool } from './config/db';
 import { ollamaService } from './services/ollamaService';
 import { leadsRouter } from './routes/leads';
 import { clientsRouter } from './routes/clients';
@@ -17,10 +17,8 @@ import { listsRouter } from './routes/lists';
 import { batchesRouter } from './routes/batches';
 import { schedulerRouter } from './routes/scheduler';
 import { inboxesRouter } from './routes/inboxes';
-import { linkedinRouter } from './routes/linkedin';
 import { autopilotRouter } from './routes/autopilot';
 import { scraperRouter } from './routes/scraper';
-import { emailVerifierRouter } from './routes/emailVerifier';
 import { auditRouter } from './routes/audit';
 import { authRouter } from './routes/auth';
 import { dealsRouter } from './routes/deals';
@@ -34,8 +32,9 @@ import { failuresRouter } from './routes/failures';
 import { slotsRouter } from './routes/slots';
 import { requireAuth } from './middleware/auth';
 import { emailInboundService } from './services/emailInboundService';
+import { emailSchedulerService } from './services/emailSchedulerService';
 import { fiveSlotSenderService } from './services/fiveSlotSenderService';
-import { startDevMockDaemons } from './services/devMockDaemons';
+import { startDevMockDaemons, stopDevMockDaemons } from './services/devMockDaemons';
 // Prevent unhandled errors or socket drops from crashing the Express API server
 process.on('uncaughtException', (err) => {
   console.error('[Server UncaughtException Handled]', err?.message || err);
@@ -46,8 +45,9 @@ const keepAliveUrl = process.env.RENDER_EXTERNAL_URL
   ? `${process.env.RENDER_EXTERNAL_URL}/api`
   : (process.env.KEEP_ALIVE_URL || 'https://outreach-dashboard-22t5.onrender.com/api');
 
+let keepAliveTimer: NodeJS.Timeout | null = null;
 if (process.env.NODE_ENV === 'production' || process.env.KEEP_ALIVE_URL) {
-  setInterval(async () => {
+  keepAliveTimer = setInterval(async () => {
     try {
       const res = await fetch(keepAliveUrl);
       console.log(`[Keep-Alive Heartbeat] 12-min ping to ${keepAliveUrl} -> HTTP ${res.status}`);
@@ -232,10 +232,8 @@ app.use('/api/lists', listsRouter);
 app.use('/api/batches', batchesRouter);
 app.use('/api/scheduler', schedulerRouter);
 app.use('/api/inboxes', inboxesRouter);
-app.use('/api/linkedin', linkedinRouter);
 app.use('/api/autopilot', autopilotRouter);
 app.use('/api/scraper', scraperRouter);
-app.use('/api/email-verifier', emailVerifierRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/deals', dealsRouter);
 app.use('/api/activities', activitiesRouter);
@@ -367,11 +365,11 @@ async function startServer() {
 
   // Run 28-day retention cleanup on startup and schedule daily check
   await run28DayRetentionCleanup();
-  setInterval(run28DayRetentionCleanup, 24 * 60 * 60 * 1000);
+  const retentionTimer = setInterval(run28DayRetentionCleanup, 24 * 60 * 60 * 1000);
 
   // Run 30-minute PDF disk storage purge on startup and every 10 minutes
   run30MinAuditPdfCleanup();
-  setInterval(run30MinAuditPdfCleanup, 10 * 60 * 1000);
+  const pdfCleanupTimer = setInterval(run30MinAuditPdfCleanup, 10 * 60 * 1000);
 
   // 1. Email Channel: Automated Gmail IMAP polling for inbound replies (every 30s)
   emailInboundService.startPolling(30000);
@@ -391,19 +389,58 @@ async function startServer() {
     console.warn('[5-Slot Sender Warning] Failed to start 5-slot scheduler:', err);
   }
 
+  // 4. Scheduled Dispatches & Stale Recovery Scheduler (runs recovery on boot + every 20s dispatch tick)
+  try {
+    emailSchedulerService.startScheduler(20000);
+  } catch (err) {
+    console.warn('[Email Scheduler Warning] Failed to start scheduled dispatch scheduler:', err);
+  }
+
   const server = app.listen(env.PORT, '0.0.0.0', () => {
     console.log(`🚀 Express Backend running on http://localhost:${env.PORT}`);
     console.log(`📡 API Endpoints available at http://localhost:${env.PORT}/api`);
   });
 
   // Graceful shutdown
-  const shutdown = async () => {
-    console.log('[Server] Gracefully shutting down...');
-    server.close();
+  let isShuttingDown = false;
+  const shutdown = async (signal?: string) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[Server] Gracefully shutting down (${signal || 'signal'})...`);
+
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+    clearInterval(retentionTimer);
+    clearInterval(pdfCleanupTimer);
+
+    emailSchedulerService.stopScheduler();
+    fiveSlotSenderService.stopScheduler();
+    emailInboundService.stopPolling();
+    stopDevMockDaemons();
+
+    await new Promise<void>((resolve) => {
+      const forceTimeout = setTimeout(resolve, 3000);
+      server.close(() => {
+        clearTimeout(forceTimeout);
+        resolve();
+      });
+      if (typeof (server as any).closeIdleConnections === 'function') {
+        (server as any).closeIdleConnections();
+      }
+    });
+
+    try {
+      await pool.end();
+    } catch (err) {
+      console.warn('[Server] Error closing PostgreSQL pool:', err);
+    }
+
     process.exit(0);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
 startServer().catch((err) => {

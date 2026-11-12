@@ -23,7 +23,7 @@ import { workflowRoutingService, type PdfValidationResult } from '../services/wo
 
 export const leadsRouter = Router();
 
-// GET /api/leads/by-channel - Automatically segregate leads into email, whatsapp, facebook, and instagram sections
+// GET /api/leads/by-channel - Automatically segregate leads into email and whatsapp sections
 leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
   try {
     const { summaryOnly } = req.query;
@@ -34,9 +34,7 @@ leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
           COUNT(*) FILTER (WHERE deleted_at IS NULL AND email IS NOT NULL AND email LIKE '%@%') AS email_count,
           COUNT(*) FILTER (WHERE deleted_at IS NULL AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_count,
           COUNT(*) FILTER (WHERE deleted_at IS NULL AND whatsapp_eligible = true AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_eligible_count,
-          COUNT(*) FILTER (WHERE deleted_at IS NULL AND whatsapp_eligible IS NOT TRUE AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_ineligible_count,
-          COUNT(*) FILTER (WHERE deleted_at IS NULL AND facebook IS NOT NULL AND TRIM(facebook) != '') AS facebook_count,
-          COUNT(*) FILTER (WHERE deleted_at IS NULL AND instagram IS NOT NULL AND TRIM(instagram) != '') AS instagram_count
+          COUNT(*) FILTER (WHERE deleted_at IS NULL AND whatsapp_eligible IS NOT TRUE AND ((whatsapp IS NOT NULL AND TRIM(whatsapp) != '') OR (phone IS NOT NULL AND TRIM(phone) != ''))) AS whatsapp_ineligible_count
         FROM leads
       `);
 
@@ -48,8 +46,6 @@ leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
           whatsapp: parseInt(s.whatsapp_count || '0', 10),
           whatsappEligible: parseInt(s.whatsapp_eligible_count || '0', 10),
           whatsappIneligible: parseInt(s.whatsapp_ineligible_count || '0', 10),
-          facebook: parseInt(s.facebook_count || '0', 10),
-          instagram: parseInt(s.instagram_count || '0', 10),
         },
       });
     }
@@ -74,8 +70,6 @@ leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
     const whatsappLeads = leads.filter((l) => (l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
     const whatsappEligible = whatsappLeads.filter((l) => l.whatsapp_eligible === true);
     const whatsappIneligible = whatsappLeads.filter((l) => l.whatsapp_eligible !== true);
-    const facebookLeads = leads.filter((l) => (l.facebook || '').trim().length > 0);
-    const instagramLeads = leads.filter((l) => (l.instagram || '').trim().length > 0);
 
     res.json({
       success: true,
@@ -91,14 +85,6 @@ leadsRouter.get('/by-channel', async (req: Request, res: Response) => {
           leads: whatsappLeads,
           eligibleLeads: whatsappEligible,
           ineligibleLeads: whatsappIneligible,
-        },
-        facebook: {
-          total: facebookLeads.length,
-          leads: facebookLeads,
-        },
-        instagram: {
-          total: instagramLeads.length,
-          leads: instagramLeads,
         },
       },
     });
@@ -227,10 +213,7 @@ leadsRouter.get('/trash', async (_req: Request, res: Response) => {
         l.category,
         l.phone,
         l.email,
-        l.instagram,
-        l.facebook,
         l.whatsapp,
-        l.linkedin,
         l.website,
         l.location,
         l.country,
@@ -265,10 +248,7 @@ leadsRouter.get('/trash', async (_req: Request, res: Response) => {
         c.category,
         c.phone,
         c.email,
-        c.instagram,
-        c.facebook,
         c.whatsapp,
-        c.linkedin,
         c.website,
         c.location,
         c.country,
@@ -320,7 +300,6 @@ leadsRouter.post('/trash/clear', async (_req: Request, res: Response) => {
     await query(`DELETE FROM scheduled_dispatches WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allIds]);
     await query(`DELETE FROM send_queue WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allIds]);
     await query(`DELETE FROM follow_up_logs WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allIds]);
-    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allIds]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allIds]);
     await query(`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE lead_id = ANY($1) OR client_id = ANY($1))`, [allIds]);
     await query(`DELETE FROM conversations WHERE (entity_type = 'lead' AND lead_id = ANY($1)) OR (entity_type = 'client' AND client_id = ANY($1)) OR lead_id = ANY($1) OR client_id = ANY($1)`, [allIds]);
@@ -353,7 +332,6 @@ leadsRouter.post('/trash/bulk-permanent-delete', async (req: Request, res: Respo
     await query(`DELETE FROM scheduled_dispatches WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [ids]);
     await query(`DELETE FROM send_queue WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [ids]);
     await query(`DELETE FROM follow_up_logs WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [ids]);
-    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [ids]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [ids]);
     await query(`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE lead_id = ANY($1) OR client_id = ANY($1))`, [ids]);
     await query(`DELETE FROM conversations WHERE (entity_type = 'lead' AND lead_id = ANY($1)) OR (entity_type = 'client' AND client_id = ANY($1)) OR lead_id = ANY($1) OR client_id = ANY($1)`, [ids]);
@@ -421,7 +399,7 @@ leadsRouter.post('/bulk-delete', async (req: Request, res: Response) => {
 
     const allTargetIds = [...new Set([...ids, ...toDeleteClients.rows.map((c: any) => c.id), ...toDeleteLeads.rows.map((l: any) => l.id)])];
 
-    // Cascading deletion: remove all messages, conversations, scheduled_dispatches, send_queue, follow_up_logs, linkedin_comments, and list memberships
+    // Cascading deletion: remove all messages, conversations, scheduled_dispatches, send_queue, follow_up_logs, and list memberships
     await query(
       `DELETE FROM messages WHERE conversation_id IN (
          SELECT id FROM conversations WHERE lead_id = ANY($1) OR client_id = ANY($1)
@@ -437,7 +415,6 @@ leadsRouter.post('/bulk-delete', async (req: Request, res: Response) => {
     await query(`DELETE FROM scheduled_dispatches WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM send_queue WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM follow_up_logs WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
 
     // 2. Mark soft-deleted in leads table & immediately unassign from 5-slot queues
@@ -675,9 +652,6 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const phone = (req.body.phone !== undefined ? req.body.phone : current.phone) || '';
     const email = (req.body.email !== undefined ? req.body.email : current.email) || '';
     const whatsapp = (req.body.whatsapp !== undefined ? req.body.whatsapp : current.whatsapp) || '';
-    const facebook = (req.body.facebook !== undefined ? req.body.facebook : current.facebook) || '';
-    const instagram = (req.body.instagram !== undefined ? req.body.instagram : current.instagram) || '';
-    const linkedin = (req.body.linkedin !== undefined ? req.body.linkedin : current.linkedin) || '';
     const notes = req.body.notes !== undefined ? req.body.notes : current.notes;
     const status = req.body.status !== undefined ? req.body.status : current.status;
     const consentStatus =
@@ -695,9 +669,6 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const trimmedPhone = String(phone || '').trim();
     const trimmedEmail = String(email || '').trim();
     const trimmedWhatsapp = String(whatsapp || '').trim();
-    const trimmedFacebook = String(facebook || '').trim();
-    const trimmedInstagram = String(instagram || '').trim();
-    const trimmedLinkedin = String(linkedin || '').trim();
 
     // Re-evaluate WhatsApp eligibility and standardize international country code
     const waEval = whatsappValidator.evaluate({ phone: trimmedPhone, whatsapp: trimmedWhatsapp });
@@ -708,9 +679,6 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
     const detectedChannels: string[] = [];
     if (trimmedEmail && trimmedEmail.includes('@')) detectedChannels.push('email');
     if (waEval.isEligible) detectedChannels.push('whatsapp');
-    if (trimmedInstagram) detectedChannels.push('instagram');
-    if (trimmedFacebook) detectedChannels.push('facebook');
-    if (trimmedLinkedin) detectedChannels.push('linkedin');
 
     // Merge updated metadata (including manual or verified google_profile changes)
     let updatedMetadata = typeof current.metadata === 'object' && current.metadata !== null ? { ...current.metadata } : {};
@@ -760,34 +728,28 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
            category = $2,
            phone = $3,
            email = $4,
-           instagram = $5,
-           facebook = $6,
-           whatsapp = $7,
-           linkedin = $8,
-           notes = $9,
-           status = $10,
-           consent_status = $11,
-           whatsapp_eligible = $12,
-           whatsapp_decision_reason = $13,
-           detected_channels = $14,
-           metadata = $15,
-           website = $16,
-           country = $17,
-           location = $18,
-           outreach_stage = $19,
-           primary_contact_name = $20,
+           whatsapp = $5,
+           notes = $6,
+           status = $7,
+           consent_status = $8,
+           whatsapp_eligible = $9,
+           whatsapp_decision_reason = $10,
+           detected_channels = $11,
+           metadata = $12,
+           website = $13,
+           country = $14,
+           location = $15,
+           outreach_stage = $16,
+           primary_contact_name = $17,
            updated_at = NOW()
-       WHERE id = $21
+       WHERE id = $18
        RETURNING *`,
       [
         trimmedBusinessName,
         category || 'Uncategorized',
         standardizedPhone,
         trimmedEmail,
-        trimmedInstagram,
-        trimmedFacebook,
         standardizedWhatsapp,
-        trimmedLinkedin,
         notes || '',
         status || 'active',
         consentStatus,
@@ -813,29 +775,23 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
            category = $2,
            phone = $3,
            email = $4,
-           instagram = $5,
-           facebook = $6,
-           whatsapp = $7,
-           linkedin = $8,
-           notes = $9,
-           status = $10,
-           whatsapp_eligible = $11,
-           whatsapp_decision_reason = $12,
-           detected_channels = $13,
-           website = $14,
-           country = $15,
-           location = $16,
+           whatsapp = $5,
+           notes = $6,
+           status = $7,
+           whatsapp_eligible = $8,
+           whatsapp_decision_reason = $9,
+           detected_channels = $10,
+           website = $11,
+           country = $12,
+           location = $13,
            updated_at = NOW()
-       WHERE id = $17 OR original_lead_id = $17`,
+       WHERE id = $14 OR original_lead_id = $14`,
       [
         trimmedBusinessName,
         category || 'Uncategorized',
         standardizedPhone,
         trimmedEmail,
-        trimmedInstagram,
-        trimmedFacebook,
         standardizedWhatsapp,
-        trimmedLinkedin,
         notes || '',
         status || 'active',
         waEval.isEligible,
@@ -856,9 +812,6 @@ leadsRouter.put('/:id', async (req: Request, res: Response) => {
           email: updatedLead.email,
           phone: updatedLead.phone,
           whatsapp: updatedLead.whatsapp,
-          linkedin: updatedLead.linkedin,
-          instagram: updatedLead.instagram,
-          facebook: updatedLead.facebook,
           website: updatedLead.website,
         },
       ]);
@@ -927,7 +880,6 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
         await query(`DELETE FROM scheduled_dispatches WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
         await query(`DELETE FROM send_queue WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
         await query(`DELETE FROM follow_up_logs WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-        await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
         await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
 
         await query(
@@ -983,7 +935,6 @@ leadsRouter.delete('/:id', async (req: Request, res: Response) => {
     await query(`DELETE FROM scheduled_dispatches WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM send_queue WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM follow_up_logs WHERE lead_id = ANY($1) OR client_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
 
     // Mark soft-deleted in leads & clear from 5-slot queues immediately
@@ -1032,7 +983,6 @@ leadsRouter.delete('/:id/permanent', async (req: Request, res: Response) => {
     await query(`DELETE FROM scheduled_dispatches WHERE lead_id = $1 OR client_id = $1`, [id]);
     await query(`DELETE FROM send_queue WHERE lead_id = $1 OR client_id = $1`, [id]);
     await query(`DELETE FROM follow_up_logs WHERE lead_id = $1 OR client_id = $1`, [id]);
-    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = $1`, [id]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = $1`, [id]);
     await query(`DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE lead_id = $1 OR client_id = $1)`, [id]);
     await query(`DELETE FROM conversations WHERE (entity_type = 'lead' AND lead_id = $1) OR (entity_type = 'client' AND client_id = $1) OR lead_id = $1 OR client_id = $1`, [id]);
@@ -1161,7 +1111,7 @@ leadsRouter.post('/:id/scrape-location', async (req: Request, res: Response) => 
 // POST /api/leads - Create single lead
 leadsRouter.post('/', async (req: Request, res: Response) => {
   try {
-    const { category, phone, email, instagram, facebook, whatsapp, notes, batchId, status, listId } = req.body;
+    const { category, phone, email, whatsapp, notes, batchId, status, listId } = req.body;
     const rawBizName = req.body.businessName || req.body.business_name;
 
     if (!rawBizName || !rawBizName.trim()) {
@@ -1209,8 +1159,6 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
     const detectedChannels: string[] = [];
     if (trimmedEmail) detectedChannels.push('email');
     if (waEval.isEligible) detectedChannels.push('whatsapp');
-    if (instagram) detectedChannels.push('instagram');
-    if (req.body.linkedin) detectedChannels.push('linkedin');
 
     const initialMetadata: Record<string, any> =
       req.body.metadata && typeof req.body.metadata === 'object' ? { ...req.body.metadata } : {};
@@ -1274,22 +1222,19 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
 
     const result = await query(
       `INSERT INTO leads (
-        business_name, category, phone, email, instagram, facebook, whatsapp,
-        linkedin, notes, consent_status, status, batch_id, whatsapp_eligible,
+        business_name, category, phone, email, whatsapp,
+        notes, consent_status, status, batch_id, whatsapp_eligible,
         whatsapp_decision_reason, detected_channels, metadata, website, country,
         location, outreach_workflow, audit_status, primary_contact_name
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+        $1, $2, $3, $4, $5, $6, 'none', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
       ) RETURNING *`,
       [
         businessName.trim(),
         finalCategory,
         standardizedPhone,
         trimmedEmail,
-        instagram ? instagram.trim() : '',
-        facebook ? facebook.trim() : '',
         standardizedWhatsapp,
-        req.body.linkedin ? req.body.linkedin.trim() : '',
         safeNotes ? safeNotes.trim() : '',
         effectiveStatus,
         batchId || null,
@@ -1308,7 +1253,7 @@ leadsRouter.post('/', async (req: Request, res: Response) => {
 
     const newLead = result.rows[0];
 
-    // Auto-assign to platform channel lists (Email, WhatsApp, LinkedIn, IG, FB) and execute automated outreach intake
+    // Auto-assign to platform channel lists (Email, WhatsApp, Website) and execute automated outreach intake
     let intakeResult = null;
     try {
       intakeResult = await automatedIntakeEngine.processImportedLeads([newLead as any], {
@@ -1563,9 +1508,6 @@ leadsRouter.post('/import-audit', async (req: Request, res: Response) => {
             email: savedLead.email,
             phone: savedLead.phone,
             whatsapp: savedLead.whatsapp,
-            linkedin: savedLead.linkedin,
-            instagram: savedLead.instagram,
-            facebook: savedLead.facebook,
             website: savedLead.website,
           },
         ])
@@ -1733,11 +1675,9 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       const cBusinessName = cleanBizName(rawBizName);
 
       const category = sanitizeCsvFormula((item.category || 'Uncategorized').trim());
-      const instagram = (item.instagram || '').trim();
-      const facebook = (item.facebook || '').trim();
       const notes = sanitizeCsvFormula((item.notes || '').trim());
 
-      const hasContact = !!email || !!phone || !!instagram || !!facebook || !!whatsapp;
+      const hasContact = !!email || !!phone || !!whatsapp;
       if (!hasContact) {
         incompleteCount++;
         continue;
@@ -1764,17 +1704,14 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
         duplicateCount++;
         try {
           await query(
-            `INSERT INTO leads (business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, status, consent_status, batch_id, outreach_stage, notes, website, country, location)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'duplicate', 'none', $9, 'initial', $10, $11, $12, $13)`,
+            `INSERT INTO leads (business_name, category, phone, email, whatsapp, status, consent_status, batch_id, outreach_stage, notes, website, country, location)
+             VALUES ($1, $2, $3, $4, $5, 'duplicate', 'none', $6, 'initial', $7, $8, $9, $10)`,
             [
               businessName || 'Unnamed Business',
               category,
               phone || '',
               email || '',
-              instagram || '',
-              facebook || '',
               whatsapp || '',
-              (item.linkedin || item.linkedin_url || '').trim(),
               batchId,
               `Duplicate Lead: Already exists in CRM`,
               cleanSiteUrl(item.website || item.website_url || item.url || ''),
@@ -1793,12 +1730,9 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       const standardizedPhone = waEval.formattedInternational || phone;
       const standardizedWhatsapp = waEval.formattedInternational || whatsapp;
 
-      const linkedin = (item.linkedin || item.linkedin_url || '').trim();
       const detectedChannels: string[] = [];
       if (email) detectedChannels.push('email');
       if (waEval.isEligible) detectedChannels.push('whatsapp');
-      if (instagram) detectedChannels.push('instagram');
-      if (linkedin) detectedChannels.push('linkedin');
 
       let website = cleanSiteUrl(item.website || item.website_url || item.url || '');
       if (!website) {
@@ -1842,22 +1776,19 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       // Insert valid new lead with batch_id, channel flags, location, and workflow routing
       const insertRes = await query(
         `INSERT INTO leads (
-          business_name, category, phone, email, instagram, facebook, whatsapp,
-          linkedin, consent_status, batch_id, outreach_stage, whatsapp_eligible,
+          business_name, category, phone, email, whatsapp,
+          consent_status, batch_id, outreach_stage, whatsapp_eligible,
           whatsapp_decision_reason, detected_channels, notes, website, country,
           location, outreach_workflow, audit_status, status
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, 'none', $9, 'initial', $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+          $1, $2, $3, $4, $5, 'none', $6, 'initial', $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
         ) RETURNING *`,
         [
           businessName || 'Unnamed Business',
           category,
           standardizedPhone,
           email,
-          instagram,
-          facebook,
           standardizedWhatsapp,
-          linkedin,
           batchId,
           waEval.isEligible,
           waEval.reason,
@@ -1900,7 +1831,7 @@ leadsRouter.post('/import', async (req: Request, res: Response) => {
       [insertedCount, duplicateCount, incompleteCount, batchId]
     );
 
-    // 4. Auto-assign to platform channel lists (Email, WhatsApp, LinkedIn, IG, FB) and execute automated intake & outreach
+    // 4. Auto-assign to platform channel lists (Email, WhatsApp, Website) and execute automated intake & outreach
     let intakeResult = null;
     if (insertedLeads.length > 0) {
       try {

@@ -1,5 +1,6 @@
 import { query } from '../config/db';
 import { workflowRoutingService } from './workflowRoutingService';
+import { logPipelineError } from '../utils/pipelineLogger';
 
 export type FailureType =
   | 'SEND_FAILED'
@@ -77,6 +78,10 @@ export class FailureLogService {
             existingRes.rows[0].id,
           ]
         );
+        logPipelineError(
+          `${params.type}${params.slotId ? ` | Slot ${params.slotId}` : ''}`,
+          `"${params.company || 'Unknown'}": ${params.errorMessage} (Attempt #${updatedRes.rows[0].attempts})`
+        );
         return updatedRes.rows[0];
       }
     }
@@ -101,6 +106,10 @@ export class FailureLogService {
 
     console.warn(
       `[FailureLogService] ⚠️ Failure logged [${params.type}] for "${params.company}" (Slot: ${params.slotId || 'None'}): ${params.errorMessage}`
+    );
+    logPipelineError(
+      `${params.type}${params.slotId ? ` | Slot ${params.slotId}` : ''}`,
+      `"${params.company || 'Unknown'}": ${params.errorMessage}`
     );
 
     return res.rows[0];
@@ -325,7 +334,6 @@ export class FailureLogService {
       await query(`DELETE FROM scheduled_dispatches WHERE lead_id = $1 OR client_id = $1`, [leadId]);
       await query(`DELETE FROM send_queue WHERE lead_id = $1 OR client_id = $1`, [leadId]);
       await query(`DELETE FROM follow_up_logs WHERE lead_id = $1 OR client_id = $1`, [leadId]);
-      await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = $1`, [leadId]);
       await query(`DELETE FROM lead_list_memberships WHERE lead_id = $1`, [leadId]);
 
       const softDel = await query(

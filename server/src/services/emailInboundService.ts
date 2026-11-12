@@ -4,6 +4,7 @@ import { query } from '../config/db';
 import { env } from '../config/env';
 import { suppressionService } from './suppressionService';
 import { sequenceEnrollmentService } from './sequenceEnrollmentService';
+import { logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export interface InboundEmailResult {
   syncedCount: number;
@@ -498,6 +499,11 @@ export class EmailInboundService {
                   console.log(
                     `[EmailInboundService] ⚠️ MOVED LEAD "${leadMatch.rows[0].business_name}" (${bouncedRecipient}) to Manual Checking. Reason: ${bounceReason}`
                   );
+                  logPipeline(
+                    'EMAIL_RECEIVED',
+                    `Delivery Bounce DSN from ${senderAddress} for ${bouncedRecipient} ("${leadMatch.rows[0].business_name}")`
+                  );
+                  logPipelineError('Email Bounce', `"${leadMatch.rows[0].business_name}" (${bouncedRecipient}): ${bounceReason}`);
                 } else {
                   // Check if it matches a client
                   const clientMatch = await query<{ id: string; business_name: string }>(
@@ -554,6 +560,7 @@ export class EmailInboundService {
             // Handle Out-of-Office specifically: reschedule sequence by 7 days instead of dropping or treating as hot reply
             if (autoCheck.isOoo) {
               console.log(`[EmailInboundService] 🏖️ Out-of-Office auto-reply detected from ${senderAddress}: "${parsed.subject}"`);
+              logPipeline('EMAIL_RECEIVED', `Out-of-Office reply from ${senderAddress} | Subject: "${parsed.subject || 'No Subject'}"`);
 
               const oooLeadRes = await query<{ id: string; business_name: string }>(
                 `SELECT id, business_name FROM leads WHERE deleted_at IS NULL AND LOWER(email) = LOWER($1) LIMIT 1`,
@@ -772,6 +779,10 @@ export class EmailInboundService {
               );
 
               console.log(`[EmailInboundService] Recorded email reply from ${senderAddress} to Lead "${matchedLead.business_name}".`);
+              logPipeline(
+                'EMAIL_RECEIVED',
+                `Reply from ${senderAddress} [Lead: "${matchedLead.business_name}"] | Subject: "${parsed.subject || 'Email Reply'}"`
+              );
             } else if (clientRes.rows.length > 0) {
               const matchedClient = clientRes.rows[0];
 
@@ -827,6 +838,10 @@ export class EmailInboundService {
               );
 
               console.log(`[EmailInboundService] Recorded email reply from ${senderAddress} to Client "${matchedClient.business_name}".`);
+              logPipeline(
+                'EMAIL_RECEIVED',
+                `Reply from ${senderAddress} [Client: "${matchedClient.business_name}"] | Subject: "${parsed.subject || 'Email Reply'}"`
+              );
             } else {
               // Unknown sender — mark as unmatched so it appears in the Manual Review queue
               await query(
@@ -837,9 +852,14 @@ export class EmailInboundService {
                 [messageId, message.uid, senderAddress, parsed.subject || '', (parsed.text || '').slice(0, 400)]
               );
               console.log(`[EmailInboundService] Inbound email from unmatched sender ${senderAddress} logged for Manual Review.`);
+              logPipeline(
+                'EMAIL_RECEIVED',
+                `Inbound email from unmatched sender ${senderAddress} | Subject: "${parsed.subject || 'No Subject'}" (Manual Review)`
+              );
             }
           } catch (itemErr) {
             console.error('[EmailInboundService] Error processing message item:', itemErr);
+            logPipelineError('Inbound Email', 'Error processing inbound message', itemErr);
           }
         }
       }
@@ -889,7 +909,7 @@ export class EmailInboundService {
                 try {
                   const toAddresses: string[] = [];
                   if (message.envelope?.to) {
-                    message.envelope.to.forEach((t) => {
+                    message.envelope.to.forEach((t: { address?: string }) => {
                       if (t.address) toAddresses.push(t.address.toLowerCase().trim());
                     });
                   }
@@ -1045,6 +1065,7 @@ export class EmailInboundService {
       }
     } catch (connErr) {
       console.error('[EmailInboundService] IMAP connection or sync error:', connErr);
+      logPipelineError('IMAP Sync', 'IMAP connection or sync error', connErr);
       return {
         syncedCount: 0,
         syncedSentCount: 0,

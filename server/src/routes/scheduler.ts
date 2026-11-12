@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { emailSchedulerService } from '../services/emailSchedulerService';
+import { formatDuration, logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export const schedulerRouter = Router();
 
@@ -24,7 +25,7 @@ schedulerRouter.post('/preview', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/scheduler/schedule-single - Schedule outreach for 1 lead on Email, WhatsApp, Facebook, or Instagram
+// POST /api/scheduler/schedule-single - Schedule outreach for 1 lead on Email or WhatsApp
 schedulerRouter.post('/schedule-single', async (req: Request, res: Response) => {
   try {
     const { leadId, channel = 'email', scheduledFor, subject, body, style, stage, customInstructions } = req.body;
@@ -33,8 +34,8 @@ schedulerRouter.post('/schedule-single', async (req: Request, res: Response) => 
       return res.status(400).json({ success: false, error: 'leadId is required' });
     }
 
-    if (!['email', 'whatsapp', 'facebook', 'instagram', 'linkedin'].includes(channel)) {
-      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, linkedin, facebook, or instagram.' });
+    if (!['email', 'whatsapp'].includes(channel)) {
+      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email or whatsapp.' });
     }
 
     if (scheduledFor && isNaN(new Date(scheduledFor).getTime())) {
@@ -55,6 +56,7 @@ schedulerRouter.post('/schedule-single', async (req: Request, res: Response) => 
     res.json(result);
   } catch (error) {
     console.error('[schedulerRouter.scheduleSingle]', error);
+    logPipelineError('Schedule Single', 'Failed to schedule single dispatch', error);
     const msg = error instanceof Error ? error.message : 'Failed to schedule dispatch';
     const isClientError = msg.includes('Invalid date') || msg.includes('Outreach blocked') || msg.includes('not found');
     res.status(isClientError ? 400 : 500).json({
@@ -71,7 +73,6 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
       leadIds,
       channel = 'email',
       inboxIds,
-      linkedinAccountId,
       scheduledFor,
       intervalSeconds,
       style,
@@ -83,15 +84,14 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'leadIds array is required' });
     }
 
-    if (!['email', 'whatsapp', 'facebook', 'instagram', 'linkedin'].includes(channel)) {
-      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email, whatsapp, linkedin, facebook, or instagram.' });
+    if (!['email', 'whatsapp'].includes(channel)) {
+      return res.status(400).json({ success: false, error: 'Invalid channel. Must be email or whatsapp.' });
     }
 
     const result = await emailSchedulerService.scheduleBatchDispatch({
       leadIds,
       channel,
       inboxIds,
-      linkedinAccountId,
       scheduledFor,
       intervalSeconds: intervalSeconds ? Number(intervalSeconds) : undefined,
       style,
@@ -102,6 +102,7 @@ schedulerRouter.post('/schedule-batch', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error) {
     console.error('[schedulerRouter.scheduleBatch]', error);
+    logPipelineError('Schedule Batch', 'Failed to schedule batch dispatches', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to schedule batch dispatches',
@@ -116,7 +117,6 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
       listId,
       channel = 'email',
       inboxIds,
-      linkedinAccountId,
       scheduledFor,
       intervalSeconds,
       style,
@@ -137,10 +137,29 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
         replaceExisting: true,
       });
 
+      const slotSummary = Object.entries(assignRes.distribution)
+        .map(([slot, count]) => `${slot}:${count}`)
+        .join(' ');
+      logPipeline(
+        'SCHEDULED_EMAIL',
+        `List "${listId === 'all' ? 'All Leads' : listId}" scheduled via 5-Slot Sender: ${assignRes.assignedCount} newly assigned (${slotSummary})`
+      );
+
       if (scheduledFor === 'now') {
+        logPipeline('EMAIL_COUNTDOWN', 'Immediate dispatch requested — triggering 5-Slot Sender tick now.');
         fiveSlotSenderService.processGlobalTick(undefined, undefined, { forceSend: true }).catch((err) => {
           console.warn('[schedulerRouter.scheduleList] Instant tick error:', err?.message);
+          logPipelineError('Scheduler Tick', 'Instant tick failed', err);
         });
+      } else {
+        const settings = await fiveSlotSenderService.getSettings();
+        const grid = fiveSlotSenderService.computeGridState(new Date(), settings);
+        const earliestNextSec = Math.min(...Object.values(grid.slotTimes).map((s) => s.nextSec));
+        const waitSec = Math.max(0, earliestNextSec - grid.nowSec);
+        logPipeline(
+          'EMAIL_COUNTDOWN',
+          `Email will start in ${formatDuration(waitSec)} (cycle: ${settings.slot_cycle_min}m, offset: ${settings.slot_offset_min}m)`
+        );
       }
 
       return res.json({
@@ -158,7 +177,6 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
       listId,
       channel,
       inboxIds,
-      linkedinAccountId,
       scheduledFor,
       intervalSeconds: intervalSeconds ? Number(intervalSeconds) : undefined,
       style,
@@ -169,6 +187,7 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error) {
     console.error('[schedulerRouter.scheduleList]', error);
+    logPipelineError('Schedule List', 'Failed to schedule list dispatch', error);
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to schedule list dispatch',

@@ -72,7 +72,6 @@ clientsRouter.delete('/:id', async (req: Request, res: Response) => {
     await query(`DELETE FROM scheduled_dispatches WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM send_queue WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM follow_up_logs WHERE client_id = ANY($1) OR lead_id = ANY($1)`, [allTargetIds]);
-    await query(`DELETE FROM linkedin_prospect_comments WHERE lead_id = ANY($1)`, [allTargetIds]);
     await query(`DELETE FROM lead_list_memberships WHERE lead_id = ANY($1)`, [allTargetIds]);
 
     // Soft-delete client
@@ -203,8 +202,6 @@ const handleUpdateClient = async (req: Request, res: Response) => {
     const category = body.category;
     const phone = body.phone;
     const email = body.email;
-    const instagram = body.instagram;
-    const facebook = body.facebook;
     const whatsapp = body.whatsapp;
     const status = body.status;
     const contractValue = body.contractValue ?? body.contract_value;
@@ -217,14 +214,12 @@ const handleUpdateClient = async (req: Request, res: Response) => {
            category = COALESCE($3, category),
            phone = COALESCE($4, phone),
            email = COALESCE($5, email),
-           instagram = COALESCE($6, instagram),
-           facebook = COALESCE($7, facebook),
-           whatsapp = COALESCE($8, whatsapp),
-           status = COALESCE($9, status),
-           contract_value = COALESCE($10, contract_value),
-           notes = COALESCE($11, notes),
+           whatsapp = COALESCE($6, whatsapp),
+           status = COALESCE($7, status),
+           contract_value = COALESCE($8, contract_value),
+           notes = COALESCE($9, notes),
            updated_at = NOW()
-       WHERE id = $12
+       WHERE id = $10
        RETURNING *`,
       [
         businessName !== undefined ? businessName : null,
@@ -232,8 +227,6 @@ const handleUpdateClient = async (req: Request, res: Response) => {
         category !== undefined ? category : null,
         phone !== undefined ? phone : null,
         email !== undefined ? email : null,
-        instagram !== undefined ? instagram : null,
-        facebook !== undefined ? facebook : null,
         whatsapp !== undefined ? whatsapp : null,
         status !== undefined ? status : null,
         contractValue !== undefined ? contractValue : null,
@@ -271,10 +264,10 @@ clientsRouter.post('/:id/unmark', async (req: Request, res: Response) => {
     // 1. Re-insert or restore lead record
     await query(
       `INSERT INTO leads (
-        id, business_name, category, phone, email, instagram, facebook, whatsapp,
+        id, business_name, category, phone, email, whatsapp,
         notes, consent_status, status, created_at, updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'none', 'active', COALESCE($10, NOW()), NOW()
+        $1, $2, $3, $4, $5, $6, $7, 'none', 'active', COALESCE($8, NOW()), NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
         deleted_at = NULL,
@@ -283,8 +276,6 @@ clientsRouter.post('/:id/unmark', async (req: Request, res: Response) => {
         category = EXCLUDED.category,
         phone = EXCLUDED.phone,
         email = EXCLUDED.email,
-        instagram = EXCLUDED.instagram,
-        facebook = EXCLUDED.facebook,
         whatsapp = EXCLUDED.whatsapp,
         notes = EXCLUDED.notes,
         consent_status = 'none',
@@ -296,8 +287,6 @@ clientsRouter.post('/:id/unmark', async (req: Request, res: Response) => {
         client.category,
         client.phone,
         client.email,
-        client.instagram,
-        client.facebook,
         client.whatsapp,
         client.notes,
         client.onboarded_at || client.created_at,

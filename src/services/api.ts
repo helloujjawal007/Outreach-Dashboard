@@ -23,9 +23,6 @@ import type {
   WhatsAppSessionStatus,
   ConnectedInbox,
   InboxPoolSummary,
-  LinkedInAccountStatus,
-  LinkedInPost,
-  ProspectCommentTask,
   BusinessSuggestion,
   CommandExecutionResult,
   AiCommandHistoryItem,
@@ -37,8 +34,6 @@ import type {
   GmbSearchParams,
   GmbImportParams,
   GmbImportResult,
-  MillionVerifierCreditsResponse,
-  EmailVerificationTestResponse,
   ClientAuditReport,
   AuditPitchResult,
   Deal,
@@ -151,8 +146,6 @@ export interface BackendLead {
   category: string;
   phone: string;
   email: string;
-  instagram: string;
-  facebook: string;
   whatsapp: string;
   consent_status: ConsentStatus;
   last_contacted_at: string | null;
@@ -177,7 +170,6 @@ export interface BackendLead {
   metadata?: Record<string, any>;
   google_profile?: GoogleBusinessProfile;
   website?: string;
-  linkedin?: string;
   country?: string;
   primary_contact_name?: string;
   inbound_intent?: string;
@@ -197,8 +189,6 @@ export interface BackendClient {
   category: string;
   phone: string;
   email: string;
-  instagram: string;
-  facebook: string;
   whatsapp: string;
   website?: string;
   location?: string;
@@ -360,8 +350,6 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     category: b.category || 'Uncategorized',
     phone: b.phone || '',
     email: b.email || '',
-    instagram: b.instagram || '',
-    facebook: b.facebook || '',
     whatsapp: b.whatsapp || '',
     consentStatus: b.consent_status || 'none',
     entityType: 'lead',
@@ -385,7 +373,6 @@ export function mapBackendLeadToLead(b: BackendLead): Lead {
     detectedChannels: b.detected_channels || [],
     googleProfile: b.metadata?.google_profile || b.google_profile || undefined,
     website: cleanSiteUrl(b.website || b.metadata?.google_profile?.website || ''),
-    linkedin: b.linkedin || '',
     location: b.location || b.metadata?.location || '',
     country: b.country || '',
     inboundIntent: b.inbound_intent || undefined,
@@ -407,8 +394,6 @@ export function mapBackendClientToLead(c: BackendClient): Lead {
     category: c.category || 'Uncategorized',
     phone: c.phone || '',
     email: c.email || '',
-    instagram: c.instagram || '',
-    facebook: c.facebook || '',
     whatsapp: c.whatsapp || '',
     website: cleanSiteUrl(c.website || (c as any).metadata?.google_profile?.website || ''),
     location: c.location || (c as any).metadata?.location || '',
@@ -482,10 +467,7 @@ export const api = {
     category?: string;
     phone?: string;
     email?: string;
-    instagram?: string;
-    facebook?: string;
     whatsapp?: string;
-    linkedin?: string;
     website?: string;
     status?: 'active' | 'inactive' | 'paused';
     notes?: string;
@@ -505,10 +487,7 @@ export const api = {
     if (updates.category !== undefined) payload.category = updates.category;
     if (updates.phone !== undefined) payload.phone = updates.phone;
     if (updates.email !== undefined) payload.email = updates.email;
-    if (updates.instagram !== undefined) payload.instagram = updates.instagram;
-    if (updates.facebook !== undefined) payload.facebook = updates.facebook;
     if (updates.whatsapp !== undefined) payload.whatsapp = updates.whatsapp;
-    if (updates.linkedin !== undefined) payload.linkedin = updates.linkedin;
     if (updates.notes !== undefined) payload.notes = updates.notes;
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.consentStatus !== undefined) payload.consentStatus = updates.consentStatus;
@@ -849,9 +828,6 @@ export const api = {
     summary: {
       addedToEmailList: number;
       addedToWhatsAppList: number;
-      addedToLinkedInList: number;
-      addedToInstagramList: number;
-      addedToFacebookList: number;
       addedToWebsiteList: number;
       addedToCustomList: number;
     };
@@ -1425,8 +1401,6 @@ export const api = {
           eligibleLeads: BackendLead[];
           ineligibleLeads: BackendLead[];
         };
-        facebook: { total: number; leads: BackendLead[] };
-        instagram: { total: number; leads: BackendLead[] };
       };
     }>('/leads/by-channel');
 
@@ -1443,14 +1417,6 @@ export const api = {
         eligibleLeads: res.channels.whatsapp.eligibleLeads.map(mapBackendLeadToLead),
         ineligibleLeads: res.channels.whatsapp.ineligibleLeads.map(mapBackendLeadToLead),
       },
-      facebook: {
-        total: res.channels.facebook.total,
-        leads: res.channels.facebook.leads.map(mapBackendLeadToLead),
-      },
-      instagram: {
-        total: res.channels.instagram.total,
-        leads: res.channels.instagram.leads.map(mapBackendLeadToLead),
-      },
     };
   },
 
@@ -1462,8 +1428,6 @@ export const api = {
       category?: string;
       phone?: string;
       email?: string;
-      instagram?: string;
-      facebook?: string;
       notes?: string;
     };
     channel: Channel;
@@ -1621,172 +1585,6 @@ export const api = {
     });
   },
 
-  // LinkedIn Social Hub & Auto-Outreach
-  async getLinkedInStatus(): Promise<LinkedInAccountStatus> {
-    const res = await request<{ success: boolean; data: LinkedInAccountStatus }>('/linkedin/status');
-    return res.data;
-  },
-
-  async connectLinkedIn(params: {
-    accountName?: string;
-    headline?: string;
-    profileUrl?: string;
-    sessionCookie?: string;
-    accessToken?: string;
-    authMethod?: 'cookie' | 'oauth';
-  }): Promise<LinkedInAccountStatus> {
-    const res = await request<{ success: boolean; data: LinkedInAccountStatus }>('/linkedin/connect', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-    return res.data;
-  },
-
-  async disconnectLinkedIn(): Promise<void> {
-    await request('/linkedin/disconnect', { method: 'POST' });
-  },
-
-  async getLinkedInAccounts(): Promise<LinkedInAccountStatus[]> {
-    const res = await request<{ success: boolean; data: LinkedInAccountStatus[] }>('/linkedin/accounts');
-    return res.data || [];
-  },
-
-  async addLinkedInAccount(params: {
-    accountName?: string;
-    headline?: string;
-    profileUrl?: string;
-    sessionCookie?: string;
-    accessToken?: string;
-    authMethod?: 'cookie' | 'oauth';
-  }): Promise<LinkedInAccountStatus> {
-    const res = await request<{ success: boolean; data: LinkedInAccountStatus }>('/linkedin/accounts', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-    return res.data;
-  },
-
-  async deleteLinkedInAccount(id: string): Promise<void> {
-    await request(`/linkedin/accounts/${id}`, { method: 'DELETE' });
-  },
-
-  async generateLinkedInPost(params: {
-    topic?: string;
-    tone?: string;
-    targetAudience?: string;
-    callToAction?: string;
-    angle?: string;
-  }): Promise<{ content: string; tags: string[]; title: string }> {
-    const res = await request<{ success: boolean; data: { content: string; tags: string[]; title: string } }>(
-      '/linkedin/generate-post',
-      {
-        method: 'POST',
-        body: JSON.stringify(params),
-      }
-    );
-    return res.data;
-  },
-
-  async getLinkedInPosts(): Promise<LinkedInPost[]> {
-    const res = await request<{ success: boolean; data: LinkedInPost[] }>('/linkedin/posts');
-    return res.data;
-  },
-
-  async createLinkedInPost(params: {
-    title?: string;
-    content: string;
-    status?: 'draft' | 'scheduled' | 'published';
-    scheduledFor?: string;
-    tags?: string[];
-    aiGenerated?: boolean;
-  }): Promise<LinkedInPost> {
-    const res = await request<{ success: boolean; data: LinkedInPost }>('/linkedin/posts', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-    return res.data;
-  },
-
-  async updateLinkedInPost(
-    id: string,
-    params: {
-      title?: string;
-      content?: string;
-      status?: 'draft' | 'scheduled' | 'published';
-      scheduledFor?: string | null;
-    }
-  ): Promise<LinkedInPost> {
-    const res = await request<{ success: boolean; data: LinkedInPost }>(`/linkedin/posts/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(params),
-    });
-    return res.data;
-  },
-
-  async publishExistingLinkedInPost(id: string): Promise<LinkedInPost> {
-    const res = await request<{ success: boolean; message: string; data: LinkedInPost }>(`/linkedin/posts/${id}/publish-live`, {
-      method: 'POST',
-    });
-    return res.data;
-  },
-
-  async confirmLinkedInPost(id: string): Promise<LinkedInPost> {
-    const res = await request<{ success: boolean; message: string; data: LinkedInPost }>(`/linkedin/posts/${id}/confirm`, {
-      method: 'POST',
-    });
-    return res.data;
-  },
-
-  async verifyLinkedInCookie(sessionCookie: string): Promise<{ valid: boolean; accountName?: string; headline?: string; error?: string }> {
-    const res = await request<{ success: boolean; data: { valid: boolean; accountName?: string; headline?: string; error?: string } }>(
-      '/linkedin/verify-cookie',
-      {
-        method: 'POST',
-        body: JSON.stringify({ sessionCookie }),
-      }
-    );
-    return res.data;
-  },
-
-  async deleteLinkedInPost(id: string): Promise<void> {
-    await request(`/linkedin/posts/${id}`, { method: 'DELETE' });
-  },
-
-  async getLinkedInProspectComments(): Promise<ProspectCommentTask[]> {
-    const res = await request<{ success: boolean; data: ProspectCommentTask[] }>('/linkedin/prospect-comments');
-    return res.data;
-  },
-
-  async approveLinkedInComment(taskId: string, customComment?: string): Promise<ProspectCommentTask> {
-    const res = await request<{ success: boolean; data: ProspectCommentTask }>(
-      `/linkedin/prospect-comments/${taskId}/approve`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ customComment }),
-      }
-    );
-    return res.data;
-  },
-
-  async skipLinkedInComment(taskId: string): Promise<void> {
-    await request(`/linkedin/prospect-comments/${taskId}/skip`, { method: 'POST' });
-  },
-
-  async addLinkedInProspectPost(params: {
-    prospectName: string;
-    prospectHeadline?: string;
-    prospectProfileUrl?: string;
-    postUrl?: string;
-    postSnippet: string;
-    leadId?: string;
-  }): Promise<ProspectCommentTask> {
-    const res = await request<{ success: boolean; data: ProspectCommentTask }>('/linkedin/prospect-comments', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
-    return res.data;
-  },
-
   // AI Executive Copilot & Business Growth Engine
   async getAiSuggestions(): Promise<BusinessSuggestion[]> {
     const res = await request<{ success: boolean; suggestions: BusinessSuggestion[] }>('/ai/suggestions');
@@ -1916,7 +1714,6 @@ export const api = {
     result: {
       totalLeadsScanned: number;
       emailsDiscoveredCount: number;
-      socialsDiscoveredCount: number;
       locationsResolvedCount: number;
       phoneNormalizedCount: number;
       details: any[];
@@ -1954,18 +1751,6 @@ export const api = {
     countries: Array<{ code: string; name: string; flag: string; defaultState: string }>;
   }> {
     return request('/scraper/presets');
-  },
-
-  // MillionVerifier Live Verification API
-  async getMillionVerifierCredits(refresh = false): Promise<MillionVerifierCreditsResponse> {
-    return request<MillionVerifierCreditsResponse>(`/email-verifier/credits${refresh ? '?refresh=true' : ''}`);
-  },
-
-  async testEmailVerification(email: string): Promise<EmailVerificationTestResponse> {
-    return request<EmailVerificationTestResponse>('/email-verifier/verify', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
   },
 
   // Website Audit & Client Intelligence (https://technical-audit-dashboard.vercel.app/)

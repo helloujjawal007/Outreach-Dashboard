@@ -107,6 +107,12 @@ export const env = {
     return pass;
   })(),
   SESSION_SECRET: getEnvVar('SESSION_SECRET', 'JWT_SECRET') || 'ods-outreach-dashboard-secret-key-2026',
+  // Technical Audit Dashboard (TD) Integration
+  APP_URL: getEnvVar('APP_URL'),
+  TD_ENDPOINT_URL: getEnvVar('TD_ENDPOINT_URL'),
+  TD_INBOUND_SECRET: getEnvVar('TD_INBOUND_SECRET', 'OD_INBOUND_SECRET'),
+  TD_CALLBACK_SECRET: getEnvVar('TD_CALLBACK_SECRET', 'OD_CALLBACK_SECRET'),
+  TD_SHARED_SECRET: getEnvVar('TD_SHARED_SECRET'),
 };
 
 

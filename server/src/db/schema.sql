@@ -36,13 +36,10 @@ CREATE TABLE IF NOT EXISTS leads (
     category TEXT NOT NULL DEFAULT 'Uncategorized',
     phone TEXT DEFAULT '',
     email TEXT DEFAULT '',
-    instagram TEXT DEFAULT '',
-    facebook TEXT DEFAULT '',
     whatsapp TEXT DEFAULT '',
     website TEXT DEFAULT '',
     country TEXT DEFAULT '',
     location TEXT DEFAULT '',
-    linkedin TEXT DEFAULT '',
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     outreach_stage VARCHAR(30) DEFAULT 'initial',
     consent_status VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (consent_status IN ('none', 'replied', 'opted_out')),
@@ -85,13 +82,10 @@ CREATE TABLE IF NOT EXISTS clients (
     category TEXT NOT NULL DEFAULT 'Uncategorized',
     phone TEXT DEFAULT '',
     email TEXT DEFAULT '',
-    instagram TEXT DEFAULT '',
-    facebook TEXT DEFAULT '',
     whatsapp TEXT DEFAULT '',
     website TEXT DEFAULT '',
     country TEXT DEFAULT '',
     location TEXT DEFAULT '',
-    linkedin TEXT DEFAULT '',
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'churned')),
     contract_value NUMERIC(12, 2) DEFAULT 0,
     onboarded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -120,7 +114,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     entity_type VARCHAR(10) NOT NULL CHECK (entity_type IN ('lead', 'client')),
     lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
     client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'website_form')),
     status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'archived', 'closed')),
     subject VARCHAR(255) DEFAULT '',
     last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -147,7 +141,7 @@ CREATE TRIGGER trg_conversations_updated_at
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'website_form')),
     direction VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound')),
     text TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'sent' CHECK (status IN ('draft', 'sent', 'delivered', 'failed', 'bounced')),
@@ -168,7 +162,7 @@ CREATE TABLE IF NOT EXISTS follow_up_rules (
     name VARCHAR(255) NOT NULL,
     trigger_event VARCHAR(100) NOT NULL DEFAULT 'on_inactivity',
     delay_days INTEGER NOT NULL DEFAULT 3,
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'website_form')),
     template_body TEXT NOT NULL,
     max_follow_ups INTEGER NOT NULL DEFAULT 3,
     is_active BOOLEAN NOT NULL DEFAULT true,
@@ -225,7 +219,7 @@ CREATE TABLE IF NOT EXISTS campaign_steps (
     campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
     step_order INTEGER NOT NULL DEFAULT 1,
     name VARCHAR(255) NOT NULL,
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'website_form')),
     delay_days INTEGER NOT NULL DEFAULT 0,
     body TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -233,14 +227,14 @@ CREATE TABLE IF NOT EXISTS campaign_steps (
 
 CREATE INDEX IF NOT EXISTS idx_campaign_steps_order ON campaign_steps(campaign_id, step_order);
 
--- 9. SEND_QUEUE TABLE (Manual Approval Queue for IG/FB & VIP Outbound)
+-- 9. SEND_QUEUE TABLE (Manual Approval Queue & VIP Outbound)
 CREATE TABLE IF NOT EXISTS send_queue (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
     client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
     campaign_id UUID REFERENCES campaigns(id) ON DELETE SET NULL,
     step_id UUID REFERENCES campaign_steps(id) ON DELETE SET NULL,
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'website_form')),
     message_preview TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'sent', 'discarded')),
     error_details TEXT,
@@ -262,7 +256,7 @@ CREATE TRIGGER trg_send_queue_updated_at
 -- 10. DAILY_SEND_METRICS TABLE (Deliverability & Sending Health)
 CREATE TABLE IF NOT EXISTS daily_send_metrics (
     metric_date DATE NOT NULL,
-    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'instagram', 'total')),
+    channel VARCHAR(20) NOT NULL CHECK (channel IN ('email', 'whatsapp', 'website_form', 'total')),
     sent_count INTEGER NOT NULL DEFAULT 0,
     bounced_count INTEGER NOT NULL DEFAULT 0,
     complaints_count INTEGER NOT NULL DEFAULT 0,

@@ -127,9 +127,7 @@ export class GoogleMapsScraper {
       });
 
       // Connect via Node's native WebSocket
-      ws = new WebSocket(pageInfo.webSocketDebuggerUrl, {
-        headers: { Host: `localhost:${port}` },
-      });
+      ws = new WebSocket(pageInfo.webSocketDebuggerUrl);
 
       await new Promise<void>((resolve, reject) => {
         if (!ws) return reject(new Error('No WebSocket instance'));

@@ -4,8 +4,6 @@ import {
   Trash2,
   Mail,
   MessageCircle,
-  Instagram,
-  Linkedin,
   Clock,
   Save,
   Layers,
@@ -48,22 +46,6 @@ const channelOptions: {
     activeColor: 'border-emerald-500 bg-emerald-50/90 text-emerald-800 ring-2 ring-emerald-200 shadow-xs',
     badgeColor: 'bg-emerald-100 text-emerald-800',
     hint: 'Instant mobile messaging for verified numbers (68% 15-min open rate)',
-  },
-  {
-    value: 'instagram',
-    label: 'Instagram',
-    icon: Instagram,
-    activeColor: 'border-pink-500 bg-pink-50/90 text-pink-800 ring-2 ring-pink-200 shadow-xs',
-    badgeColor: 'bg-pink-100 text-pink-800',
-    hint: 'Direct visual DM hook to active Instagram profiles',
-  },
-  {
-    value: 'linkedin',
-    label: 'LinkedIn',
-    icon: Linkedin,
-    activeColor: 'border-sky-500 bg-sky-50/90 text-sky-800 ring-2 ring-sky-200 shadow-xs',
-    badgeColor: 'bg-sky-100 text-sky-800',
-    hint: 'Executive profile touchpoint with prospect engagement',
   },
 ];
 
@@ -180,8 +162,6 @@ export function CampaignBuilderPage({ store }: Props) {
       if (targetChannel !== 'all') {
         if (targetChannel === 'email' && !l.email) return false;
         if (targetChannel === 'whatsapp' && !l.whatsapp && !l.phone) return false;
-        if (targetChannel === 'instagram' && (!l.instagram || !l.instagram.trim())) return false;
-        if (targetChannel === 'linkedin' && (!l.linkedin || !l.linkedin.trim())) return false;
       }
       return true;
     });
@@ -290,7 +270,7 @@ export function CampaignBuilderPage({ store }: Props) {
     <div className="space-y-8">
       <PageHeader
         title="Multi-Channel Campaign Builder"
-        subtitle="Design high-converting omni-channel drip sequences (Email, WhatsApp, FB, IG, LinkedIn) saved directly to PostgreSQL."
+        subtitle="Design high-converting omni-channel drip sequences (Email, WhatsApp) saved directly to PostgreSQL."
         actions={
           <div className="flex items-center gap-3">
             {steps.length > 0 && (
@@ -676,10 +656,6 @@ export function CampaignBuilderPage({ store }: Props) {
                             '💡 Tip: Keep WhatsApp under 45 words for highest response rates'}
                           {step.channel === 'email' &&
                             '💡 Tip: Keep Cold Email under 90 words with a clear, low-friction question'}
-                          {step.channel === 'instagram' &&
-                            '💡 Tip: Casual, complimentary profile DM under 50 words'}
-                          {step.channel === 'linkedin' &&
-                            '💡 Tip: Thought-leadership observation + brief conversational invite'}
                         </span>
                       </div>
                     </div>
@@ -727,9 +703,7 @@ export function CampaignBuilderPage({ store }: Props) {
                           ? 'bg-blue-600'
                           : step.channel === 'whatsapp'
                           ? 'bg-emerald-600'
-                          : step.channel === 'instagram'
-                          ? 'bg-pink-600'
-                          : 'bg-sky-600'
+                          : 'bg-teal-600'
                       }`}
                     >
                       <ChannelIcon channel={step.channel} size={15} className="text-white" />
@@ -817,16 +791,6 @@ export function CampaignBuilderPage({ store }: Props) {
                           <MessageCircle size={12} className="text-emerald-500" />
                         </span>
                       )}
-                      {lead.instagram && (
-                        <span title="Instagram Ready" className="inline-flex">
-                          <Instagram size={12} className="text-pink-500" />
-                        </span>
-                      )}
-                      {lead.linkedin && (
-                        <span title="LinkedIn Ready" className="inline-flex">
-                          <Linkedin size={12} className="text-sky-500" />
-                        </span>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -874,8 +838,6 @@ export function CampaignBuilderPage({ store }: Props) {
               <option value="all">All Channels</option>
               <option value="email">Email</option>
               <option value="whatsapp">WhatsApp</option>
-              <option value="instagram">Instagram</option>
-              <option value="linkedin">LinkedIn</option>
             </select>
 
             <select
@@ -941,9 +903,7 @@ export function CampaignBuilderPage({ store }: Props) {
                               ? 'bg-blue-600'
                               : s.channel === 'whatsapp'
                               ? 'bg-emerald-600'
-                              : s.channel === 'instagram'
-                              ? 'bg-pink-600'
-                              : 'bg-sky-600'
+                              : 'bg-teal-600'
                           }`}
                         >
                           <ChannelIcon channel={s.channel} size={11} className="text-white" />

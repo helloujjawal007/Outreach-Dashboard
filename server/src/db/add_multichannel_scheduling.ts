@@ -1,7 +1,7 @@
 import { query } from '../config/db';
 
 export async function addMultiChannelScheduling() {
-  console.log('[Migration] Updating scheduled_dispatches for multi-channel support (Email, WhatsApp, FB, IG)...');
+  console.log('[Migration] Updating scheduled_dispatches for multi-channel support (Email, WhatsApp, Website)...');
 
   // 1. Add channel column with default 'email'
   await query(`
@@ -15,7 +15,7 @@ export async function addMultiChannelScheduling() {
     ADD COLUMN IF NOT EXISTS recipient_phone VARCHAR(50) DEFAULT '';
   `);
 
-  // 3. Add recipient_handle column for Instagram/Facebook
+  // 3. Add recipient_handle column for alternate channel targets
   await query(`
     ALTER TABLE scheduled_dispatches
     ADD COLUMN IF NOT EXISTS recipient_handle VARCHAR(100) DEFAULT '';

@@ -227,8 +227,6 @@ export const DealsPipelinePage: React.FC<DealsPipelinePageProps> = ({ hideHeader
       primaryContactName: deal.contact_name || undefined,
       email: deal.contact_email || '',
       phone: deal.contact_phone || '',
-      instagram: '',
-      facebook: '',
       whatsapp: '',
       entityType: 'lead',
       lastContactedAt: null,

@@ -1,4 +1,4 @@
-export type Channel = 'email' | 'whatsapp' | 'instagram' | 'facebook' | 'linkedin' | 'website_form';
+export type Channel = 'email' | 'whatsapp' | 'website_form';
 
 export type ConsentStatus = 'none' | 'replied' | 'opted_out';
 
@@ -28,10 +28,7 @@ export interface Lead {
   category: string;
   phone: string;
   email: string;
-  instagram: string;
-  facebook: string;
   whatsapp: string;
-  linkedin?: string;
   website?: string;
   location?: string;
   country?: string;
@@ -72,7 +69,6 @@ export interface Lead {
   detectedChannels?: string[];
   googleProfile?: GoogleBusinessProfile;
   discoveredEmails?: string[];
-  discoveredSocials?: Record<string, string>;
   inboundIntent?: string;
   inboundIntentConfidence?: number;
   aiSuggestedReply?: string;
@@ -95,8 +91,6 @@ export interface Client {
   email: string;
   website?: string;
   location?: string;
-  instagram: string;
-  facebook: string;
   whatsapp: string;
   status: 'active' | 'paused' | 'churned';
   contract_value: number;
@@ -203,8 +197,6 @@ export interface InboundReplyMessage {
   email: string;
   phone?: string;
   whatsapp?: string;
-  facebook?: string;
-  instagram?: string;
   category?: string;
   entity_status?: string;
   consent_status?: string;
@@ -254,9 +246,6 @@ export interface SendHealthDay {
 export const channelLabels: Record<Channel, string> = {
   email: 'Email',
   whatsapp: 'WhatsApp',
-  instagram: 'Instagram',
-  facebook: 'Facebook',
-  linkedin: 'LinkedIn',
   website_form: 'Website Form',
 };
 
@@ -297,7 +286,6 @@ export interface ScheduleListRequest {
   listId: string;
   channel?: Channel;
   inboxIds?: string[];
-  linkedinAccountId?: string;
   scheduledFor?: string;
   intervalSeconds?: number;
   style?: 'conversational' | 'direct' | 'curious';
@@ -398,14 +386,6 @@ export interface ChannelSegregationData {
     eligibleLeads: Lead[];
     ineligibleLeads: Lead[];
   };
-  facebook: {
-    total: number;
-    leads: Lead[];
-  };
-  instagram: {
-    total: number;
-    leads: Lead[];
-  };
 }
 
 export interface WhatsAppSessionStatus {
@@ -453,53 +433,6 @@ export interface InboxPoolSummary {
   totalSentToday: number;
   remainingCapacityToday: number;
   averageHealthScore: number;
-}
-
-export interface LinkedInAccountStatus {
-  id: string;
-  accountName: string;
-  headline: string;
-  profileUrl: string;
-  authMethod: 'cookie' | 'oauth';
-  isConnected: boolean;
-  hasSessionCookie?: boolean;
-  hasAccessToken?: boolean;
-  dailyCommentsUsed: number;
-  dailyPostsUsed: number;
-  dailySafeCommentLimit: number;
-  dailySafePostLimit: number;
-  quotaResetAt: string;
-}
-
-export interface LinkedInPost {
-  id: string;
-  title: string;
-  content: string;
-  status: 'draft' | 'scheduled' | 'published' | 'ready_to_share' | 'failed';
-  scheduledFor: string | null;
-  publishedAt: string | null;
-  tags: string[];
-  aiGenerated: boolean;
-  likesCount: number;
-  commentsCount: number;
-  liveDelivery?: boolean;
-  directShareUrl?: string;
-  errorMessage?: string;
-  createdAt: string;
-}
-
-export interface ProspectCommentTask {
-  id: string;
-  leadId: string | null;
-  prospectName: string;
-  prospectHeadline: string;
-  prospectProfileUrl: string;
-  postUrl: string;
-  postSnippet: string;
-  generatedComment: string;
-  status: 'pending_approval' | 'approved' | 'posted' | 'skipped';
-  postedAt: string | null;
-  createdAt: string;
 }
 
 export interface BusinessSuggestion {
@@ -618,12 +551,6 @@ export interface ScrapedLead {
   placeId?: string;
   emailDiscovered: boolean;
   emailSource?: string;
-  discoveredSocials?: {
-    facebook?: string;
-    instagram?: string;
-    linkedin?: string;
-    whatsapp?: string;
-  };
 }
 
 export interface GmbLocationTarget {
@@ -659,39 +586,6 @@ export interface GmbImportResult {
   batchId?: string;
   batchName?: string;
   leads: Lead[] | Record<string, unknown>[];
-}
-
-export interface MillionVerifierCreditsResponse {
-  success: boolean;
-  apiKeyConfigured: boolean;
-  maskedKey: string;
-  credits: number;
-  bulk_credits: number;
-  renewing_credits: number;
-  plan: number;
-  error?: string;
-  isWorking: boolean;
-}
-
-export interface EmailVerificationTestResponse {
-  success: boolean;
-  email: string;
-  unified: {
-    isValid: boolean;
-    email: string;
-    normalizedEmail: string;
-    reason?: string;
-    status: string;
-  };
-  millionVerifier: {
-    email: string;
-    result: string;
-    resultcode: number;
-    subresult?: string;
-    credits?: number;
-    error?: string;
-    livemode?: boolean;
-  };
 }
 
 export interface SemrushSiteIssue {
@@ -964,10 +858,16 @@ export type SlotId = 'A' | 'B' | 'C' | 'D' | 'E';
 
 export interface SlotSenderSettings {
   slot_cycle_min: number;
+  slot_cycle_minutes?: number;
   slot_offset_min: number;
+  slot_offsets_min?: number[];
+  slot_batch_size?: number;
   anchor_timestamp: string;
   td_endpoint_url: string;
   td_shared_secret: string;
+  td_shared_secret_masked?: string;
+  td_callback_secret?: string;
+  td_callback_secret_masked?: string;
   max_audit_retries: number;
   is_active: boolean;
   daily_send_limit?: number;
@@ -1008,6 +908,11 @@ export interface SlotStatus {
   dueFollowupCount?: number;
   nextSendTime: string;
   lastSendTime: string | null;
+  last_turn_at?: string | null;
+  next_turn_at?: string;
+  in_flight?: boolean;
+  leads_assigned?: number;
+  leads_done?: number;
   status: 'active' | 'waiting' | 'idle';
   leads?: SlotLeadMilestone[];
 }

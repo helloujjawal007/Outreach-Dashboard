@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { query } from '../config/db';
 import { channelListAutoAssignmentService } from '../services/channelListAutoAssignmentService';
 import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
+import { logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export const listsRouter = Router();
 
@@ -106,9 +107,16 @@ listsRouter.post('/:id/members', async (req: Request, res: Response) => {
       if (resInsert.rows.length > 0) addedCount++;
     }
 
+    if (addedCount > 0) {
+      const listInfo = await query<{ name: string }>(`SELECT name FROM lists WHERE id = $1`, [listId]).catch(() => ({ rows: [] as any[] }));
+      const listName = listInfo.rows[0]?.name || listId;
+      logPipeline('ADDED_TO_LIST', `Added ${addedCount} lead(s) to list "${listName}"`);
+    }
+
     res.json({ success: true, addedCount });
   } catch (error) {
     console.error('[listsRouter.addMembers]', error);
+    logPipelineError('Add to List', 'Failed to add leads to list', error);
     res.status(500).json({ success: false, error: 'Failed to add leads to list' });
   }
 });

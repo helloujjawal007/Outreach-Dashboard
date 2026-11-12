@@ -1,4 +1,5 @@
 import { query } from '../config/db';
+import { logPipelineError } from '../utils/pipelineLogger';
 
 export interface LeadMessageHistory {
   hasPriorContact: boolean;
@@ -34,6 +35,7 @@ export class LeadIsolationService {
 
     try {
       console.warn(`[LeadIsolationService] 🚫 Isolating failed lead ${leadId}. Reason: "${cleanReason}"`);
+      logPipelineError('Lead Isolation', `Quarantining lead ${leadId}: ${cleanReason}`);
 
       // 1. DIRECTLY REMOVE FROM ALL LISTS
       const deletedLists = await query(

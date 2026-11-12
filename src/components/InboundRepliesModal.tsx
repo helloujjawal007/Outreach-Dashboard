@@ -2,8 +2,6 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Mail,
   MessageCircle,
-  Facebook,
-  Instagram,
   Search,
   RefreshCw,
   ArrowRight,
@@ -20,8 +18,8 @@ import {
   ExternalLink,
   Layers,
   Send,
-  Linkedin,
   User,
+  Globe,
   AlertTriangle,
   Trash2,
   Zap,
@@ -61,8 +59,6 @@ interface ChatThread {
   email?: string;
   phone?: string;
   whatsapp?: string;
-  facebook?: string;
-  instagram?: string;
   category?: string;
   channel: Channel;
   messages: InboundReplyMessage[];
@@ -93,8 +89,6 @@ function toThreadMessage(
   const email = ('email' in m ? m.email : defaults.email) || '';
   const phone = ('phone' in m ? m.phone : defaults.phone) || '';
   const whatsapp = ('whatsapp' in m ? m.whatsapp : defaults.whatsapp) || '';
-  const facebook = ('facebook' in m ? m.facebook : defaults.facebook) || '';
-  const instagram = ('instagram' in m ? m.instagram : defaults.instagram) || '';
   const category = ('category' in m ? m.category : defaults.category) || '';
   const inbound_intent = 'inbound_intent' in m ? m.inbound_intent : undefined;
   const inbound_intent_confidence = 'inbound_intent_confidence' in m ? m.inbound_intent_confidence : undefined;
@@ -124,8 +118,6 @@ function toThreadMessage(
     email,
     phone,
     whatsapp,
-    facebook,
-    instagram,
     category,
   };
 }
@@ -362,8 +354,6 @@ export function InboundRepliesModal({
           m.email?.toLowerCase().includes(q) ||
           m.phone?.toLowerCase().includes(q) ||
           m.whatsapp?.toLowerCase().includes(q) ||
-          m.facebook?.toLowerCase().includes(q) ||
-          m.instagram?.toLowerCase().includes(q) ||
           m.text?.toLowerCase().includes(q) ||
           m.category?.toLowerCase().includes(q) ||
           m.inbox_email?.toLowerCase().includes(q)
@@ -417,8 +407,6 @@ export function InboundRepliesModal({
           email: m.email,
           phone: m.phone,
           whatsapp: m.whatsapp,
-          facebook: m.facebook,
-          instagram: m.instagram,
           category: m.category,
           channel: m.channel,
           messages: [m],
@@ -1083,9 +1071,7 @@ export function InboundRepliesModal({
                                 ? 'bg-gradient-to-tr from-emerald-500 to-teal-600 text-white'
                                 : ch === 'email'
                                 ? 'bg-gradient-to-tr from-blue-500 to-indigo-600 text-white'
-                                : ch === 'linkedin'
-                                ? 'bg-gradient-to-tr from-sky-600 to-blue-700 text-white'
-                                : 'bg-gradient-to-tr from-purple-500 to-pink-600 text-white'
+                                : 'bg-gradient-to-tr from-teal-500 to-cyan-600 text-white'
                             }`}
                           >
                             {getInitials(thread.businessName)}
@@ -1097,15 +1083,12 @@ export function InboundRepliesModal({
                                 ? 'bg-emerald-600'
                                 : ch === 'email'
                                 ? 'bg-blue-600'
-                                : ch === 'linkedin'
-                                ? 'bg-[#0a66c2]'
-                                : 'bg-pink-600'
+                                : 'bg-teal-600'
                             }`}
                           >
                             {ch === 'whatsapp' && <MessageCircle size={9} />}
                             {ch === 'email' && <Mail size={9} />}
-                            {ch === 'linkedin' && <Linkedin size={9} />}
-                            {ch === 'instagram' && <Instagram size={9} />}
+                            {ch === 'website_form' && <Globe size={9} />}
                           </div>
                         </div>
 
@@ -1898,14 +1881,12 @@ export function InboundRepliesModal({
                                 ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
                                 : channel === 'email'
                                 ? 'bg-blue-50 text-blue-600 border-blue-200'
-                                : 'bg-pink-50 text-pink-600 border-pink-200'
+                                : 'bg-teal-50 text-teal-600 border-teal-200'
                             }`}
                           >
                             {channel === 'whatsapp' && <MessageCircle size={18} />}
                             {channel === 'email' && <Mail size={18} />}
-                            {channel === 'facebook' && <Facebook size={18} />}
-                            {channel === 'instagram' && <Instagram size={18} />}
-                            {channel === 'linkedin' && <Linkedin size={18} />}
+                            {channel === 'website_form' && <Globe size={18} />}
                           </div>
 
                           <div className="flex-1 min-w-0">

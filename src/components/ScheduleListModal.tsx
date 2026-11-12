@@ -14,10 +14,7 @@ import {
   Users,
   Mail,
   MessageSquare,
-  Split,
   Smartphone,
-  CheckSquare,
-  Square,
   Trash2,
 } from 'lucide-react';
 import { Modal } from './Modal';

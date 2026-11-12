@@ -3,6 +3,7 @@ import { emailValidatorService } from './emailValidatorService';
 import { humanCopywriterService } from './humanCopywriterService';
 import { channelListAutoAssignmentService, type ChannelAssignmentSummary } from './channelListAutoAssignmentService';
 import { workflowRoutingService } from './workflowRoutingService';
+import { formatDuration, logPipeline } from '../utils/pipelineLogger';
 
 export interface AutomatedIntakeResult {
   totalImported: number;
@@ -27,7 +28,7 @@ export class AutomatedIntakeEngine {
 
   /**
    * Processes all imported leads:
-   * 1. Auto-assigns leads to standard channel lists (Email, WhatsApp, LinkedIn, IG, FB)
+   * 1. Auto-assigns leads to standard channel lists (Email, WhatsApp, Website)
    * 2. Validates emails against syntax & prior bounces
    * 3. Schedules initial outreach respecting the 200/day limit, rolling over excess to next day(s)
    */
@@ -40,9 +41,7 @@ export class AutomatedIntakeEngine {
       email?: string;
       phone?: string;
       whatsapp?: string;
-      linkedin?: string;
-      instagram?: string;
-      facebook?: string;
+      website?: string;
       status?: string;
       consent_status?: string;
       outreach_stage?: string;
@@ -66,9 +65,6 @@ export class AutomatedIntakeEngine {
         channelAssignments: {
           addedToEmailList: 0,
           addedToWhatsAppList: 0,
-          addedToLinkedInList: 0,
-          addedToInstagramList: 0,
-          addedToFacebookList: 0,
           addedToWebsiteList: 0,
           addedToCustomList: 0,
         },
@@ -84,9 +80,6 @@ export class AutomatedIntakeEngine {
         email: l.email,
         phone: l.phone,
         whatsapp: l.whatsapp,
-        linkedin: l.linkedin,
-        instagram: l.instagram,
-        facebook: l.facebook,
         website: l.website,
       })),
       customListId
@@ -269,7 +262,19 @@ export class AutomatedIntakeEngine {
         )`,
         [vLead.id, vLead.email, vLead.businessName, copy.subject, copy.body, sendTime]
       );
+
+      const waitSecs = Math.max(0, Math.round((sendTime.getTime() - Date.now()) / 1000));
+      logPipeline(
+        'DRAFTED_EMAIL',
+        `Drafted & scheduled initial email for "${vLead.businessName}" (${vLead.email}) | Subject: "${copy.subject}" | Starts in ${formatDuration(waitSecs)}`
+      );
     }
+
+    const batchWaitSecs = Math.max(0, Math.round((initialPointer.getTime() - Date.now()) / 1000));
+    logPipeline(
+      'SCHEDULED_EMAIL',
+      `Scheduled ${scheduledTodayCount} email(s) for today (${rolledOverCount} rolled over) — Email will start in ${formatDuration(batchWaitSecs)}`
+    );
 
     console.log(
       `[AutomatedIntakeEngine] Intake processed: ${verifiedLeads.length} verified leads -> ${scheduledTodayCount} scheduled starting at ${currentTodayPointer.toISOString()}, ${rolledOverCount} rolled over adhering to ${this.DAILY_EMAIL_LIMIT}/day limit.`

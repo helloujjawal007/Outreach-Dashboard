@@ -40,9 +40,7 @@ export class WorkflowRoutingService {
       trimmed.includes('gstatic.com') ||
       trimmed.includes('ggpht.com') ||
       trimmed.includes('schema.org') ||
-      trimmed.includes('w3.org') ||
-      trimmed.includes('facebook.com') ||
-      trimmed.includes('instagram.com')
+      trimmed.includes('w3.org')
     ) {
       return false;
     }

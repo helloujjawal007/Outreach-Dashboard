@@ -40,8 +40,6 @@ export async function addInboxRotationAndTrigramIndexes() {
         ALTER COLUMN business_name TYPE TEXT,
         ALTER COLUMN phone TYPE TEXT,
         ALTER COLUMN email TYPE TEXT,
-        ALTER COLUMN instagram TYPE TEXT,
-        ALTER COLUMN facebook TYPE TEXT,
         ALTER COLUMN whatsapp TYPE TEXT;
 
       ALTER TABLE clients 
@@ -49,8 +47,6 @@ export async function addInboxRotationAndTrigramIndexes() {
         ALTER COLUMN business_name TYPE TEXT,
         ALTER COLUMN phone TYPE TEXT,
         ALTER COLUMN email TYPE TEXT,
-        ALTER COLUMN instagram TYPE TEXT,
-        ALTER COLUMN facebook TYPE TEXT,
         ALTER COLUMN whatsapp TYPE TEXT;
     `);
     console.log('✅ Ensured leads and clients columns use TEXT');

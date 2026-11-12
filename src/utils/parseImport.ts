@@ -7,10 +7,7 @@ export interface ParsedLeadRow {
   category: string;
   phone: string;
   email: string;
-  instagram: string;
-  facebook: string;
   whatsapp: string;
-  linkedin?: string;
   website?: string;
   country?: string;
   notes?: string;
@@ -111,7 +108,7 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
   const dataLines = hasHeader ? lines.slice(1) : lines;
   const rawHeaders = hasHeader
     ? parseCsvLine(lines[0]).map((h) => h.toLowerCase().trim().replace(/[\s/_-]+/g, ''))
-    : ['businessname', 'category', 'phone', 'email', 'instagram', 'facebook', 'whatsapp', 'linkedin'];
+    : ['businessname', 'category', 'phone', 'email', 'whatsapp'];
 
   const rows: ParsedLeadRow[] = [];
 
@@ -157,10 +154,7 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
 
     const phone = get('phone', 'tel', 'mobile', 'cell', 'telephone') || '';
     const email = get('contactemail', 'email', 'mail') || '';
-    const instagram = get('instagram', 'ig', 'insta') || '';
-    const facebook = get('facebook', 'fb') || '';
     const whatsapp = get('whatsapp', 'wa') || '';
-    const linkedin = get('linkedin', 'li', 'linkedinurl', 'profile') || '';
 
     // Capture notes and rich supplemental attributes (City, Region, Country, Rating, Reviews, Website)
     const rawNotes = get('leadnotes', 'notes', 'note', 'comment', 'comments', 'description', 'remark', 'remarks') || '';
@@ -180,7 +174,7 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
     const notes = noteParts.join(' | ');
 
     // Ignore completely empty rows
-    if (!businessName && !email && !phone && !instagram && !facebook && !whatsapp && !linkedin && !website) continue;
+    if (!businessName && !email && !phone && !whatsapp && !website) continue;
 
     rows.push({
       tempId: uid('row'),
@@ -188,10 +182,7 @@ export function parseImport(rawText: string): ParsedLeadRow[] {
       category,
       phone,
       email,
-      instagram,
-      facebook,
       whatsapp,
-      linkedin,
       website,
       country,
       notes,
@@ -311,12 +302,12 @@ export function markDuplicates(rows: ParsedLeadRow[], existingRecords: Lead[]): 
 }
 
 /**
- * Flags rows missing all contact channels (email, phone, IG, FB, WA)
+ * Flags rows missing all contact channels (email, phone, WA)
  */
 export function markIncomplete(rows: ParsedLeadRow[]): ParsedLeadRow[] {
   return rows.map((row) => {
     const hasContact =
-      !!row.email || !!row.phone || !!row.instagram || !!row.facebook || !!row.whatsapp || !!row.linkedin;
+      !!row.email || !!row.phone || !!row.whatsapp;
     return { ...row, isIncomplete: !hasContact };
   });
 }
@@ -328,10 +319,7 @@ export function parsedRowToLead(row: ParsedLeadRow): Lead {
     category: row.category || 'General Business',
     phone: row.phone,
     email: row.email,
-    instagram: row.instagram,
-    facebook: row.facebook,
     whatsapp: row.whatsapp,
-    linkedin: row.linkedin || '',
     website: row.website || '',
     country: row.country || '',
     notes: row.notes || '',

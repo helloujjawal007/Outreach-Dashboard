@@ -182,33 +182,6 @@ conversationsRouter.post('/reply', async (req: Request, res: Response) => {
       }
 
       if (sendResult.allowed) {
-        // For draft queue channels (Instagram, Facebook, LinkedIn), record outbound message in thread
-        if (channel === 'instagram' || channel === 'facebook' || channel === 'linkedin') {
-          const convRes = await query<{ id: string }>(
-            `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = $2 LIMIT 1`,
-            [leadId, channel]
-          );
-          let convId: string;
-          if (convRes.rows.length === 0) {
-            const newConv = await query<{ id: string }>(
-              `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
-               VALUES ('lead', $1, $2, 'open', NOW())
-               RETURNING id`,
-              [leadId, channel]
-            );
-            convId = newConv.rows[0].id;
-          } else {
-            convId = convRes.rows[0].id;
-            await query(`UPDATE conversations SET last_message_at = NOW() WHERE id = $1`, [convId]);
-          }
-
-          await query(
-            `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, is_read)
-             VALUES ($1, $2, 'outbound', $3, 'sent', NOW(), true)`,
-            [convId, channel, text]
-          );
-        }
-
         // Mark all preceding inbound messages for this lead as replied, seen, and read
         await query(
           `UPDATE messages m
@@ -587,8 +560,6 @@ conversationsRouter.get('/recent-messages', async (req: Request, res: Response) 
         COALESCE(l.email, cl.email, '') AS email,
         COALESCE(l.phone, cl.phone, '') AS phone,
         COALESCE(l.whatsapp, cl.whatsapp, '') AS whatsapp,
-        COALESCE(l.facebook, cl.facebook, '') AS facebook,
-        COALESCE(l.instagram, cl.instagram, '') AS instagram,
         COALESCE(l.category, cl.category, '') AS category,
         COALESCE(l.status, cl.status, 'active') AS entity_status,
         COALESCE(l.consent_status, 'none') AS consent_status
@@ -662,8 +633,6 @@ conversationsRouter.get('/inbound-replies', async (req: Request, res: Response) 
         COALESCE(l.email, cl.email, '') AS email,
         COALESCE(l.phone, cl.phone, '') AS phone,
         COALESCE(l.whatsapp, cl.whatsapp, '') AS whatsapp,
-        COALESCE(l.facebook, cl.facebook, '') AS facebook,
-        COALESCE(l.instagram, cl.instagram, '') AS instagram,
         COALESCE(l.category, cl.category, '') AS category,
         COALESCE(l.status, cl.status, 'active') AS entity_status,
         COALESCE(l.consent_status, 'replied') AS consent_status
@@ -891,8 +860,8 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
       intervalSeconds = 0,
     } = req.body;
 
-    if (!channel || !['email', 'whatsapp', 'facebook', 'instagram', 'website_form'].includes(channel)) {
-      return res.status(400).json({ success: false, error: 'Valid channel is required (email, whatsapp, facebook, instagram, website_form)' });
+    if (!channel || !['email', 'whatsapp', 'website_form'].includes(channel)) {
+      return res.status(400).json({ success: false, error: 'Valid channel is required (email, whatsapp, website_form)' });
     }
 
     if (!Array.isArray(leadIds) || leadIds.length === 0) {
@@ -907,8 +876,6 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
       category: string;
       phone: string;
       email: string;
-      instagram: string;
-      facebook: string;
       whatsapp: string;
       consent_status: string;
       notes: string;
@@ -919,8 +886,6 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
     }>(`SELECT * FROM leads WHERE id = ANY($1) AND deleted_at IS NULL`, [targetIds]);
 
     const { whatsappValidator } = await import('../services/whatsappValidator');
-    const { facebookAdapter } = await import('../adapters/facebookAdapter');
-    const { instagramAdapter } = await import('../adapters/instagramAdapter');
     const { emailAdapter } = await import('../adapters/emailAdapter');
 
     let sentCount = 0;
@@ -1236,134 +1201,6 @@ conversationsRouter.post('/batch-shoot', async (req: Request, res: Response) => 
           status: 'sent',
           reason: `Directly sent via linked WhatsApp (${sessionState.phoneNumber || 'device'})`,
           deepLink: waDeepLink,
-          messagePreview: bodyText,
-        });
-      } else if (channel === 'facebook') {
-        const profile = (lead.facebook || '').trim();
-        if (!profile) {
-          skippedCount++;
-          results.push({
-            leadId: lead.id,
-            businessName: lead.business_name,
-            channel: 'facebook',
-            success: false,
-            status: 'skipped',
-            reason: 'No Facebook profile or page configured',
-          });
-          continue;
-        }
-
-        const fbDraft = await facebookAdapter.enqueueDraft({
-          leadId: lead.id,
-          profileOrPage: profile,
-          text: bodyText,
-        });
-
-        // Record message in conversation thread
-        const convRes = await query<{ id: string }>(
-          `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'facebook' LIMIT 1`,
-          [lead.id]
-        );
-        let convId: string;
-        if (convRes.rows.length === 0) {
-          const newConv = await query<{ id: string }>(
-            `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
-             VALUES ('lead', $1, 'facebook', 'open', NOW()) RETURNING id`,
-            [lead.id]
-          );
-          convId = newConv.rows[0].id;
-        } else {
-          convId = convRes.rows[0].id;
-        }
-
-        await query(
-          `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
-           VALUES ($1, 'facebook', 'outbound', $2, 'queued', $3, NOW())`,
-          [convId, bodyText, fbDraft.queueId]
-        );
-
-        await query(
-          `UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`,
-          [convId]
-        );
-
-        await query(
-          `UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-          [lead.id]
-        );
-
-        sentCount++;
-        results.push({
-          leadId: lead.id,
-          businessName: lead.business_name,
-          channel: 'facebook',
-          success: true,
-          status: 'queued',
-          deepLink: fbDraft.deepLink,
-          messagePreview: bodyText,
-        });
-      } else if (channel === 'instagram') {
-        const handle = (lead.instagram || '').trim();
-        if (!handle) {
-          skippedCount++;
-          results.push({
-            leadId: lead.id,
-            businessName: lead.business_name,
-            channel: 'instagram',
-            success: false,
-            status: 'skipped',
-            reason: 'No Instagram handle configured',
-          });
-          continue;
-        }
-
-        const igDraft = await instagramAdapter.enqueueDraft({
-          leadId: lead.id,
-          handle,
-          text: bodyText,
-        });
-
-        // Record message in conversation thread
-        const convRes = await query<{ id: string }>(
-          `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'instagram' LIMIT 1`,
-          [lead.id]
-        );
-        let convId: string;
-        if (convRes.rows.length === 0) {
-          const newConv = await query<{ id: string }>(
-            `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
-             VALUES ('lead', $1, 'instagram', 'open', NOW()) RETURNING id`,
-            [lead.id]
-          );
-          convId = newConv.rows[0].id;
-        } else {
-          convId = convRes.rows[0].id;
-        }
-
-        await query(
-          `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
-           VALUES ($1, 'instagram', 'outbound', $2, 'queued', $3, NOW())`,
-          [convId, bodyText, igDraft.queueId]
-        );
-
-        await query(
-          `UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`,
-          [convId]
-        );
-
-        await query(
-          `UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-          [lead.id]
-        );
-
-        sentCount++;
-        results.push({
-          leadId: lead.id,
-          businessName: lead.business_name,
-          channel: 'instagram',
-          success: true,
-          status: 'queued',
-          deepLink: igDraft.deepLink,
           messagePreview: bodyText,
         });
       } else if (channel === 'website_form') {

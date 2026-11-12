@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Mail,
   MessageCircle,
-  Instagram,
   User,
   UserCheck,
   UserX,
@@ -33,8 +32,6 @@ import {
   Check,
   Phone,
   Globe,
-  Linkedin,
-  Facebook,
   Loader2,
   Star,
   MapPin,
@@ -108,7 +105,7 @@ interface Props {
 }
 
 type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'client' | 'inbound' | 'manual_review' | 'invalid_list' | 'duplicates' | 'trash';
-type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form' | 'instagram' | 'linkedin';
+type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
 export function CrmPage({
@@ -358,8 +355,6 @@ export function CrmPage({
     category: '',
     phone: '',
     email: '',
-    instagram: '',
-    facebook: '',
     whatsapp: '',
     status: 'active' as 'active' | 'paused' | 'churned',
     contractValue: 1500,
@@ -714,36 +709,12 @@ export function CrmPage({
         activeBg: 'bg-emerald-600 ring-emerald-300',
       },
       {
-        name: 'LinkedIn Leads',
-        label: 'LinkedIn',
-        icon: Linkedin,
-        iconColor: 'text-sky-600',
-        textColor: 'text-sky-900',
-        activeBg: 'bg-sky-600 ring-sky-300',
-      },
-      {
-        name: 'Instagram Leads',
-        label: 'Instagram',
-        icon: Instagram,
-        iconColor: 'text-purple-600',
-        textColor: 'text-purple-900',
-        activeBg: 'bg-purple-600 ring-purple-300',
-      },
-      {
         name: 'Website Leads',
         label: 'Website',
         icon: Globe,
         iconColor: 'text-teal-600',
         textColor: 'text-teal-900',
         activeBg: 'bg-teal-600 ring-teal-300',
-      },
-      {
-        name: 'Facebook Leads',
-        label: 'Facebook',
-        icon: Facebook,
-        iconColor: 'text-indigo-600',
-        textColor: 'text-indigo-900',
-        activeBg: 'bg-indigo-600 ring-indigo-300',
       },
       {
         name: 'Invalid List',
@@ -766,9 +737,6 @@ export function CrmPage({
     const channelNames = new Set([
       'email leads',
       'whatsapp leads',
-      'linkedin leads',
-      'instagram leads',
-      'facebook leads',
       'website leads',
       'invalid list',
     ]);
@@ -781,7 +749,7 @@ export function CrmPage({
       const res = await store.syncChannelLists();
       const s = res?.summary;
       setBulkActionSuccess(
-        `✓ All channel lists synchronized! Auto-assigned: Email (${s?.addedToEmailList || 0}), WhatsApp (${s?.addedToWhatsAppList || 0}), LinkedIn (${s?.addedToLinkedInList || 0}), Website (${s?.addedToWebsiteList || 0}), IG (${s?.addedToInstagramList || 0}), FB (${s?.addedToFacebookList || 0})`
+        `✓ All channel lists synchronized! Auto-assigned: Email (${s?.addedToEmailList || 0}), WhatsApp (${s?.addedToWhatsAppList || 0}), Website (${s?.addedToWebsiteList || 0})`
       );
       setTimeout(() => setBulkActionSuccess(null), 6000);
     } catch (err) {
@@ -834,8 +802,6 @@ export function CrmPage({
       }
       if (channel === 'whatsapp_mobile') return l.whatsappEligible === true;
       if (channel === 'website_form') return Boolean(l.website || l.googleProfile?.website);
-      if (channel === 'instagram') return Boolean(l.instagram && l.instagram.trim());
-      if (channel === 'linkedin') return Boolean(l.linkedin && l.linkedin.trim());
       return true;
     },
     []
@@ -1110,10 +1076,7 @@ export function CrmPage({
           !l.phone.toLowerCase().includes(q) &&
           !(l.location && l.location.toLowerCase().includes(q)) &&
           !(l.website && l.website.toLowerCase().includes(q)) &&
-          !(l.country && l.country.toLowerCase().includes(q)) &&
-          !(l.facebook && l.facebook.toLowerCase().includes(q)) &&
-          !(l.instagram && l.instagram.toLowerCase().includes(q)) &&
-          !(l.linkedin && l.linkedin.toLowerCase().includes(q))
+          !(l.country && l.country.toLowerCase().includes(q))
         )
           return false;
       }
@@ -1185,7 +1148,7 @@ export function CrmPage({
       setConversionMessage(null);
       const existingForm = lead.metadata?.website_form || null;
       setDetectedFormInfo(existingForm);
-      setReplyChannel(lead.email ? 'email' : lead.whatsapp ? 'whatsapp' : (lead.website || lead.googleProfile?.website) ? 'website_form' : 'instagram');
+      setReplyChannel(lead.email ? 'email' : lead.whatsapp ? 'whatsapp' : (lead.website || lead.googleProfile?.website) ? 'website_form' : 'email');
       await store.fetchConversationsForEntity(lead.id, lead.entityType === 'client');
       // NOTE: Received messages remain UNREAD until user explicitly clicks "Mark as Read" or sends a reply back!
 
@@ -1693,8 +1656,6 @@ export function CrmPage({
       category: lead.category,
       phone: lead.phone,
       email: lead.email,
-      instagram: lead.instagram,
-      facebook: lead.facebook,
       whatsapp: lead.whatsapp,
       status: 'active',
       contractValue: 1500,
@@ -1713,8 +1674,6 @@ export function CrmPage({
         category: clientEditForm.category,
         phone: clientEditForm.phone,
         email: clientEditForm.email,
-        instagram: clientEditForm.instagram,
-        facebook: clientEditForm.facebook,
         whatsapp: clientEditForm.whatsapp,
         status: clientEditForm.status,
         contract_value: clientEditForm.contractValue,
@@ -1730,8 +1689,6 @@ export function CrmPage({
               category: clientEditForm.category,
               phone: clientEditForm.phone,
               email: clientEditForm.email,
-              instagram: clientEditForm.instagram,
-              facebook: clientEditForm.facebook,
               whatsapp: clientEditForm.whatsapp,
               notes: clientEditForm.notes,
             }
@@ -1907,7 +1864,7 @@ export function CrmPage({
           });
           return;
         } else if (res.result.actionTaken === 'queued_draft') {
-          feedbackMsg = 'Instagram DM drafted and added to the Human Send Approval Queue.';
+          feedbackMsg = 'Message drafted and added to the Human Send Approval Queue.';
         } else if (res.result.actionTaken === 'throttled_warmup') {
           setSendFeedback({
             type: 'warning',
@@ -2704,7 +2661,7 @@ export function CrmPage({
           onClick={handleSyncChannels}
           disabled={isSyncingChannels}
           className="btn-secondary py-1 px-3 text-xs flex items-center gap-1.5 text-brand-700 bg-white hover:bg-brand-50 border-brand-200 font-semibold transition shadow-xs"
-          title="Re-scan all leads in the database and automatically sort them into Email, WhatsApp, LinkedIn, Instagram, Facebook, and Website lists"
+          title="Re-scan all leads in the database and automatically sort them into Email, WhatsApp, and Website lists"
         >
           <RefreshCw size={12} className={isSyncingChannels ? 'animate-spin text-brand-600' : 'text-brand-600'} />
           <span>{isSyncingChannels ? 'Auto-Organizing...' : '⚡ Auto-Sync Channel Lists'}</span>
@@ -3532,8 +3489,7 @@ export function CrmPage({
                       <div className="flex gap-1.5">
                         {lead.email && <Mail size={14} className="text-brand-500" />}
                         {lead.whatsapp && <MessageCircle size={14} className="text-emerald-500" />}
-                        {lead.instagram && <Instagram size={14} className="text-violet-500" />}
-                        {!lead.email && !lead.whatsapp && !lead.instagram && (
+                        {!lead.email && !lead.whatsapp && (
                           <span className="text-xs text-ink-300">None</span>
                         )}
                       </div>
@@ -3902,19 +3858,9 @@ export function CrmPage({
                               <MessageCircle size={12} />
                             </span>
                           )}
-                          {lead.linkedin && (
-                            <span className="p-1 rounded bg-sky-50 text-sky-700 border border-sky-200" title={`LinkedIn: ${lead.linkedin}`}>
-                              <Linkedin size={12} />
-                            </span>
-                          )}
                           {cleanSiteUrl(lead.website || lead.googleProfile?.website) && (
                             <span className="p-1 rounded bg-teal-50 text-teal-700 border border-teal-200" title="Website Verified">
                               <Globe size={12} />
-                            </span>
-                          )}
-                          {lead.instagram && (
-                            <span className="p-1 rounded bg-purple-50 text-purple-700 border border-purple-200" title={`Instagram: ${lead.instagram}`}>
-                              <Instagram size={12} />
                             </span>
                           )}
                         </div>
@@ -4616,43 +4562,6 @@ export function CrmPage({
                       )}
                     </div>
                   </div>
-
-                  {/* Social Handles (Instagram, Facebook, LinkedIn) */}
-                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
-                    <div className="flex items-center gap-1.5 text-ink-500 font-semibold shrink-0">
-                      <Globe size={13} />
-                      <span>Socials:</span>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-end gap-1.5">
-                      {selectedLead.instagram && (
-                        <a
-                          href={`https://instagram.com/${selectedLead.instagram.replace(/^@/, '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 transition text-[11px] font-medium"
-                          title="View Instagram Profile"
-                        >
-                          <Instagram size={11} />
-                          <span>@{selectedLead.instagram.replace(/^@/, '')}</span>
-                        </a>
-                      )}
-                      {selectedLead.linkedin && (
-                        <a
-                          href={selectedLead.linkedin.startsWith('http') ? selectedLead.linkedin : `https://${selectedLead.linkedin}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition text-[11px] font-medium"
-                          title="View LinkedIn Profile"
-                        >
-                          <Linkedin size={11} />
-                          <span>LinkedIn</span>
-                        </a>
-                      )}
-                      {!selectedLead.instagram && !selectedLead.linkedin && (
-                        <span className="text-ink-300 italic text-[11px]">No social links</span>
-                      )}
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -5020,23 +4929,6 @@ export function CrmPage({
                                   </span>
                                 </div>
                               )}
-                              {msg.channel === 'instagram' && (
-                                <div className="text-[10px] text-slate-600">
-                                  <span className="font-semibold text-pink-700">Instagram DM:</span>{' '}
-                                  handle{' '}
-                                  <span className="font-mono font-bold text-pink-900">
-                                    @{selectedLead.instagram || 'prospect'}
-                                  </span>
-                                </div>
-                              )}
-                              {msg.channel === 'linkedin' && (
-                                <div className="text-[10px] text-slate-600">
-                                  <span className="font-semibold text-sky-700">LinkedIn:</span>{' '}
-                                  <span className="font-mono font-bold text-sky-900">
-                                    {selectedLead.linkedin || 'Anupam Kumar Profile'}
-                                  </span>
-                                </div>
-                              )}
                             </div>
                           )}
 
@@ -5327,8 +5219,6 @@ export function CrmPage({
                   {replyChannel === 'whatsapp' && '💡 WhatsApp: Keep under 45 words for highest response rates'}
                   {replyChannel === 'email' && '💡 Email: Keep under 85 words with a clear, low-friction question'}
                   {replyChannel === 'website_form' && '💡 Website Form: Automatically maps and submits into target website contact forms (skipped if no form)'}
-                  {replyChannel === 'linkedin' && '💡 LinkedIn: Peer-level, consultative invite under 70 words'}
-                  {replyChannel === 'instagram' && '💡 Instagram: Casual, direct profile note under 45 words'}
                 </span>
               </div>
 

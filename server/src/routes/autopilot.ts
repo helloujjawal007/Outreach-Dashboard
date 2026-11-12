@@ -132,7 +132,7 @@ autopilotRouter.post('/enrich-now', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: `Enrichment completed: ${result.emailsDiscoveredCount} emails discovered, ${result.locationsResolvedCount} locations resolved, ${result.socialsDiscoveredCount} socials found.`,
+      message: `Enrichment completed: ${result.emailsDiscoveredCount} emails discovered, ${result.locationsResolvedCount} locations resolved.`,
       result,
     });
   } catch (error: any) {

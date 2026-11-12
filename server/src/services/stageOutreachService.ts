@@ -14,6 +14,7 @@ import { sequenceEnrollmentService } from './sequenceEnrollmentService';
 import { validateAuditAsset } from '../utils/auditPolicy';
 import { resolveRecipientTimezone, isWithinRecipientWindow } from '../utils/timezoneHelper';
 import { fiveSlotSenderService } from './fiveSlotSenderService';
+import { logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -189,6 +190,7 @@ export class StageOutreachService {
       );
     } catch (copyErr: any) {
       console.warn(`[StageOutreachService] Copy generation error for lead ${lead.id}:`, copyErr?.message);
+      logPipelineError('Draft Email', `Copy generation blocked/failed for "${lead.business_name}"`, copyErr);
       return {
         stage: resolvedStage,
         stageLabel: 'Audit Findings Pending',
@@ -819,6 +821,12 @@ export class StageOutreachService {
             assignedInboxId = slotMailbox.id;
           }
         }
+
+        const slotLabel = lead.slot_id ? `Slot ${lead.slot_id}` : 'Unassigned';
+        logPipeline(
+          'DRAFTED_EMAIL',
+          `Drafted email for "${lead.business_name}" (${lead.email}) [${slotLabel}] | Stage: ${stageInfo.stageLabel} | Subject: "${stageInfo.subject}" | PDF: ${attachments?.map((a) => a.filename).join(', ') || 'None'}`
+        );
 
         const sendRes = await emailAdapter.sendEmail({
           to: lead.email,

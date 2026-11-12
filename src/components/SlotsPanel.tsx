@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/services/api';
 import type { SlotStatus, SlotSenderSettings, SlotId } from '@/types';
 import {
@@ -38,6 +38,7 @@ export function SlotsPanel() {
   const [terminatingSlotId, setTerminatingSlotId] = useState<'all' | SlotId>('all');
   const [isTerminating, setIsTerminating] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const isSettingsOpenRef = useRef(false);
   const [expandedSlot, setExpandedSlot] = useState<SlotId | null>(null);
   
   // Settings Form State
@@ -45,6 +46,7 @@ export function SlotsPanel() {
   const [offsetMinInput, setOffsetMinInput] = useState('2');
   const [tdUrlInput, setTdUrlInput] = useState('');
   const [tdSecretInput, setTdSecretInput] = useState('');
+  const [tdCallbackSecretInput, setTdCallbackSecretInput] = useState('');
   const [is24_7Window, setIs24_7Window] = useState(true);
   const [sendWindowStartInput, setSendWindowStartInput] = useState('0');
   const [sendWindowEndInput, setSendWindowEndInput] = useState('24');
@@ -55,13 +57,19 @@ export function SlotsPanel() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [nowSec, setNowSec] = useState(Math.floor(Date.now() / 1000));
 
+  const isCustomSecretInput = (val: string, masked?: string) => {
+    const trimmed = val.trim();
+    return Boolean(trimmed && trimmed !== masked && !trimmed.startsWith('••••••••'));
+  };
+
   const handleTestTdConnection = async () => {
     setIsTestingTd(true);
     setFeedback(null);
     try {
+      const hasCustomSecret = isCustomSecretInput(tdSecretInput, settings?.td_shared_secret_masked);
       const res = await api.testTdConnection({
         url: tdUrlInput.trim(),
-        secret: tdSecretInput.trim(),
+        ...(hasCustomSecret ? { secret: tdSecretInput.trim() } : {}),
       });
       if (res.ok) {
         setFeedback(`✓ TD Connection Verified: ${res.message} (${res.latencyMs}ms)`);
@@ -98,20 +106,23 @@ export function SlotsPanel() {
             ? 'active'
             : 'standby');
         setSchedulerState(derivedState);
-        setCycleMinInput(String(res.settings.slot_cycle_min));
-        setOffsetMinInput(String(res.settings.slot_offset_min));
-        setTdUrlInput(res.settings.td_endpoint_url || '');
-        setTdSecretInput(res.settings.td_shared_secret || '');
-        
-        const is24_7 =
-          (res.settings.send_window_start_hour === 0 || res.settings.send_window_start_hour === undefined) &&
-          (res.settings.send_window_end_hour === 24 || res.settings.send_window_end_hour === undefined) &&
-          !res.settings.weekdays_only;
-        setIs24_7Window(is24_7);
-        setSendWindowStartInput(String(res.settings.send_window_start_hour ?? 0));
-        setSendWindowEndInput(String(res.settings.send_window_end_hour ?? 24));
-        setWeekdaysOnlyInput(Boolean(res.settings.weekdays_only));
-        setSendWindowTzInput(res.settings.send_window_timezone || 'UTC');
+        if (!isSettingsOpenRef.current) {
+          setCycleMinInput(String(res.settings.slot_cycle_min));
+          setOffsetMinInput(String(res.settings.slot_offset_min));
+          setTdUrlInput(res.settings.td_endpoint_url || '');
+          setTdSecretInput(res.settings.td_shared_secret || res.settings.td_shared_secret_masked || '');
+          setTdCallbackSecretInput(res.settings.td_callback_secret || res.settings.td_callback_secret_masked || '');
+
+          const is24_7 =
+            (res.settings.send_window_start_hour === 0 || res.settings.send_window_start_hour === undefined) &&
+            (res.settings.send_window_end_hour === 24 || res.settings.send_window_end_hour === undefined) &&
+            !res.settings.weekdays_only;
+          setIs24_7Window(is24_7);
+          setSendWindowStartInput(String(res.settings.send_window_start_hour ?? 0));
+          setSendWindowEndInput(String(res.settings.send_window_end_hour ?? 24));
+          setWeekdaysOnlyInput(Boolean(res.settings.weekdays_only));
+          setSendWindowTzInput(res.settings.send_window_timezone || 'UTC');
+        }
       }
     } catch (err: any) {
       console.warn('[SlotsPanel] fetchStatus error:', err?.message);
@@ -289,7 +300,12 @@ export function SlotsPanel() {
         slot_offset_min: offset,
         global_min_gap_sec: globalMinGapSec,
         td_endpoint_url: tdUrlInput.trim(),
-        td_shared_secret: tdSecretInput.trim(),
+        ...(isCustomSecretInput(tdSecretInput, settings?.td_shared_secret_masked)
+          ? { td_shared_secret: tdSecretInput.trim() }
+          : {}),
+        ...(isCustomSecretInput(tdCallbackSecretInput, settings?.td_callback_secret_masked)
+          ? { td_callback_secret: tdCallbackSecretInput.trim() }
+          : {}),
         send_window_timezone: sendWindowTzInput.trim() || 'UTC',
       };
 
@@ -307,6 +323,7 @@ export function SlotsPanel() {
       if (res.success) {
         setSettings(res.settings);
         setFeedback('✓ Staggered slot & send-window settings updated successfully');
+        isSettingsOpenRef.current = false;
         setShowSettings(false);
         await fetchStatus();
       }
@@ -316,6 +333,57 @@ export function SlotsPanel() {
       setSavingSettings(false);
       setTimeout(() => setFeedback(null), 5000);
     }
+  };
+
+  const toggleSettingsDrawer = (nextOpen: boolean) => {
+    isSettingsOpenRef.current = nextOpen;
+    setShowSettings(nextOpen);
+    if (nextOpen && settings) {
+      setCycleMinInput(String(settings.slot_cycle_min));
+      setOffsetMinInput(String(settings.slot_offset_min));
+      setTdUrlInput(settings.td_endpoint_url || '');
+      setTdSecretInput(settings.td_shared_secret || settings.td_shared_secret_masked || '');
+      setTdCallbackSecretInput(settings.td_callback_secret || settings.td_callback_secret_masked || '');
+    }
+  };
+
+  const renderSecretField = (opts: {
+    label: string;
+    hint: string;
+    value: string;
+    masked?: string;
+    placeholder: string;
+    onChange: (next: string) => void;
+  }) => {
+    const isShowingMasked = Boolean(opts.masked && opts.value === opts.masked);
+    return (
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <label className="block font-semibold text-slate-700">{opts.label}</label>
+          {opts.masked && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Configured
+            </span>
+          )}
+        </div>
+        <input
+          type={isShowingMasked ? 'text' : 'password'}
+          placeholder={opts.placeholder}
+          value={opts.value}
+          onFocus={() => {
+            if (isShowingMasked) opts.onChange('');
+          }}
+          onBlur={() => {
+            if (!opts.value.trim() && opts.masked) opts.onChange(opts.masked);
+          }}
+          onChange={(e) => opts.onChange(e.target.value)}
+          className={`w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500 ${
+            isShowingMasked ? 'font-mono text-slate-600' : ''
+          }`}
+        />
+        <span className="text-[10px] text-slate-500">{opts.hint}</span>
+      </div>
+    );
   };
 
   const formatCountdown = (isoString?: string) => {
@@ -495,7 +563,7 @@ export function SlotsPanel() {
 
           {/* Settings Drawer Toggle */}
           <button
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => toggleSettingsDrawer(!showSettings)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 hover:bg-slate-50 border border-slate-200 transition-colors cursor-pointer"
           >
             <SettingsIcon size={13} />
@@ -518,7 +586,7 @@ export function SlotsPanel() {
       {/* Settings Panel Drawer */}
       {showSettings && (
         <form onSubmit={handleSaveSettings} className="p-4 bg-slate-50/80 border-b border-slate-200 text-xs space-y-3.5">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Slot Cycle Time (Min)</label>
               <input
@@ -584,17 +652,25 @@ export function SlotsPanel() {
               />
               <span className="text-[10px] text-slate-500">TD SEO Audit Pro endpoint (optional)</span>
             </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Shared Secret Header</label>
-              <input
-                type="password"
-                placeholder="td-secret-key"
-                value={tdSecretInput}
-                onChange={(e) => setTdSecretInput(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"
-              />
-              <span className="text-[10px] text-slate-500">Validated on callback webhook</span>
-            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderSecretField({
+              label: 'TD Outbound Secret Key (OD → TD)',
+              hint: 'Sent to TD in x-audit-secret (click to replace)',
+              value: tdSecretInput,
+              masked: settings?.td_shared_secret_masked,
+              placeholder: 'Enter TD inbound secret key',
+              onChange: setTdSecretInput,
+            })}
+            {renderSecretField({
+              label: 'TD Callback Secret Key (TD → OD)',
+              hint: 'Validated on /api/audit-callback (click to replace)',
+              value: tdCallbackSecretInput,
+              masked: settings?.td_callback_secret_masked,
+              placeholder: 'Enter TD callback secret key',
+              onChange: setTdCallbackSecretInput,
+            })}
           </div>
 
           {/* Send Window Timezone & 24/7 Controls */}
@@ -676,7 +752,7 @@ export function SlotsPanel() {
             </button>
             <button
               type="button"
-              onClick={() => setShowSettings(false)}
+              onClick={() => toggleSettingsDrawer(false)}
               className="px-3 py-1 rounded bg-slate-200 text-slate-700 font-semibold hover:bg-slate-300 cursor-pointer"
             >
               Cancel

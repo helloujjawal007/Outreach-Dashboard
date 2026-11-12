@@ -1,10 +1,10 @@
 import { query } from '../config/db';
 
 /**
- * Migration: Sets up standard channel lists (Email Leads, WhatsApp Leads, LinkedIn Leads,
- * Instagram Leads, Facebook Leads, Website Leads) and a PostgreSQL trigger on the `leads` table.
- * Whenever a lead is inserted or updated with an email, phone/whatsapp, linkedin, instagram,
- * facebook, or website, they are automatically enrolled into their corresponding channel lists.
+ * Migration: Sets up standard channel lists (Email Leads, WhatsApp Leads,
+ * Website Leads) and a PostgreSQL trigger on the `leads` table.
+ * Whenever a lead is inserted or updated with an email, phone/whatsapp,
+ * or website, they are automatically enrolled into their corresponding channel lists.
  */
 export async function addChannelAutoAssignmentTrigger(): Promise<void> {
   console.log('[Migration] Ensuring channel lists and auto-assignment trigger on leads table...');
@@ -46,18 +46,6 @@ export async function addChannelAutoAssignmentTrigger(): Promise<void> {
       description: 'Auto-populated list of all leads with phone numbers or WhatsApp contact.',
     },
     {
-      name: 'LinkedIn Leads',
-      description: 'Auto-populated list of all leads with LinkedIn profiles.',
-    },
-    {
-      name: 'Instagram Leads',
-      description: 'Auto-populated list of all leads with Instagram handles or profiles.',
-    },
-    {
-      name: 'Facebook Leads',
-      description: 'Auto-populated list of all leads with Facebook business pages.',
-    },
-    {
       name: 'Website Leads',
       description: 'Auto-populated list of all leads with active company websites.',
     },
@@ -86,9 +74,6 @@ export async function addChannelAutoAssignmentTrigger(): Promise<void> {
     DECLARE
       v_email_list_id UUID;
       v_whatsapp_list_id UUID;
-      v_linkedin_list_id UUID;
-      v_instagram_list_id UUID;
-      v_facebook_list_id UUID;
       v_website_list_id UUID;
       v_clean_phone TEXT;
       v_clean_wa TEXT;
@@ -101,9 +86,6 @@ export async function addChannelAutoAssignmentTrigger(): Promise<void> {
       -- Resolve channel list IDs
       SELECT id INTO v_email_list_id FROM lists WHERE name = 'Email Leads' LIMIT 1;
       SELECT id INTO v_whatsapp_list_id FROM lists WHERE name = 'WhatsApp Leads' LIMIT 1;
-      SELECT id INTO v_linkedin_list_id FROM lists WHERE name = 'LinkedIn Leads' LIMIT 1;
-      SELECT id INTO v_instagram_list_id FROM lists WHERE name = 'Instagram Leads' LIMIT 1;
-      SELECT id INTO v_facebook_list_id FROM lists WHERE name = 'Facebook Leads' LIMIT 1;
       SELECT id INTO v_website_list_id FROM lists WHERE name = 'Website Leads' LIMIT 1;
 
       -- 1. Email Leads: present and has '@'
@@ -130,40 +112,7 @@ export async function addChannelAutoAssignmentTrigger(): Promise<void> {
         END IF;
       END IF;
 
-      -- 3. LinkedIn Leads: linkedin is present
-      IF v_linkedin_list_id IS NOT NULL THEN
-        IF NEW.linkedin IS NOT NULL AND TRIM(NEW.linkedin) != '' THEN
-          INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
-          VALUES (v_linkedin_list_id, NEW.id, NOW(), NOW())
-          ON CONFLICT (list_id, lead_id) DO NOTHING;
-        ELSE
-          DELETE FROM lead_list_memberships WHERE lead_id = NEW.id AND list_id = v_linkedin_list_id;
-        END IF;
-      END IF;
-
-      -- 4. Instagram Leads: instagram is present
-      IF v_instagram_list_id IS NOT NULL THEN
-        IF NEW.instagram IS NOT NULL AND TRIM(NEW.instagram) != '' THEN
-          INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
-          VALUES (v_instagram_list_id, NEW.id, NOW(), NOW())
-          ON CONFLICT (list_id, lead_id) DO NOTHING;
-        ELSE
-          DELETE FROM lead_list_memberships WHERE lead_id = NEW.id AND list_id = v_instagram_list_id;
-        END IF;
-      END IF;
-
-      -- 5. Facebook Leads: facebook is present
-      IF v_facebook_list_id IS NOT NULL THEN
-        IF NEW.facebook IS NOT NULL AND TRIM(NEW.facebook) != '' THEN
-          INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
-          VALUES (v_facebook_list_id, NEW.id, NOW(), NOW())
-          ON CONFLICT (list_id, lead_id) DO NOTHING;
-        ELSE
-          DELETE FROM lead_list_memberships WHERE lead_id = NEW.id AND list_id = v_facebook_list_id;
-        END IF;
-      END IF;
-
-      -- 6. Website Leads: website is present and not a Google Maps link
+      -- 3. Website Leads: website is present and not a Google Maps link
       IF v_website_list_id IS NOT NULL THEN
         IF NEW.website IS NOT NULL AND TRIM(NEW.website) != ''
            AND NEW.website NOT LIKE '%google.com/maps%' AND NEW.website NOT LIKE '%maps.google%' THEN
@@ -182,7 +131,7 @@ export async function addChannelAutoAssignmentTrigger(): Promise<void> {
     DROP TRIGGER IF EXISTS trg_auto_assign_lead_channel_lists ON leads;
 
     CREATE TRIGGER trg_auto_assign_lead_channel_lists
-    AFTER INSERT OR UPDATE OF email, phone, whatsapp, linkedin, instagram, facebook, website
+    AFTER INSERT OR UPDATE OF email, phone, whatsapp, website
     ON leads
     FOR EACH ROW
     EXECUTE FUNCTION fn_auto_assign_lead_channel_lists();
@@ -211,34 +160,7 @@ export async function addChannelAutoAssignmentTrigger(): Promise<void> {
       )
     ON CONFLICT (list_id, lead_id) DO NOTHING;
 
-    -- 3. LinkedIn Leads backfill
-    INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
-    SELECT lst.id, l.id, NOW(), NOW()
-    FROM leads l
-    JOIN lists lst ON lst.name = 'LinkedIn Leads'
-    WHERE l.deleted_at IS NULL
-      AND l.linkedin IS NOT NULL AND TRIM(l.linkedin) != ''
-    ON CONFLICT (list_id, lead_id) DO NOTHING;
-
-    -- 4. Instagram Leads backfill
-    INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
-    SELECT lst.id, l.id, NOW(), NOW()
-    FROM leads l
-    JOIN lists lst ON lst.name = 'Instagram Leads'
-    WHERE l.deleted_at IS NULL
-      AND l.instagram IS NOT NULL AND TRIM(l.instagram) != ''
-    ON CONFLICT (list_id, lead_id) DO NOTHING;
-
-    -- 5. Facebook Leads backfill
-    INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
-    SELECT lst.id, l.id, NOW(), NOW()
-    FROM leads l
-    JOIN lists lst ON lst.name = 'Facebook Leads'
-    WHERE l.deleted_at IS NULL
-      AND l.facebook IS NOT NULL AND TRIM(l.facebook) != ''
-    ON CONFLICT (list_id, lead_id) DO NOTHING;
-
-    -- 6. Website Leads backfill
+    -- 3. Website Leads backfill
     INSERT INTO lead_list_memberships (list_id, lead_id, created_at, added_at)
     SELECT lst.id, l.id, NOW(), NOW()
     FROM leads l

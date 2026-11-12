@@ -7,12 +7,13 @@ import { workflowRoutingService } from './workflowRoutingService';
 import { clientAuditService } from './clientAuditIntelligenceService';
 import { technicalAuditPdfService } from './technicalAuditPdfService';
 import { leadIsolationService } from './leadIsolationService';
+import { failureLogService } from './failureLogService';
+import { formatDuration, logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export interface ScheduleListParams {
   listId: string;
-  channel?: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+  channel?: 'email' | 'whatsapp';
   inboxIds?: string[]; // Selected inboxes for 50/50 rotational split sending
-  linkedinAccountId?: string;
   scheduledFor?: string | Date; // If 'now' or undefined, shoots immediately
   intervalSeconds?: number; // Anti-ban pacing between dispatches
   style?: 'conversational' | 'direct' | 'curious';
@@ -22,7 +23,7 @@ export interface ScheduleListParams {
 
 export interface ScheduleSingleDispatchParams {
   leadId: string;
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+  channel: 'email' | 'whatsapp';
   scheduledFor?: string | Date;
   subject?: string;
   body?: string;
@@ -33,11 +34,10 @@ export interface ScheduleSingleDispatchParams {
 
 export interface ScheduleBatchDispatchParams {
   leadIds: string[];
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+  channel: 'email' | 'whatsapp';
   inboxIds?: string[];
-  linkedinAccountId?: string;
   scheduledFor?: string | Date;
-  intervalSeconds?: number; // Pacing delay in seconds between messages (defaults: wa=45s, email=25s, li=45s, fb=30s, ig=30s)
+  intervalSeconds?: number; // Pacing delay in seconds between messages (defaults: wa=45s, email=25s)
   style?: 'conversational' | 'direct' | 'curious';
   stage?: 'auto' | 'initial' | 'followup_1' | 'followup_2' | 'followup_3' | 'client_checkin';
   customInstructions?: string;
@@ -45,7 +45,7 @@ export interface ScheduleBatchDispatchParams {
 
 export interface ScheduledDispatchRecord {
   id: string;
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'linkedin';
+  channel: 'email' | 'whatsapp';
   list_id?: string;
   list_name: string;
   entity_type: 'lead' | 'client';
@@ -61,6 +61,9 @@ export interface ScheduledDispatchRecord {
   style: string;
   status: 'scheduled' | 'processing' | 'sent' | 'failed' | 'cancelled';
   scheduled_for: string;
+  locked_at?: string | null;
+  attempt_count?: number;
+  max_attempts?: number;
   sent_at?: string;
   error_message?: string;
   inbox_id?: string;
@@ -69,9 +72,71 @@ export interface ScheduledDispatchRecord {
   updated_at: string;
 }
 
+type DispatchOutcome = 'sent' | 'deferred' | 'failed' | 'cancelled';
+
 export class EmailSchedulerService {
   private timer: NodeJS.Timeout | null = null;
+  private recoveryTimer: NodeJS.Timeout | null = null;
   private isProcessing = false;
+  private isRecovering = false;
+  private isStarted = false;
+
+  private logTransition(dispatchId: string, fromStatus: string, toStatus: string, detail?: string): void {
+    const suffix = detail ? ` (${detail})` : '';
+    console.log(`[Scheduler] [Dispatch ${dispatchId}] ${fromStatus} -> ${toStatus}${suffix}`);
+  }
+
+  private async releaseDispatch(
+    dispatchId: string,
+    fromStatus: string,
+    toStatus: 'scheduled' | 'sent' | 'failed' | 'cancelled',
+    options?: {
+      errorMessage?: string | null;
+      delaySeconds?: number;
+      inboxId?: string | null;
+      inboxEmail?: string;
+      detail?: string;
+    }
+  ): Promise<void> {
+    if (toStatus === 'sent') {
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'sent',
+             sent_at = NOW(),
+             locked_at = NULL,
+             error_message = NULL,
+             inbox_id = COALESCE($1, inbox_id),
+             inbox_email = COALESCE(NULLIF($2, ''), inbox_email),
+             updated_at = NOW()
+         WHERE id = $3`,
+        [options?.inboxId ?? null, options?.inboxEmail ?? '', dispatchId]
+      );
+    } else if (toStatus === 'scheduled') {
+      const delaySec = Math.max(10, Math.round(options?.delaySeconds ?? 180));
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = 'scheduled',
+             locked_at = NULL,
+             scheduled_for = GREATEST(scheduled_for, NOW() + ($1 || ' seconds')::interval),
+             error_message = COALESCE($2, error_message),
+             updated_at = NOW()
+         WHERE id = $3`,
+        [delaySec, options?.errorMessage ?? null, dispatchId]
+      );
+    } else {
+      await query(
+        `UPDATE scheduled_dispatches
+         SET status = $1,
+             locked_at = NULL,
+             error_message = $2,
+             updated_at = NOW()
+         WHERE id = $3`,
+        [toStatus, options?.errorMessage ?? null, dispatchId]
+      );
+    }
+
+    this.logTransition(dispatchId, fromStatus, toStatus, options?.detail ?? options?.errorMessage ?? undefined);
+  }
 
   /**
    * Helper sleep for anti-spam pacing jitter
@@ -127,8 +192,6 @@ export class EmailSchedulerService {
       email: string;
       phone: string;
       whatsapp: string;
-      facebook: string;
-      instagram: string;
       category: string;
       notes: string;
       status: string;
@@ -188,7 +251,7 @@ export class EmailSchedulerService {
 
     const recipientEmail = (lead.email || '').trim();
     const recipientPhone = (lead.whatsapp || lead.phone || '').trim();
-    const recipientHandle = (lead.facebook || lead.instagram || '').trim();
+    const recipientHandle = null;
     let subject = params.subject?.trim() || '';
     let body = params.body?.trim() || '';
 
@@ -219,8 +282,6 @@ export class EmailSchedulerService {
             category: lead.category,
             phone: lead.phone,
             email: lead.email,
-            instagram: lead.instagram,
-            facebook: lead.facebook,
             notes: lead.notes,
           },
           channel
@@ -263,6 +324,7 @@ export class EmailSchedulerService {
     );
 
     const dispatchId = insertRes.rows[0].id;
+    this.logTransition(dispatchId, 'new', 'scheduled', `channel=${channel}, stage=${resolvedStage}`);
     const recipient =
       channel === 'whatsapp'
         ? recipientPhone
@@ -271,6 +333,11 @@ export class EmailSchedulerService {
         : recipientHandle || lead.business_name;
 
     console.log(`[Scheduler] Single [${channel}] dispatch scheduled for ${lead.business_name} (${recipient}) at ${scheduledDate.toISOString()}`);
+    if (channel === 'email') {
+      const waitSec = Math.max(0, Math.round((scheduledDate.getTime() - Date.now()) / 1000));
+      logPipeline('DRAFTED_EMAIL', `Drafted & scheduled single email for "${lead.business_name}" (${recipient}) | Subject: "${subject}"`);
+      logPipeline('SCHEDULED_EMAIL', `Scheduled email to ${recipient} — Email will start in ${formatDuration(waitSec)}`);
+    }
 
     // If scheduled for now, trigger worker loop asynchronously
     if (scheduledDate <= new Date()) {
@@ -318,8 +385,6 @@ export class EmailSchedulerService {
       email: string;
       phone: string;
       whatsapp: string;
-      facebook: string;
-      instagram: string;
       category: string;
       notes: string;
       outreach_stage: string;
@@ -336,8 +401,6 @@ export class EmailSchedulerService {
               email,
               phone,
               whatsapp,
-              facebook,
-              instagram,
               category,
               notes,
               outreach_stage,
@@ -364,8 +427,6 @@ export class EmailSchedulerService {
     const eligibleLeads = leadsRes.rows.filter((lead) => {
       if (channel === 'email') return !!(lead.email && lead.email.trim());
       if (channel === 'whatsapp') return !!((lead.whatsapp && lead.whatsapp.trim()) || (lead.phone && lead.phone.trim()));
-      if (channel === 'facebook') return !!(lead.facebook && lead.facebook.trim());
-      if (channel === 'instagram') return !!(lead.instagram && lead.instagram.trim());
       return false;
     });
 
@@ -417,8 +478,7 @@ export class EmailSchedulerService {
       const recipientName = (lead.primary_contact_name || lead.business_name || '').trim();
       const recipientEmail = channel === 'email' ? lead.email.trim() : null;
       const recipientPhone = channel === 'whatsapp' ? (lead.whatsapp || lead.phone || '').trim() : null;
-      const recipientHandle =
-        channel === 'facebook' ? lead.facebook.trim() : channel === 'instagram' ? lead.instagram.trim() : null;
+      const recipientHandle = null;
 
       try {
         // Pre-send check if older message exists for this lead
@@ -481,8 +541,6 @@ export class EmailSchedulerService {
             category: lead.category,
             phone: lead.phone,
             email: lead.email,
-            instagram: lead.instagram,
-            facebook: lead.facebook,
             whatsapp: lead.whatsapp,
             notes: lead.notes,
           };
@@ -517,7 +575,13 @@ export class EmailSchedulerService {
         insertedCount++;
       } catch (err) {
         console.error(`[Scheduler] Error scheduling lead ${lead.id}:`, err);
+        logPipelineError('Schedule Batch', `Failed drafting/scheduling lead "${lead.business_name}"`, err);
       }
+    }
+
+    if (channel === 'email' && insertedCount > 0) {
+      const waitSec = Math.max(0, Math.round((baseTime.getTime() - Date.now()) / 1000));
+      logPipeline('SCHEDULED_EMAIL', `Drafted & scheduled ${insertedCount} batch email(s) — Email will start in ${formatDuration(waitSec)}`);
     }
 
     if (baseTime.getTime() <= Date.now() + 5000) {
@@ -564,9 +628,6 @@ export class EmailSchedulerService {
         email: string;
         phone: string;
         whatsapp: string;
-        facebook: string;
-        instagram: string;
-        linkedin?: string;
         website?: string;
         location?: string;
         category: string;
@@ -591,9 +652,6 @@ export class EmailSchedulerService {
         email: string;
         phone: string;
         whatsapp: string;
-        facebook: string;
-        instagram: string;
-        linkedin?: string;
         website?: string;
         location?: string;
         category: string;
@@ -613,9 +671,6 @@ export class EmailSchedulerService {
                 COALESCE(NULLIF(TRIM(l.email), ''), l.metadata->>'email', l.metadata->'discovered_emails'->>0, '') AS email,
                 COALESCE(NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS phone,
                 COALESCE(NULLIF(TRIM(l.whatsapp), ''), l.metadata->>'whatsapp', NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS whatsapp,
-                COALESCE(NULLIF(TRIM(l.facebook), ''), l.metadata->>'facebook', '') AS facebook,
-                COALESCE(NULLIF(TRIM(l.instagram), ''), l.metadata->>'instagram', '') AS instagram,
-                COALESCE(NULLIF(TRIM(l.linkedin), ''), l.metadata->>'linkedin', '') AS linkedin,
                 l.website,
                 l.location,
                 l.category,
@@ -650,9 +705,6 @@ export class EmailSchedulerService {
         email: string;
         phone: string;
         whatsapp: string;
-        facebook: string;
-        instagram: string;
-        linkedin?: string;
         website?: string;
         location?: string;
         category: string;
@@ -672,9 +724,6 @@ export class EmailSchedulerService {
                 COALESCE(NULLIF(TRIM(l.email), ''), l.metadata->>'email', l.metadata->'discovered_emails'->>0, '') AS email,
                 COALESCE(NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS phone,
                 COALESCE(NULLIF(TRIM(l.whatsapp), ''), l.metadata->>'whatsapp', NULLIF(TRIM(l.phone), ''), l.metadata->>'phone', '') AS whatsapp,
-                COALESCE(NULLIF(TRIM(l.facebook), ''), l.metadata->>'facebook', '') AS facebook,
-                COALESCE(NULLIF(TRIM(l.instagram), ''), l.metadata->>'instagram', '') AS instagram,
-                COALESCE(NULLIF(TRIM(l.linkedin), ''), l.metadata->>'linkedin', '') AS linkedin,
                 l.website,
                 l.location,
                 l.category,
@@ -701,9 +750,6 @@ export class EmailSchedulerService {
     const eligibleLeads = leadsRes.rows.filter((lead) => {
       if (channel === 'email') return !!(lead.email && lead.email.trim());
       if (channel === 'whatsapp') return !!((lead.whatsapp && lead.whatsapp.trim()) || (lead.phone && lead.phone.trim()));
-      if (channel === 'linkedin') return !!((lead.linkedin && lead.linkedin.trim()) || lead.business_name);
-      if (channel === 'facebook') return !!(lead.facebook && lead.facebook.trim());
-      if (channel === 'instagram') return !!(lead.instagram && lead.instagram.trim());
       return false;
     });
 
@@ -712,13 +758,10 @@ export class EmailSchedulerService {
       let suggestion = '';
       if (totalMembers > 0) {
         const hasPhone = leadsRes.rows.some((l) => (l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
-        const hasLinkedIn = leadsRes.rows.some((l) => (l.linkedin && l.linkedin.trim()) || l.business_name);
         const hasEmail = leadsRes.rows.some((l) => l.email && l.email.trim());
 
         if (channel === 'email' && hasPhone) {
           suggestion = ' Verified phone/WhatsApp numbers are available in this list — switch to the WhatsApp tab to dispatch.';
-        } else if (channel === 'email' && hasLinkedIn) {
-          suggestion = ' LinkedIn profiles are available for this list — switch to the LinkedIn tab to dispatch.';
         } else if (channel === 'whatsapp' && hasEmail) {
           suggestion = ' Valid email addresses are available in this list — switch to the Email tab to dispatch.';
         }
@@ -800,14 +843,7 @@ export class EmailSchedulerService {
 
       const recipientEmail = channel === 'email' ? lead.email.trim() : null;
       const recipientPhone = channel === 'whatsapp' ? (lead.whatsapp || lead.phone || '').trim() : null;
-      const recipientHandle =
-        channel === 'facebook'
-          ? (lead.facebook || '').trim()
-          : channel === 'instagram'
-          ? (lead.instagram || '').trim()
-          : channel === 'linkedin'
-          ? (lead.linkedin || lead.business_name || '').trim()
-          : null;
+      const recipientHandle = null;
 
       try {
         // Pre-send check if older message exists for this lead
@@ -878,12 +914,10 @@ export class EmailSchedulerService {
               category: lead.category,
               phone: lead.phone,
               email: lead.email,
-              instagram: lead.instagram,
-              facebook: lead.facebook,
               whatsapp: lead.whatsapp,
               notes: lead.notes,
             },
-            channel === 'linkedin' ? 'linkedin' : channel,
+            channel,
             customInstructions
           );
           subject = history.hasPriorContact
@@ -921,10 +955,18 @@ export class EmailSchedulerService {
         insertedCount++;
       } catch (genErr) {
         console.error(`[Scheduler] Error generating copy for lead ${lead.id}:`, genErr);
+        logPipelineError('Draft Email', `Failed drafting copy for "${lead.business_name}"`, genErr);
       }
     }
 
     console.log(`[Scheduler] Successfully scheduled ${insertedCount} ${channel.toUpperCase()} messages for list "${list.name}".`);
+    if (channel === 'email' && insertedCount > 0) {
+      const waitSec = Math.max(0, Math.round((baseTime.getTime() - Date.now()) / 1000));
+      logPipeline(
+        'SCHEDULED_EMAIL',
+        `Drafted & scheduled ${insertedCount} email(s) for list "${list.name}" — Email will start in ${formatDuration(waitSec)}`
+      );
+    }
 
     // Requirement: "if a list is selected and scheduled it show automatically run the audit for each site. Time for sending eaach email is 2 mins. in the meantime TA will do audit give you data you will append with email based on the satatus and send to propsects."
     if (channel === 'email') {
@@ -1062,11 +1104,16 @@ export class EmailSchedulerService {
           console.log(
             `[Scheduler TA Worker ${workerId}] ✅ TA audit completed for ${lead.business_name} (${lead.website}): Score ${auditReport.overallScore}/100, PDF: ${pdfGen.pdfName}. Appended to scheduled email!`
           );
+          logPipeline(
+            'DRAFTED_EMAIL',
+            `Appended audit findings & PDF (${pdfGen.pdfName}) to scheduled email for "${lead.business_name}"`
+          );
         } catch (auditErr: any) {
           console.warn(
             `[Scheduler TA Worker ${workerId}] ⚠️ Auto-audit skipped for ${lead.business_name} (${lead.website}):`,
             auditErr?.message
           );
+          logPipelineError('Background Audit', `Auto-audit skipped for "${lead.business_name}" (${lead.website})`, auditErr);
         }
       }
     };
@@ -1198,17 +1245,20 @@ export class EmailSchedulerService {
     this.isProcessing = true;
 
     try {
-      // Atomically claim due dispatches using SKIP LOCKED
+      // Atomically claim due dispatches using FOR UPDATE SKIP LOCKED
       const pendingRes = await query<ScheduledDispatchRecord>(
         `UPDATE scheduled_dispatches
-         SET status = 'processing', updated_at = NOW()
-         WHERE id IN (
-           SELECT id FROM scheduled_dispatches
-           WHERE status = 'scheduled' AND scheduled_for <= NOW()
-           ORDER BY scheduled_for ASC
-           LIMIT 20
-           FOR UPDATE SKIP LOCKED
-         )
+         SET status = 'processing',
+             locked_at = NOW(),
+             updated_at = NOW()
+         WHERE status = 'scheduled'
+           AND id IN (
+             SELECT id FROM scheduled_dispatches
+             WHERE status = 'scheduled' AND scheduled_for <= NOW()
+             ORDER BY scheduled_for ASC
+             LIMIT 20
+             FOR UPDATE SKIP LOCKED
+           )
          RETURNING *;`
       );
 
@@ -1218,34 +1268,38 @@ export class EmailSchedulerService {
 
       console.log(`[Scheduler] Atomically claimed ${pendingRes.rows.length} due outreach dispatches with SKIP LOCKED...`);
 
+      let pauseRemainingEmails = false;
+
       for (const dispatch of pendingRes.rows) {
         const channel = dispatch.channel || 'email';
+        this.logTransition(dispatch.id, 'scheduled', 'processing', `channel=${channel}, stage=${dispatch.stage || 'initial'}`);
 
         try {
           if (channel === 'whatsapp') {
             await this.executeWhatsAppDispatch(dispatch);
           } else if (channel === 'email') {
-            // Unified into 5-Slot Staggered Sender; legacy queue records are marked completed
-            console.log(`[Scheduler] Email dispatch ${dispatch.id} delegated to 5-Slot Staggered Sender.`);
-            await query(`UPDATE scheduled_dispatches SET status = 'completed', updated_at = NOW() WHERE id = $1`, [dispatch.id]);
-          } else if (channel === 'facebook') {
-            await this.executeFacebookDispatch(dispatch);
-          } else if (channel === 'instagram') {
-            await this.executeInstagramDispatch(dispatch);
-          } else if (channel === 'linkedin') {
-            await this.executeLinkedInDispatch(dispatch);
+            if (pauseRemainingEmails) {
+              await query(
+                `UPDATE scheduled_dispatches
+                 SET status = 'scheduled', locked_at = NULL, updated_at = NOW()
+                 WHERE id = $1 AND status = 'processing'`,
+                [dispatch.id]
+              );
+              this.logTransition(dispatch.id, 'processing', 'scheduled', 'deferred after rate-limit/throttle in batch');
+              continue;
+            }
+
+            const outcome = await this.executeEmailDispatch(dispatch);
+            if (outcome === 'deferred') {
+              pauseRemainingEmails = true;
+            }
           } else {
             throw new Error(`Unsupported channel: ${channel}`);
           }
         } catch (dispatchErr: unknown) {
           const errStr = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
           console.error(`[Scheduler] Failed dispatch [${channel}] to ${dispatch.recipient_name}:`, errStr);
-          await query(
-            `UPDATE scheduled_dispatches
-             SET status = 'failed', error_message = $1, updated_at = NOW()
-             WHERE id = $2`,
-            [errStr, dispatch.id]
-          );
+          await this.releaseDispatch(dispatch.id, 'processing', 'failed', { errorMessage: errStr });
         }
       }
     } catch (loopErr) {
@@ -1261,10 +1315,7 @@ export class EmailSchedulerService {
   private async executeWhatsAppDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
     const rawPhone = (dispatch.recipient_phone || '').trim();
     if (!rawPhone) {
-      await query(
-        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No phone number available', updated_at = NOW() WHERE id = $1`,
-        [dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'failed', { errorMessage: 'No phone number available' });
       return;
     }
 
@@ -1296,12 +1347,14 @@ export class EmailSchedulerService {
           await query(
             `UPDATE scheduled_dispatches
              SET status = 'cancelled',
+                 locked_at = NULL,
                  error_message = 'Cancelled: Lead is in Need to Check (manual_review)',
                  updated_at = NOW()
              WHERE (lead_id = $1 OR recipient_phone = $2)
                AND status IN ('scheduled', 'processing')`,
             [dispatch.lead_id, rawPhone]
           );
+          this.logTransition(dispatch.id, 'processing', 'cancelled', 'Lead in manual_review');
           return;
         }
 
@@ -1310,12 +1363,14 @@ export class EmailSchedulerService {
           await query(
             `UPDATE scheduled_dispatches
              SET status = 'cancelled',
+                 locked_at = NULL,
                  error_message = 'Cancelled: Prospect replied to outreach',
                  updated_at = NOW()
              WHERE (lead_id = $1 OR recipient_phone = $2)
                AND status IN ('scheduled', 'processing')`,
             [dispatch.lead_id, rawPhone]
           );
+          this.logTransition(dispatch.id, 'processing', 'cancelled', 'Prospect replied');
           return;
         }
 
@@ -1323,12 +1378,14 @@ export class EmailSchedulerService {
           await query(
             `UPDATE scheduled_dispatches
              SET status = 'cancelled',
+                 locked_at = NULL,
                  error_message = 'Cancelled: Lead opted out or deleted',
                  updated_at = NOW()
              WHERE (lead_id = $1 OR recipient_phone = $2)
                AND status IN ('scheduled', 'processing')`,
             [dispatch.lead_id, rawPhone]
           );
+          this.logTransition(dispatch.id, 'processing', 'cancelled', 'Lead opted out or deleted');
           return;
         }
       }
@@ -1337,10 +1394,9 @@ export class EmailSchedulerService {
     const { whatsappValidator } = await import('./whatsappValidator');
     const waEval = whatsappValidator.evaluate({ phone: rawPhone, whatsapp: rawPhone });
     if (!waEval.isEligible || !waEval.cleanNumber) {
-      await query(
-        `UPDATE scheduled_dispatches SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
-        [waEval.reason || 'Invalid WhatsApp phone format', dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'failed', {
+        errorMessage: waEval.reason || 'Invalid WhatsApp phone format',
+      });
       if (dispatch.lead_id) {
         await leadIsolationService.isolateFailedLead(
           dispatch.lead_id,
@@ -1354,10 +1410,9 @@ export class EmailSchedulerService {
     const sessionState = whatsappSessionService.getState();
 
     if (sessionState.status !== 'connected') {
-      await query(
-        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'WhatsApp session not connected in dashboard. Please link QR code.', updated_at = NOW() WHERE id = $1`,
-        [dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'failed', {
+        errorMessage: 'WhatsApp session not connected in dashboard. Please link QR code.',
+      });
       return;
     }
 
@@ -1368,12 +1423,9 @@ export class EmailSchedulerService {
     const sendResult = await whatsappSessionService.sendMessage(waEval.cleanNumber, dispatch.body);
 
     if (sendResult.success) {
-      await query(
-        `UPDATE scheduled_dispatches
-         SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW()
-         WHERE id = $1`,
-        [dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'sent', {
+        detail: `WhatsApp delivered to ${waEval.cleanNumber}`,
+      });
 
       // Record in conversation thread
       let convId: string;
@@ -1413,12 +1465,9 @@ export class EmailSchedulerService {
 
       console.log(`[Scheduler] Delivered scheduled WhatsApp message to ${waEval.cleanNumber} (${sendResult.messageId})`);
     } else {
-      await query(
-        `UPDATE scheduled_dispatches
-         SET status = 'failed', error_message = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [sendResult.error || 'WhatsApp send failed', dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'failed', {
+        errorMessage: sendResult.error || 'WhatsApp send failed',
+      });
 
       if (dispatch.lead_id) {
         await leadIsolationService.isolateFailedLead(
@@ -1432,14 +1481,13 @@ export class EmailSchedulerService {
   /**
    * Dispatches a scheduled Email via SMTP adapter
    */
-  private async executeEmailDispatch(dispatch: ScheduledDispatchRecord): Promise<boolean> {
+  private async executeEmailDispatch(dispatch: ScheduledDispatchRecord): Promise<DispatchOutcome> {
     const toEmail = (dispatch.recipient_email || '').trim();
     if (!toEmail) {
-      await query(
-        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No email address available', updated_at = NOW() WHERE id = $1`,
-        [dispatch.id]
-      );
-      return false;
+      await this.releaseDispatch(dispatch.id, 'processing', 'failed', {
+        errorMessage: 'No email address available',
+      });
+      return 'failed';
     }
 
     // Enforce 20 emails per hour rate limit across all scheduled campaigns
@@ -1452,15 +1500,11 @@ export class EmailSchedulerService {
       console.log(
         `[Scheduler] ⏳ Hourly rate cap reached (20 emails/hour max, currently ${sentInLastHour} sent in last hour). Deferring dispatch for ${toEmail}.`
       );
-      await query(
-        `UPDATE scheduled_dispatches
-         SET status = 'scheduled',
-             scheduled_for = NOW() + INTERVAL '3 minutes',
-             updated_at = NOW()
-         WHERE id = $1`,
-        [dispatch.id]
-      );
-      return true; // Stop email loop for this tick
+      await this.releaseDispatch(dispatch.id, 'processing', 'scheduled', {
+        delaySeconds: 180,
+        detail: `hourly cap reached (${sentInLastHour}/20), deferred 3m`,
+      });
+      return 'deferred';
     }
 
     // Enforce "one by one" sequential sending: ensure at least 170 seconds have elapsed since previous sent email
@@ -1477,25 +1521,22 @@ export class EmailSchedulerService {
         console.log(
           `[Scheduler] ⏱️ Pacing: Previous email sent ${Math.round(elapsedMs / 1000)}s ago. Sending one by one; waiting ${remainingSec}s.`
         );
-        await query(
-          `UPDATE scheduled_dispatches
-           SET status = 'scheduled',
-               scheduled_for = NOW() + ($1 || ' seconds')::interval,
-               updated_at = NOW()
-           WHERE id = $2`,
-          [Math.max(10, remainingSec), dispatch.id]
-        );
-        return true; // Stop email processing for this tick; next runner loop will dispatch it
+        await this.releaseDispatch(dispatch.id, 'processing', 'scheduled', {
+          delaySeconds: Math.max(10, remainingSec),
+          detail: `anti-spam sequential pacing backoff (${Math.max(10, remainingSec)}s)`,
+        });
+        return 'deferred';
       }
     }
 
-    // Safety Pre-flight Check: If lead has already replied, opted out, or was deleted, cancel immediately
+    // Safety Pre-flight Check: If lead has already replied, opted out, finished sequence, or was deleted, cancel immediately
     let leadAttachments: Array<{ filename: string; path?: string }> | undefined = undefined;
     if (dispatch.lead_id) {
       const checkRes = await query<{
         business_name: string;
         consent_status: string;
         status: string;
+        outreach_stage?: string | null;
         audit_status: string;
         website?: string;
         category?: string;
@@ -1507,7 +1548,7 @@ export class EmailSchedulerService {
         audit_pdf_name?: string;
         audit_key_takeaways?: string;
       }>(
-        `SELECT l.business_name, l.consent_status, l.status, l.audit_status, l.website, l.category, l.location, l.audit_score, l.deleted_at, l.audit_pdf_path, l.audit_pdf_name, l.audit_key_takeaways,
+        `SELECT l.business_name, l.consent_status, l.status, l.outreach_stage, l.audit_status, l.website, l.category, l.location, l.audit_score, l.deleted_at, l.audit_pdf_path, l.audit_pdf_name, l.audit_key_takeaways,
            (
              l.consent_status = 'replied' OR
              EXISTS (
@@ -1526,6 +1567,69 @@ export class EmailSchedulerService {
       );
       const leadRow = checkRes.rows[0];
       if (leadRow) {
+        if (leadRow.has_replied || leadRow.consent_status === 'replied') {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) has replied to outreach. Suppressing Shoot stage "${dispatch.stage}".`);
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 locked_at = NULL,
+                 error_message = 'Cancelled: Prospect replied to outreach',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, toEmail]
+          );
+          await query(
+            `UPDATE leads
+             SET consent_status = 'replied', updated_at = NOW()
+             WHERE id = $1 AND consent_status != 'replied'`,
+            [dispatch.lead_id]
+          );
+          this.logTransition(dispatch.id, 'processing', 'cancelled', 'Prospect replied');
+          return 'cancelled';
+        }
+
+        // Safeguard: Check if lead is in 'Need to Check' (manual_review)
+        if (leadRow.status === 'manual_review') {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is quarantined in 'Need to Check' (manual_review). Cancelling scheduled dispatch.`);
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 locked_at = NULL,
+                 error_message = 'Cancelled: Lead is in Need to Check (manual_review)',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, toEmail]
+          );
+          this.logTransition(dispatch.id, 'processing', 'cancelled', 'Lead in manual_review');
+          return 'cancelled';
+        }
+
+        if (leadRow.consent_status === 'opted_out' || leadRow.consent_status === 'unsubscribed' || leadRow.deleted_at) {
+          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) is opted out or deleted. Suppressing Shoot stage "${dispatch.stage}".`);
+          await query(
+            `UPDATE scheduled_dispatches
+             SET status = 'cancelled',
+                 locked_at = NULL,
+                 error_message = 'Cancelled: Lead opted out or deleted',
+                 updated_at = NOW()
+             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
+               AND status IN ('scheduled', 'processing')`,
+            [dispatch.lead_id, toEmail]
+          );
+          this.logTransition(dispatch.id, 'processing', 'cancelled', 'Lead opted out or deleted');
+          return 'cancelled';
+        }
+
+        const leadHistory = await leadIsolationService.getLeadMessageHistory(dispatch.lead_id);
+        if (leadRow.status === 'completed' || leadRow.outreach_stage === 'completed' || leadHistory.resolvedStage === 'completed') {
+          await this.releaseDispatch(dispatch.id, 'processing', 'cancelled', {
+            errorMessage: 'Cancelled: Lead outreach sequence already completed',
+          });
+          return 'cancelled';
+        }
+
         // State Locking & Auto-Resolution: Workflow A leads require a verified audit & PDF before cold email dispatch.
         if (leadRow.status === 'pending_audit' || leadRow.audit_status === 'pending_audit') {
           if (leadRow.website && workflowRoutingService.hasValidWebsite(leadRow.website)) {
@@ -1556,11 +1660,18 @@ export class EmailSchedulerService {
               leadRow.audit_pdf_path = pdfResult.pdfPath;
             } catch (autoErr: any) {
               console.log(`[Scheduler] State Locking: Lead ${dispatch.lead_id} is in PENDING_AUDIT state and auto-audit failed: ${autoErr?.message}`);
-              return false;
+              await this.releaseDispatch(dispatch.id, 'processing', 'scheduled', {
+                delaySeconds: 300,
+                errorMessage: `Waiting for pending audit resolution: ${autoErr?.message || 'Audit unavailable'}`,
+              });
+              return 'deferred';
             }
           } else {
-            console.log(`[Scheduler] State Locking: Lead ${dispatch.lead_id} is in PENDING_AUDIT state without valid website. Suppressing dispatch.`);
-            return false;
+            console.log(`[Scheduler] State Locking: Lead ${dispatch.lead_id} is in PENDING_AUDIT state without valid website. Cancelling dispatch.`);
+            await this.releaseDispatch(dispatch.id, 'processing', 'failed', {
+              errorMessage: 'Lead is in PENDING_AUDIT state without a valid website URL',
+            });
+            return 'failed';
           }
         }
 
@@ -1595,65 +1706,13 @@ export class EmailSchedulerService {
           } catch (_) {}
         }
 
-        if (leadRow.has_replied || leadRow.consent_status === 'replied') {
-          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) has replied to outreach. Suppressing Shoot stage "${dispatch.stage}".`);
-          await query(
-            `UPDATE scheduled_dispatches
-             SET status = 'cancelled',
-                 error_message = 'Cancelled: Prospect replied to outreach',
-                 updated_at = NOW()
-             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
-               AND status IN ('scheduled', 'processing')`,
-            [dispatch.lead_id, toEmail]
-          );
-          await query(
-            `UPDATE leads
-             SET consent_status = 'replied', updated_at = NOW()
-             WHERE id = $1 AND consent_status != 'replied'`,
-            [dispatch.lead_id]
-          );
-          return false;
-        }
-
-        // Safeguard: Check if lead is in 'Need to Check' (manual_review)
-        // Requirement: "after that unless retrieved back no msg needs to sent to them."
-        if (leadRow.status === 'manual_review') {
-          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is quarantined in 'Need to Check' (manual_review). Cancelling scheduled dispatch.`);
-          await query(
-            `UPDATE scheduled_dispatches
-             SET status = 'cancelled',
-                 error_message = 'Cancelled: Lead is in Need to Check (manual_review)',
-                 updated_at = NOW()
-             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
-               AND status IN ('scheduled', 'processing')`,
-            [dispatch.lead_id, toEmail]
-          );
-          return false;
-        }
-
-        if (leadRow.consent_status === 'opted_out' || leadRow.consent_status === 'unsubscribed' || leadRow.deleted_at) {
-          console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} (${toEmail}) is opted out or deleted. Suppressing Shoot stage "${dispatch.stage}".`);
-          await query(
-            `UPDATE scheduled_dispatches
-             SET status = 'cancelled',
-                 error_message = 'Cancelled: Lead opted out or deleted',
-                 updated_at = NOW()
-             WHERE (lead_id = $1 OR LOWER(recipient_email) = LOWER($2))
-               AND status IN ('scheduled', 'processing')`,
-            [dispatch.lead_id, toEmail]
-          );
-          return false;
-        }
-
         // Pre-send check: If this was scheduled as 'initial' but an older message has been sent, automatically switch to follow-up!
-        // Requirement: "it should check before sending it. if older msg is there it should send follow up email."
         if (dispatch.stage === 'initial') {
-          const history = await leadIsolationService.getLeadMessageHistory(dispatch.lead_id);
-          if (history.hasPriorContact) {
+          if (leadHistory.hasPriorContact) {
             console.log(
-              `[Scheduler] ⚡ Older message detected for lead ${dispatch.lead_id} before dispatch. Automatically switching from initial to follow-up stage (${history.resolvedStage}).`
+              `[Scheduler] ⚡ Older message detected for lead ${dispatch.lead_id} before dispatch. Automatically switching from initial to follow-up stage (${leadHistory.resolvedStage}).`
             );
-            dispatch.stage = history.resolvedStage;
+            dispatch.stage = leadHistory.resolvedStage;
             const followCopy = humanCopywriterService.getEmailCopy(
               {
                 id: dispatch.lead_id,
@@ -1666,13 +1725,11 @@ export class EmailSchedulerService {
                 auditPdfName: leadRow.audit_pdf_name,
                 auditPdfPath: leadRow.audit_pdf_path,
               },
-              history.resolvedStage as any
+              leadHistory.resolvedStage as any
             );
             dispatch.subject = followCopy.subject;
             dispatch.body = followCopy.body;
           } else if (leadRow.website && workflowRoutingService.hasValidWebsite(leadRow.website)) {
-            // Requirement: "TA will do audit give you data you will append with email based on the status and send to prospects"
-            // Ensure email body contains the latest TA findings & audit score before sending
             const freshCopy = humanCopywriterService.getEmailCopy(
               {
                 id: dispatch.lead_id,
@@ -1709,25 +1766,19 @@ export class EmailSchedulerService {
 
     if (sendRes.throttled) {
       console.warn(`[Scheduler] Daily sending capacity reached. Pausing remaining dispatches: ${sendRes.reason}`);
-      await query(
-        `UPDATE scheduled_dispatches
-         SET status = 'scheduled',
-             scheduled_for = NOW() + INTERVAL '4 hours',
-             updated_at = NOW()
-         WHERE id = $1`,
-        [dispatch.id]
-      );
-      return true; // Stop loop
+      await this.releaseDispatch(dispatch.id, 'processing', 'scheduled', {
+        delaySeconds: 4 * 3600,
+        detail: `throttled (${sendRes.reason}), deferred 4h`,
+      });
+      return 'deferred';
     }
 
     if (sendRes.success) {
-      await query(
-        `UPDATE scheduled_dispatches
-         SET status = 'sent', sent_at = NOW(), error_message = NULL,
-             inbox_id = $1, inbox_email = $2, updated_at = NOW()
-         WHERE id = $3`,
-        [sendRes.inboxUsed?.id || dispatch.inbox_id || null, sendRes.inboxUsed?.email || dispatch.inbox_email || '', dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'sent', {
+        inboxId: sendRes.inboxUsed?.id || dispatch.inbox_id || null,
+        inboxEmail: sendRes.inboxUsed?.email || dispatch.inbox_email || '',
+        detail: `delivered via ${sendRes.liveDelivery || 'smtp'} to ${toEmail}`,
+      });
 
       if (dispatch.lead_id) {
         const leadDataRes = await query<{
@@ -1873,30 +1924,22 @@ export class EmailSchedulerService {
       }
 
       console.log(`[Scheduler] Dispatched scheduled email to ${dispatch.recipient_email} (${sendRes.liveDelivery})`);
-      return true; // Enforce one-by-one sequential sending (next email waits for 180s interval)
+      return 'sent';
     } else {
       const isTransientNetworkError = /timeout|etimedout|econnrefused|econnreset|socket hang up|network error|enotfound|system error|temporarily unavailable/i.test(sendRes.reason || '');
 
       if (isTransientNetworkError) {
         console.warn(`[Scheduler] ⚠️ Transient network/timeout error encountered during scheduled email dispatch to ${dispatch.recipient_email}: ${sendRes.reason}. Backing off for 15 minutes without isolating lead.`);
-        await query(
-          `UPDATE scheduled_dispatches
-           SET status = 'scheduled',
-               scheduled_for = NOW() + INTERVAL '15 minutes',
-               error_message = $1,
-               updated_at = NOW()
-           WHERE id = $2`,
-          [`Retry scheduled (network timeout): ${sendRes.reason}`, dispatch.id]
-        );
-        return false;
+        await this.releaseDispatch(dispatch.id, 'processing', 'scheduled', {
+          delaySeconds: 15 * 60,
+          errorMessage: `Retry scheduled (network timeout): ${sendRes.reason}`,
+        });
+        return 'deferred';
       }
 
-      await query(
-        `UPDATE scheduled_dispatches
-         SET status = 'failed', error_message = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [sendRes.reason || 'Send failed', dispatch.id]
-      );
+      await this.releaseDispatch(dispatch.id, 'processing', 'failed', {
+        errorMessage: sendRes.reason || 'Send failed',
+      });
 
       // Requirement: "if msg is failed lead should directly removed from list and move to need to check after that unless retrieved back no msg needs to sent to them."
       if (dispatch.lead_id) {
@@ -1907,185 +1950,7 @@ export class EmailSchedulerService {
       }
     }
 
-    return false;
-  }
-
-  /**
-   * Dispatches a scheduled Facebook message
-   */
-  private async executeFacebookDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
-    if (dispatch.lead_id) {
-      const reviewCheck = await leadIsolationService.isLeadInManualReview(dispatch.lead_id);
-      if (reviewCheck.inReview) {
-        console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is in Need to Check. Cancelling Facebook dispatch.`);
-        await query(
-          `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Cancelled: Lead in Need to Check', updated_at = NOW() WHERE id = $1`,
-          [dispatch.id]
-        );
-        return;
-      }
-    }
-
-    const handle = (dispatch.recipient_handle || '').trim();
-    if (!handle) {
-      await query(
-        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No Facebook profile/page configured', updated_at = NOW() WHERE id = $1`,
-        [dispatch.id]
-      );
-      return;
-    }
-
-    const { facebookAdapter } = await import('../adapters/facebookAdapter');
-    await facebookAdapter.enqueueDraft({
-      leadId: dispatch.lead_id || '',
-      profileOrPage: handle,
-      text: dispatch.body,
-    });
-
-    await query(
-      `UPDATE scheduled_dispatches SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1`,
-      [dispatch.id]
-    );
-
-    if (dispatch.lead_id) {
-      await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [dispatch.lead_id]);
-    }
-
-    await query(
-      `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
-       VALUES (CURRENT_DATE, 'facebook', 1, NOW())
-       ON CONFLICT (metric_date, channel)
-       DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
-    );
-
-    console.log(`[Scheduler] Queued Facebook dispatch for ${handle}`);
-  }
-
-  /**
-   * Dispatches a scheduled Instagram message
-   */
-  private async executeInstagramDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
-    if (dispatch.lead_id) {
-      const reviewCheck = await leadIsolationService.isLeadInManualReview(dispatch.lead_id);
-      if (reviewCheck.inReview) {
-        console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is in Need to Check. Cancelling Instagram dispatch.`);
-        await query(
-          `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Cancelled: Lead in Need to Check', updated_at = NOW() WHERE id = $1`,
-          [dispatch.id]
-        );
-        return;
-      }
-    }
-
-    const handle = (dispatch.recipient_handle || '').trim();
-    if (!handle) {
-      await query(
-        `UPDATE scheduled_dispatches SET status = 'failed', error_message = 'No Instagram handle configured', updated_at = NOW() WHERE id = $1`,
-        [dispatch.id]
-      );
-      return;
-    }
-
-    const { instagramAdapter } = await import('../adapters/instagramAdapter');
-    await instagramAdapter.enqueueDraft({
-      leadId: dispatch.lead_id || '',
-      handle,
-      text: dispatch.body,
-    });
-
-    await query(
-      `UPDATE scheduled_dispatches SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW() WHERE id = $1`,
-      [dispatch.id]
-    );
-
-    if (dispatch.lead_id) {
-      await query(`UPDATE leads SET last_contacted_at = NOW(), updated_at = NOW() WHERE id = $1`, [dispatch.lead_id]);
-    }
-
-    await query(
-      `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
-       VALUES (CURRENT_DATE, 'instagram', 1, NOW())
-       ON CONFLICT (metric_date, channel)
-       DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
-    );
-
-    console.log(`[Scheduler] Queued Instagram dispatch for ${handle}`);
-  }
-
-  /**
-   * Dispatches a scheduled LinkedIn outreach message
-   */
-  private async executeLinkedInDispatch(dispatch: ScheduledDispatchRecord): Promise<void> {
-    if (dispatch.lead_id) {
-      const reviewCheck = await leadIsolationService.isLeadInManualReview(dispatch.lead_id);
-      if (reviewCheck.inReview) {
-        console.log(`[Scheduler] Safety: Lead ${dispatch.lead_id} is in Need to Check. Cancelling LinkedIn dispatch.`);
-        await query(
-          `UPDATE scheduled_dispatches SET status = 'cancelled', error_message = 'Cancelled: Lead in Need to Check', updated_at = NOW() WHERE id = $1`,
-          [dispatch.id]
-        );
-        return;
-      }
-    }
-
-    const jitterMs = 2000 + Math.floor(Math.random() * 1200);
-    await this.sleep(jitterMs);
-
-    // Fetch synced LinkedIn account credentials
-    const { linkedinService } = await import('./linkedinService');
-    const status = await linkedinService.getAccountStatus();
-
-    console.log(
-      `[Scheduler] Dispatching scheduled LinkedIn message to ${dispatch.recipient_name} via account "${status.accountName}"...`
-    );
-
-    // Record in conversations
-    let convId: string;
-    const convRes = await query<{ id: string }>(
-      `SELECT id FROM conversations WHERE entity_type = 'lead' AND lead_id = $1 AND channel = 'linkedin' LIMIT 1`,
-      [dispatch.lead_id]
-    );
-    if (convRes.rows.length === 0) {
-      const newConv = await query<{ id: string }>(
-        `INSERT INTO conversations (entity_type, lead_id, channel, status, last_message_at)
-         VALUES ('lead', $1, 'linkedin', 'open', NOW()) RETURNING id`,
-        [dispatch.lead_id]
-      );
-      convId = newConv.rows[0].id;
-    } else {
-      convId = convRes.rows[0].id;
-    }
-
-    await query(
-      `INSERT INTO messages (conversation_id, channel, direction, text, status, external_id, sent_at)
-       VALUES ($1, 'linkedin', 'outbound', $2, 'delivered', $3, NOW())`,
-      [convId, dispatch.body, `li_${Date.now()}`]
-    );
-
-    await query(`UPDATE conversations SET last_message_at = NOW(), status = 'open' WHERE id = $1`, [convId]);
-
-    if (dispatch.lead_id) {
-      await query(
-        `UPDATE leads SET last_contacted_at = NOW(), outreach_stage = 'initial', updated_at = NOW() WHERE id = $1`,
-        [dispatch.lead_id]
-      );
-    }
-
-    await query(
-      `INSERT INTO daily_send_metrics (metric_date, channel, sent_count, updated_at)
-       VALUES (CURRENT_DATE, 'linkedin', 1, NOW())
-       ON CONFLICT (metric_date, channel)
-       DO UPDATE SET sent_count = daily_send_metrics.sent_count + 1, updated_at = NOW()`
-    );
-
-    await query(
-      `UPDATE scheduled_dispatches
-       SET status = 'sent', sent_at = NOW(), error_message = NULL, updated_at = NOW()
-       WHERE id = $1`,
-      [dispatch.id]
-    );
-
-    console.log(`[Scheduler] Successfully dispatched scheduled LinkedIn outreach to ${dispatch.recipient_name}`);
+    return 'failed';
   }
 
   /**
@@ -2123,11 +1988,14 @@ export class EmailSchedulerService {
   async cancelDispatch(id: string): Promise<boolean> {
     const res = await query(
       `UPDATE scheduled_dispatches
-       SET status = 'cancelled', updated_at = NOW()
+       SET status = 'cancelled', locked_at = NULL, updated_at = NOW()
        WHERE id = $1 AND status = 'scheduled'
        RETURNING id`,
       [id]
     );
+    if (res.rows.length > 0) {
+      this.logTransition(id, 'scheduled', 'cancelled', 'cancelled by user');
+    }
     return res.rows.length > 0;
   }
 
@@ -2135,14 +2003,15 @@ export class EmailSchedulerService {
    * Retries a failed or cancelled dispatch
    */
   async retryDispatch(id: string): Promise<boolean> {
-    const res = await query<{ id: string; lead_id?: string }>(
+    const res = await query<{ id: string; status: string; lead_id?: string }>(
       `UPDATE scheduled_dispatches
-       SET status = 'scheduled', scheduled_for = NOW(), error_message = NULL, updated_at = NOW()
+       SET status = 'scheduled', scheduled_for = NOW(), locked_at = NULL, attempt_count = 0, error_message = NULL, updated_at = NOW()
        WHERE id = $1 AND status IN ('failed', 'cancelled')
        RETURNING id, lead_id`,
       [id]
     );
     if (res.rows.length > 0) {
+      this.logTransition(id, 'failed/cancelled', 'scheduled', 'manual retry requeued');
       const leadId = res.rows[0].lead_id;
       if (leadId) {
         await query(
@@ -2188,30 +2057,142 @@ export class EmailSchedulerService {
   }
 
   /**
-   * Starts background scheduler polling loop
+   * Recover stale rows stuck in status='processing' for > 5 minutes.
+   * Rows below max_attempts return to 'scheduled' with attempt_count incremented.
+   * Rows that hit/exceed max_attempts transition to 'failed' and log to failure_log.
    */
-  startScheduler(pollIntervalMs = 20000) {
-    if (this.timer) {
-      clearInterval(this.timer);
+  async recoverStaleDispatches(): Promise<{ requeued: number; failed: number }> {
+    if (this.isRecovering) {
+      return { requeued: 0, failed: 0 };
     }
 
-    console.log(`[Scheduler] Multi-channel background scheduler loop active (interval: ${pollIntervalMs / 1000}s).`);
-    // Run immediately once
-    this.processPendingDispatches().catch(console.error);
+    this.isRecovering = true;
+    let requeued = 0;
+    let failed = 0;
+
+    try {
+      const exceededRes = await query<ScheduledDispatchRecord>(
+        `UPDATE scheduled_dispatches
+         SET status = 'failed',
+             attempt_count = COALESCE(attempt_count, 0) + 1,
+             locked_at = NULL,
+             error_message = 'Max delivery attempts exceeded after stale processing lock (>5m)',
+             updated_at = NOW()
+         WHERE status = 'processing'
+           AND COALESCE(locked_at, updated_at) < NOW() - INTERVAL '5 minutes'
+           AND COALESCE(attempt_count, 0) + 1 >= COALESCE(max_attempts, 3)
+         RETURNING *`
+      );
+
+      for (const row of exceededRes.rows) {
+        failed++;
+        const maxAttempts = row.max_attempts ?? 3;
+        const attempts = row.attempt_count ?? maxAttempts;
+        const reason = row.error_message || `Stuck in processing for >5m and exceeded max_attempts (${attempts}/${maxAttempts})`;
+        this.logTransition(row.id, 'processing', 'failed', `stale lock recovery exceeded max_attempts=${attempts}/${maxAttempts}`);
+
+        let website = '';
+        let slotId = '';
+        if (row.lead_id) {
+          const leadMeta = await query<{ website?: string; slot_id?: string }>(
+            `SELECT website, slot_id FROM leads WHERE id = $1`,
+            [row.lead_id]
+          ).catch(() => ({ rows: [] as Array<{ website?: string; slot_id?: string }> }));
+          website = leadMeta.rows[0]?.website || '';
+          slotId = leadMeta.rows[0]?.slot_id || '';
+        }
+
+        await failureLogService.logFailure({
+          leadId: row.lead_id || null,
+          company: row.recipient_name || row.recipient_email || 'Scheduled Dispatch',
+          website,
+          email: row.recipient_email || '',
+          slotId,
+          stage: row.stage || 'initial',
+          type: 'SEND_FAILED',
+          errorMessage: reason,
+          attempts,
+        }).catch((logErr) => {
+          console.error(`[Scheduler] Failed writing failure_log for dispatch ${row.id}:`, logErr);
+        });
+      }
+
+      const requeuedRes = await query<ScheduledDispatchRecord>(
+        `UPDATE scheduled_dispatches
+         SET status = 'scheduled',
+             attempt_count = COALESCE(attempt_count, 0) + 1,
+             locked_at = NULL,
+             updated_at = NOW()
+         WHERE status = 'processing'
+           AND COALESCE(locked_at, updated_at) < NOW() - INTERVAL '5 minutes'
+           AND COALESCE(attempt_count, 0) + 1 < COALESCE(max_attempts, 3)
+         RETURNING *`
+      );
+
+      for (const row of requeuedRes.rows) {
+        requeued++;
+        const maxAttempts = row.max_attempts ?? 3;
+        this.logTransition(row.id, 'processing', 'scheduled', `stale lock recovered, attempt_count=${row.attempt_count}/${maxAttempts}`);
+      }
+
+      if (requeued > 0 || failed > 0) {
+        console.log(`[Scheduler] Recovery pass finished: ${requeued} requeued, ${failed} marked failed.`);
+      }
+    } catch (err) {
+      console.error('[Scheduler] Error during recoverStaleDispatches:', err);
+    } finally {
+      this.isRecovering = false;
+    }
+
+    return { requeued, failed };
+  }
+
+  /**
+   * Starts background scheduler polling loop (idempotent: calling twice will not create duplicate intervals)
+   */
+  startScheduler(pollIntervalMs = 20000): void {
+    if (this.isStarted || this.timer || this.recoveryTimer) {
+      console.log('[Scheduler] Background scheduler already active — ignoring duplicate startScheduler() call.');
+      return;
+    }
+
+    this.isStarted = true;
+    console.log(`[Scheduler] Multi-channel background scheduler loop active (interval: ${pollIntervalMs / 1000}s, recovery: 120s).`);
+
+    // Recover any stale 'processing' rows from prior crash/restart first, then immediately process due rows
+    this.recoverStaleDispatches()
+      .catch((err) => console.error('[Scheduler] Boot recovery error:', err))
+      .finally(() => {
+        if (this.isStarted) {
+          this.processPendingDispatches().catch(console.error);
+        }
+      });
 
     this.timer = setInterval(() => {
       this.processPendingDispatches().catch(console.error);
     }, pollIntervalMs);
+
+    this.recoveryTimer = setInterval(() => {
+      this.recoverStaleDispatches().catch((err) => {
+        console.error('[Scheduler] Background recovery interval error:', err);
+      });
+    }, 2 * 60 * 1000);
   }
 
   /**
-   * Stops scheduler
+   * Stops scheduler and recovery loops cleanly
    */
-  stopScheduler() {
+  stopScheduler(): void {
+    this.isStarted = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    if (this.recoveryTimer) {
+      clearInterval(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
+    console.log('[Scheduler] Background scheduler and recovery timers stopped.');
   }
 }
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
+import { fiveSlotSenderService, maskSecret } from '../services/fiveSlotSenderService';
 
 export const slotsRouter = Router();
 
@@ -27,7 +27,9 @@ slotsRouter.post('/settings', async (req: Request, res: Response) => {
     const safeSettings = {
       ...updated,
       td_shared_secret: undefined as any,
-      td_shared_secret_masked: updated.td_shared_secret ? '••••••••' : '',
+      td_shared_secret_masked: maskSecret(updated.td_shared_secret),
+      td_callback_secret: undefined as any,
+      td_callback_secret_masked: maskSecret(updated.td_callback_secret),
     };
     res.json({ success: true, settings: safeSettings });
   } catch (err: any) {

@@ -14,7 +14,7 @@ export interface CopyGenerationRequest {
   businessName: string;
   category?: string;
   contactName?: string;
-  channel: 'email' | 'whatsapp' | 'facebook' | 'instagram' | 'website_form';
+  channel: 'email' | 'whatsapp' | 'website_form';
   stage: 'initial' | 'followup_1' | 'followup_2' | 'client_checkin';
   style?: 'conversational' | 'direct' | 'curious';
   notes?: string;
@@ -391,7 +391,7 @@ Write a short, highly persuasive ${req.channel.toUpperCase()} message for:
     }
 
     // Adapt for WhatsApp / Short channels
-    if (channel === 'whatsapp' || channel === 'instagram' || channel === 'facebook') {
+    if (channel === 'whatsapp') {
       if (stage === 'initial') {
         body = `Hi ${salutation}! Following up regarding ${cleanBiz}${locSnippet}. We help similar teams boost local Google search rankings & automate customer inquiries. Open to a quick 2-min chat this week? - Cloud Consultancy`;
       } else {

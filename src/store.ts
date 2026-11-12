@@ -240,10 +240,7 @@ export function useStore() {
       category?: string;
       phone?: string;
       email?: string;
-      instagram?: string;
-      facebook?: string;
       whatsapp?: string;
-      linkedin?: string;
       website?: string;
       status?: 'active' | 'inactive' | 'paused';
       notes?: string;
@@ -975,8 +972,6 @@ export function useStore() {
                 category: updated.category,
                 phone: updated.phone,
                 email: updated.email,
-                instagram: updated.instagram,
-                facebook: updated.facebook,
                 whatsapp: updated.whatsapp,
                 notes: updated.notes,
               }

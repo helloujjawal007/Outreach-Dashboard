@@ -56,7 +56,7 @@ CRITICAL RULES:
 - Absolutely NO AI buzzwords or clichés (do NOT use "I hope this email finds you well", "in today's digital landscape", "cutting-edge", "revolutionize", "testament", "delve").
 - Never make unrealistic promises, exaggerated claims, or fake guarantees (no 'double bookings', no '10x revenue', no 'guaranteed top rankings', no 'calls on autopilot').
 - Keep tone consultative, polite, respectful, and transparent.
-- Word count limits: WhatsApp under 45 words, Email under 85 words, LinkedIn under 70 words, Instagram under 45 words, Facebook under 55 words.
+- Word count limits: WhatsApp under 45 words, Email under 85 words.
 - End with a low-friction question (e.g. asking if they'd be open to seeing a quick 2-minute review).`;
 
     const result = await ollamaService.generateCompletion({
@@ -90,12 +90,9 @@ aiRouter.post('/research-and-write', async (req: Request, res: Response) => {
         category: string;
         phone: string;
         email: string;
-        instagram: string;
-        facebook: string;
         whatsapp: string;
-        linkedin?: string;
         notes: string;
-      }>(`SELECT id, business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, notes FROM leads WHERE id = $1`, [leadId]);
+      }>(`SELECT id, business_name, category, phone, email, whatsapp, notes FROM leads WHERE id = $1`, [leadId]);
 
       if (leadRes.rows.length > 0) {
         const row = leadRes.rows[0];
@@ -105,10 +102,7 @@ aiRouter.post('/research-and-write', async (req: Request, res: Response) => {
           category: row.category,
           phone: row.phone,
           email: row.email,
-          instagram: row.instagram,
-          facebook: row.facebook,
           whatsapp: row.whatsapp,
-          linkedin: row.linkedin,
           notes: row.notes,
         };
       }
@@ -150,12 +144,9 @@ aiRouter.post('/batch-research-and-write', async (req: Request, res: Response) =
       category: string;
       phone: string;
       email: string;
-      instagram: string;
-      facebook: string;
       whatsapp: string;
-      linkedin?: string;
       notes: string;
-    }>(`SELECT id, business_name, category, phone, email, instagram, facebook, whatsapp, linkedin, notes FROM leads WHERE id = ANY($1) LIMIT 100`, [leadIds.slice(0, 100)]);
+    }>(`SELECT id, business_name, category, phone, email, whatsapp, notes FROM leads WHERE id = ANY($1) LIMIT 100`, [leadIds.slice(0, 100)]);
 
     const contacts = leadsRes.rows.map((row) => ({
       id: row.id,
@@ -163,10 +154,7 @@ aiRouter.post('/batch-research-and-write', async (req: Request, res: Response) =
       category: row.category,
       phone: row.phone,
       email: row.email,
-      instagram: row.instagram,
-      facebook: row.facebook,
       whatsapp: row.whatsapp,
-      linkedin: row.linkedin,
       notes: row.notes,
     }));
 

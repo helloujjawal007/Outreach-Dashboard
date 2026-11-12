@@ -60,18 +60,6 @@ export async function addAutomatedCadenceAndChannelLists(): Promise<void> {
       description: 'Automatically aggregated list of all leads with verified WhatsApp / mobile contact numbers.',
     },
     {
-      name: 'LinkedIn Leads',
-      description: 'Automatically aggregated list of all leads with verified LinkedIn profiles.',
-    },
-    {
-      name: 'Instagram Leads',
-      description: 'Automatically aggregated list of all leads with verified Instagram accounts.',
-    },
-    {
-      name: 'Facebook Leads',
-      description: 'Automatically aggregated list of all leads with verified Facebook business pages.',
-    },
-    {
       name: 'Invalid List',
       description: 'Auto-populated list of leads with invalid, disposable, non-existent, or bounced email addresses flagged before outreach.',
     },

@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { gmbScraperService } from '../services/gmbScraperService';
+import { logPipelineError } from '../utils/pipelineLogger';
 
 export const scraperRouter = Router();
 
@@ -57,6 +58,7 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[scraperRouter.search] Error:', error);
+    logPipelineError('Lead Scrape', 'GMB search failed', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to scrape Google Business Profiles',
@@ -83,6 +85,7 @@ scraperRouter.post('/import', async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     console.error('[scraperRouter.import] Error:', error);
+    logPipelineError('Lead Import', 'Scraped lead import failed', error);
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to import scraped leads',

@@ -74,7 +74,6 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS website TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS country TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '',
-        ADD COLUMN IF NOT EXISTS linkedin TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS whatsapp_eligible BOOLEAN DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS whatsapp_decision_reason TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS detected_channels JSONB DEFAULT '[]'::jsonb,
@@ -106,7 +105,6 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS website TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS country TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS location TEXT DEFAULT '',
-        ADD COLUMN IF NOT EXISTS linkedin TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS whatsapp_eligible BOOLEAN DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS whatsapp_decision_reason TEXT DEFAULT '',
         ADD COLUMN IF NOT EXISTS detected_channels JSONB DEFAULT '[]'::jsonb;
@@ -199,8 +197,9 @@ export async function runMigrations() {
           scheduled_for TIMESTAMPTZ NOT NULL,
           status VARCHAR(50) NOT NULL DEFAULT 'scheduled',
           stage VARCHAR(50) DEFAULT 'initial',
-          attempt_count INT DEFAULT 0,
-          max_attempts INT DEFAULT 3,
+          attempt_count INT NOT NULL DEFAULT 0,
+          max_attempts INT NOT NULL DEFAULT 3,
+          locked_at TIMESTAMPTZ DEFAULT NULL,
           sent_at TIMESTAMPTZ,
           error_message TEXT,
           inbox_id UUID REFERENCES connected_inboxes(id) ON DELETE SET NULL,
@@ -208,7 +207,12 @@ export async function runMigrations() {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE scheduled_dispatches
+        ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS attempt_count INT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS max_attempts INT NOT NULL DEFAULT 3;
       CREATE INDEX IF NOT EXISTS idx_sched_disp_status_time ON scheduled_dispatches(status, scheduled_for);
+      CREATE INDEX IF NOT EXISTS idx_sched_disp_processing_lock ON scheduled_dispatches(status, locked_at) WHERE status = 'processing';
 
       -- Ensure all message columns
       ALTER TABLE messages 
@@ -341,7 +345,21 @@ export async function runMigrations() {
         ADD COLUMN IF NOT EXISTS global_min_gap_sec INT NOT NULL DEFAULT 90,
         ADD COLUMN IF NOT EXISTS whatsapp_cold_outreach_enabled BOOLEAN NOT NULL DEFAULT false,
         ADD COLUMN IF NOT EXISTS whatsapp_daily_limit INT NOT NULL DEFAULT 20,
-        ADD COLUMN IF NOT EXISTS active_list_id UUID DEFAULT NULL;
+        ADD COLUMN IF NOT EXISTS active_list_id UUID DEFAULT NULL,
+        ADD COLUMN IF NOT EXISTS td_callback_secret TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS slot_offsets_min JSONB NOT NULL DEFAULT '[0, 2, 4, 6, 8]'::jsonb,
+        ADD COLUMN IF NOT EXISTS slot_batch_size INT NOT NULL DEFAULT 1;
+
+      CREATE TABLE IF NOT EXISTS slot_turn_state (
+        slot_id VARCHAR(4) PRIMARY KEY CHECK (slot_id IN ('A', 'B', 'C', 'D', 'E')),
+        last_turn_at TIMESTAMPTZ DEFAULT NULL,
+        in_flight BOOLEAN NOT NULL DEFAULT false,
+        in_flight_since TIMESTAMPTZ DEFAULT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      INSERT INTO slot_turn_state (slot_id)
+      VALUES ('A'), ('B'), ('C'), ('D'), ('E')
+      ON CONFLICT (slot_id) DO NOTHING;
 
       ALTER TABLE slot_sender_settings 
         ALTER COLUMN slot_cycle_min TYPE NUMERIC USING slot_cycle_min::numeric,

@@ -3,12 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { query } from '../config/db';
+import { env } from '../config/env';
 import { fiveSlotSenderService } from '../services/fiveSlotSenderService';
 import { suppressionService } from '../services/suppressionService';
-import { isValidPdfBuffer, validateAuditAsset } from '../utils/auditPolicy';
+import { isValidPdfBuffer, normalizeAuditFinding, validateAuditAsset } from '../utils/auditPolicy';
 import { serviceRecommendationEngine } from '../services/serviceRecommendationEngine';
 import { technicalAuditPdfService } from '../services/technicalAuditPdfService';
 import type { ClientAuditReport } from '../services/clientAuditIntelligenceService';
+import { logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export const auditCallbackRouter = Router();
 
@@ -86,10 +88,19 @@ export async function auditCallbackAuthMiddleware(req: Request, res: Response, n
   }
 
   const settings = await fiveSlotSenderService.getSettings();
-  const expectedSecret = settings.td_shared_secret || process.env.TD_SHARED_SECRET || 'td-secret-key-2026';
+  const expectedSecret =
+    settings.td_callback_secret ||
+    env.TD_CALLBACK_SECRET ||
+    settings.td_shared_secret ||
+    env.TD_SHARED_SECRET ||
+    'td-secret-key-2026';
 
-  // Strict header-only authentication: x-audit-secret header only!
-  const providedSecret = req.headers['x-audit-secret'] as string | undefined;
+  // Strict header-only authentication (supports x-audit-secret and TD header aliases)
+  const rawHeader =
+    req.headers['x-audit-secret'] ||
+    req.headers['x-od-secret'] ||
+    req.headers['x-td-secret'];
+  const providedSecret = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
 
   if (!providedSecret || !expectedSecret || !timingSafeEqualStr(providedSecret.trim(), expectedSecret.trim())) {
     console.warn(`[AuditCallback] ❌ Unauthorized callback attempt from ${clientIp}. Missing or invalid x-audit-secret header.`);
@@ -112,6 +123,8 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     const {
       leadId: rawLeadId,
       status: incomingStatus,
+      noOpportunity: incomingNoOpportunity,
+      reason: incomingReason,
       takeaways: rawTakeaways,
       findings: rawFindings,
       score: rawScore,
@@ -127,6 +140,10 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     const leadId = typeof rawLeadId === 'string' ? rawLeadId.replace(/[^a-zA-Z0-9_-]/g, '') : '';
     if (!leadId) {
       return res.status(400).json({ success: false, error: 'Valid leadId is required' });
+    }
+
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadId)) {
+      return res.status(404).json({ success: false, error: `Lead ${leadId} not found` });
     }
 
     const leadCheck = await query<{
@@ -153,6 +170,7 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     }
 
     const lead = leadCheck.rows[0];
+    const slotLabel = lead.slot_id ? `Slot ${lead.slot_id}` : 'Unassigned';
 
     // Item 9 & 10: Out-of-order & duplicate callback protection
     // Duplicate or out-of-order callbacks: Return HTTP 200 { ignored: true } so TD does not retry!
@@ -185,8 +203,10 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     }
 
     // If TD reports an explicit audit failure (crawl error, 404, DNS error)
-    if (incomingStatus === 'failed' || auditError) {
+    const hasAuditError = typeof auditError === 'string' && auditError.trim().length > 0;
+    if (incomingStatus === 'failed' || hasAuditError) {
       console.warn(`[AuditCallback] TD reported audit failure for "${lead.business_name}" (${leadId}): ${auditError}`);
+      logPipelineError(`TD Callback | ${slotLabel}`, `Audit failed for "${lead.business_name}": ${auditError || 'Unknown error'}`);
       await query(
         `UPDATE leads SET audit_status = 'failed', status = 'manual_review', manual_review_reason = $1, updated_at = NOW() WHERE id = $2`,
         [`Technical Audit Pro error: ${auditError || 'Unknown audit failure'}`, leadId]
@@ -205,30 +225,13 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
       return res.json({ success: true, message: 'Audit marked as failed for lead', leadId, auditStatus: 'failed' });
     }
 
-    // 1. Findings extraction
     const reportObj = rawAuditReport || rawReport;
-    let extractedFindings: string[] = [];
-    if (Array.isArray(rawFindings)) {
-      extractedFindings = rawFindings.filter((f) => typeof f === 'string' && f.trim().length > 0);
-    } else if (reportObj && Array.isArray(reportObj.criticalIssues)) {
-      extractedFindings = reportObj.criticalIssues.filter((f: any) => typeof f === 'string' && f.trim().length > 0);
-    } else if (reportObj && Array.isArray(reportObj.findings)) {
-      extractedFindings = reportObj.findings.filter((f: any) => typeof f === 'string' && f.trim().length > 0);
-    } else if (rawTakeaways && typeof rawTakeaways === 'object' && Array.isArray((rawTakeaways as any).findings)) {
-      extractedFindings = (rawTakeaways as any).findings.filter((f: any) => typeof f === 'string' && f.trim().length > 0);
-    } else if (rawTakeaways && typeof rawTakeaways === 'object' && Array.isArray((rawTakeaways as any).issues)) {
-      extractedFindings = (rawTakeaways as any).issues.filter((f: any) => typeof f === 'string' && f.trim().length > 0);
-    } else if (typeof rawTakeaways === 'string') {
-      extractedFindings = rawTakeaways
-        .split(/;|\n|•/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 5);
-    }
 
-    // 2. Score extraction
+    // 1. Score & takeaways extraction
     let finalScore = 75;
-    if (typeof rawScore === 'number') {
-      finalScore = rawScore;
+    const numericRawScore = typeof rawScore === 'string' && rawScore.trim() !== '' ? Number(rawScore) : rawScore;
+    if (typeof numericRawScore === 'number' && Number.isFinite(numericRawScore)) {
+      finalScore = numericRawScore;
     } else if (reportObj && typeof reportObj.score === 'number') {
       finalScore = reportObj.score;
     } else if (reportObj && typeof reportObj.overallScore === 'number') {
@@ -249,6 +252,52 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
       finalTakeaways = reportObj.summary;
     } else if (rawTakeaways && typeof rawTakeaways === 'object' && typeof (rawTakeaways as any).summary === 'string') {
       finalTakeaways = (rawTakeaways as any).summary;
+    }
+
+    // Honor explicit noOpportunity signal from TD before splitting takeaways into findings
+    if (incomingNoOpportunity === true || incomingStatus === 'no_opportunity') {
+      const noOppReason =
+        (typeof incomingReason === 'string' && incomingReason.trim()) ||
+        'Clean site: 0 technical flaws detected (no opportunity for audit outreach)';
+      await query(
+        `UPDATE leads SET
+          audit_status = 'ready',
+          audit_findings = '[]'::jsonb,
+          audit_key_takeaways = $1,
+          audit_score = $2,
+          status = 'skipped_no_opportunity',
+          outreach_stage = 'skipped_no_opportunity',
+          manual_review_reason = $3,
+          audit_ready_at = NOW(),
+          updated_at = NOW()
+         WHERE id = $4`,
+        [finalTakeaways || noOppReason, finalScore, noOppReason, leadId]
+      );
+      return res.status(200).json({
+        success: true,
+        message: noOppReason,
+        leadId,
+        noOpportunity: true,
+      });
+    }
+
+    // 2. Findings extraction (supports string[] and structured object arrays)
+    let extractedFindings: string[] = [];
+    if (Array.isArray(rawFindings)) {
+      extractedFindings = rawFindings.map(normalizeAuditFinding).filter(Boolean);
+    } else if (reportObj && Array.isArray(reportObj.criticalIssues)) {
+      extractedFindings = reportObj.criticalIssues.map(normalizeAuditFinding).filter(Boolean);
+    } else if (reportObj && Array.isArray(reportObj.findings)) {
+      extractedFindings = reportObj.findings.map(normalizeAuditFinding).filter(Boolean);
+    } else if (rawTakeaways && typeof rawTakeaways === 'object' && Array.isArray((rawTakeaways as any).findings)) {
+      extractedFindings = (rawTakeaways as any).findings.map(normalizeAuditFinding).filter(Boolean);
+    } else if (rawTakeaways && typeof rawTakeaways === 'object' && Array.isArray((rawTakeaways as any).issues)) {
+      extractedFindings = (rawTakeaways as any).issues.map(normalizeAuditFinding).filter(Boolean);
+    } else if (typeof rawTakeaways === 'string') {
+      extractedFindings = rawTakeaways
+        .split(/;|\n|•/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 5);
     }
 
     // 3. Ensure audit directory & clean retention
@@ -289,6 +338,7 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
       finalPdfName = filename;
       fs.writeFileSync(finalPdfPath, pdfBuffer);
       console.log(`[AuditCallback] Stored valid audit PDF on disk: ${finalPdfPath} (${pdfBuffer.length} bytes)`);
+      logPipeline('GENERATED_PDF', `Stored audit PDF from TD for ${slotLabel}: "${filename}" (${pdfBuffer.length} bytes) | "${lead.business_name}"`);
     }
 
     // 4.1 On-the-fly PDF Generation if TD returned JSON without compiled PDF
@@ -323,8 +373,10 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
         finalPdfPath = genResult.pdfPath;
         finalPdfName = genResult.pdfName;
         console.log(`[AuditCallback] 📄 Synthesized branded audit PDF on-the-fly from TD JSON findings: ${finalPdfPath}`);
+        logPipeline('GENERATED_PDF', `Synthesized PDF for ${slotLabel}: "${genResult.pdfName}" (${genResult.fileSize} bytes) | "${lead.business_name}"`);
       } catch (genErr: any) {
         console.warn(`[AuditCallback] ⚠️ On-the-fly PDF synthesis error:`, genErr?.message);
+        logPipelineError(`PDF Generation | ${slotLabel}`, `Failed synthesizing PDF for "${lead.business_name}"`, genErr);
       }
     }
 
@@ -474,6 +526,10 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     console.log(
       `[AuditCallback] ✅ Audit callback stored for "${lead.business_name}" (${leadId}): ${validation.findings.length} findings, score: ${validation.score}, PDF: "${finalPdfName}" (Status: ready)`
     );
+    logPipeline(
+      'RECEIVED_JSON',
+      `Received JSON for ${slotLabel}: "${lead.business_name}" (${lead.website || 'no-site'}) | Score: ${validation.score}/100 | Findings: ${validation.findings.length} | PDF: ${finalPdfName || 'None'}`
+    );
 
     res.json({
       success: true,
@@ -486,6 +542,7 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[AuditCallback] Processing exception:', err);
+    logPipelineError('TD Callback', 'Exception processing audit callback JSON', err);
     res.status(500).json({ success: false, error: err?.message || 'Failed to process audit callback' });
   }
 });

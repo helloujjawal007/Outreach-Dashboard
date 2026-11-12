@@ -45,6 +45,29 @@ export function isValidPdfBuffer(buf: Buffer): boolean {
 }
 
 /**
+ * Normalizes a finding entry (string or structured object) into a readable summary string.
+ */
+export function normalizeAuditFinding(item: any): string {
+  if (typeof item === 'string') return item.trim();
+  if (item && typeof item === 'object') {
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    const detail =
+      typeof item.description === 'string'
+        ? item.description.trim()
+        : typeof item.detail === 'string'
+        ? item.detail.trim()
+        : typeof item.message === 'string'
+        ? item.message.trim()
+        : typeof item.issue === 'string'
+        ? item.issue.trim()
+        : '';
+    if (title && detail && title !== detail) return `${title}: ${detail}`;
+    return title || detail;
+  }
+  return '';
+}
+
+/**
  * Unified Audit Readiness Policy:
  * 1. Requires at least 1 concrete finding. If an audit returns 0 critical flaws (pristine site),
  *    a positive baseline diagnostic finding is synthesized so valid leads are never falsely blocked.
@@ -60,16 +83,12 @@ export function validateAuditAsset(
   // 1. Normalize findings
   let findings: string[] = [];
   if (Array.isArray(findingsRaw)) {
-    findings = findingsRaw
-      .map((f) => (typeof f === 'string' ? f.trim() : typeof f?.title === 'string' ? f.title.trim() : ''))
-      .filter(Boolean);
+    findings = findingsRaw.map(normalizeAuditFinding).filter(Boolean);
   } else if (typeof findingsRaw === 'string') {
     try {
       const parsed = JSON.parse(findingsRaw);
       if (Array.isArray(parsed)) {
-        findings = parsed
-          .map((f: any) => (typeof f === 'string' ? f.trim() : typeof f?.title === 'string' ? f.title.trim() : ''))
-          .filter(Boolean);
+        findings = parsed.map(normalizeAuditFinding).filter(Boolean);
       }
     } catch {
       findings = findingsRaw

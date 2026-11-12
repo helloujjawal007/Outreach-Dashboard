@@ -13,8 +13,6 @@ import {
   Mail,
   Phone,
   MessageCircle,
-  Instagram,
-  Facebook,
   Globe,
   Tag,
   FolderPlus,
@@ -25,7 +23,6 @@ import {
   ArrowRight,
   Clock,
   Search,
-  Linkedin,
   Star,
   Compass,
 } from 'lucide-react';
@@ -36,12 +33,12 @@ import { parseImport, markDuplicates, markIncomplete, parsedRowToLead, type Pars
 import type { Store } from '@/store';
 import type { Lead } from '@/types';
 
-const sampleCsv = `business_name,category,phone,email,instagram,facebook,whatsapp,linkedin
-Harbor Light Books,Retail,+1 415-555-0190,orders@harborlightbooks.com,@harborlightbooks,HarborLightBooks,,https://linkedin.com/company/harborlight
-Summit Auto Repair,Auto Services,+1 650-555-0145,service@summitauto.com,,,+1 650-555-0145,
-Zenith Yoga Studio,Fitness & Wellness,+1 510-555-0162,info@zenithyoga.com,@zenithyoga,ZenithYogaStudio,,https://linkedin.com/company/zenithyoga
-Blue Wave Surf Shop,Retail,+1 415-555-0188,,@bluewavesurf,BlueWaveSurfShop,,
-Unknown Vendor,Misc,,,,,,`;
+const sampleCsv = `business_name,category,phone,email,whatsapp
+Harbor Light Books,Retail,+1 415-555-0190,orders@harborlightbooks.com,
+Summit Auto Repair,Auto Services,+1 650-555-0145,service@summitauto.com,+1 650-555-0145
+Zenith Yoga Studio,Fitness & Wellness,+1 510-555-0162,info@zenithyoga.com,
+Blue Wave Surf Shop,Retail,+1 415-555-0188,,+1 415-555-0188
+Unknown Vendor,Misc,,,`;
 
 const categorySuggestions = [
   'Software & SaaS',
@@ -62,9 +59,6 @@ interface SingleLeadFormData {
   email: string;
   phone: string;
   whatsapp: string;
-  instagram: string;
-  facebook: string;
-  linkedin: string;
   website: string;
   status: 'active' | 'inactive';
   listId: string;
@@ -79,9 +73,6 @@ const emptySingleLead: SingleLeadFormData = {
   email: '',
   phone: '',
   whatsapp: '',
-  instagram: '',
-  facebook: '',
-  linkedin: '',
   website: '',
   status: 'active',
   listId: 'none',
@@ -97,9 +88,6 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     email: 'hello@apexcloud.io',
     phone: '+1 (415) 555-0199',
     whatsapp: '+1 (415) 555-0199',
-    instagram: '@apexcloud',
-    facebook: 'ApexCloudSystems',
-    linkedin: 'https://linkedin.com/company/apex-cloud',
     website: 'https://apexcloud.io',
     status: 'active',
     listId: 'none',
@@ -112,9 +100,6 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     email: 'contact@luminadental.com',
     phone: '+1 (650) 555-0148',
     whatsapp: '+1 (650) 555-0148',
-    instagram: '@luminadental',
-    facebook: 'LuminaDentalStudio',
-    linkedin: 'https://linkedin.com/company/lumina-dental',
     website: 'https://luminadental.com',
     status: 'active',
     listId: 'none',
@@ -127,9 +112,6 @@ const sampleLeadTemplates: SingleLeadFormData[] = [
     email: 'growth@vanguardagency.co',
     phone: '+1 (510) 555-0174',
     whatsapp: '+1 (510) 555-0174',
-    instagram: '@vanguardgrowth',
-    facebook: 'VanguardMarketingLab',
-    linkedin: 'https://linkedin.com/company/vanguard-marketing-lab',
     website: 'https://vanguardagency.co',
     status: 'inactive',
     listId: 'none',
@@ -176,9 +158,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
       channelAssignments?: {
         addedToEmailList: number;
         addedToWhatsAppList: number;
-        addedToLinkedInList: number;
-        addedToInstagramList: number;
-        addedToFacebookList?: number;
         addedToWebsiteList?: number;
         addedToCustomList: number;
       };
@@ -211,15 +190,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
       return;
     }
 
-    let formattedInstagram = singleLead.instagram.trim();
-    if (
-      formattedInstagram &&
-      !formattedInstagram.startsWith('@') &&
-      !formattedInstagram.startsWith('http')
-    ) {
-      formattedInstagram = `@${formattedInstagram}`;
-    }
-
     try {
       setIsSubmittingSingle(true);
       setSingleError(null);
@@ -231,9 +201,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
         email: singleLead.email.trim() || undefined,
         phone: singleLead.phone.trim() || undefined,
         whatsapp: singleLead.whatsapp.trim() || undefined,
-        instagram: formattedInstagram || undefined,
-        facebook: singleLead.facebook.trim() || undefined,
-        linkedin: singleLead.linkedin.trim() || undefined,
         website: singleLead.website.trim() || undefined,
         status: singleLead.status,
         notes: singleLead.notes.trim() || undefined,
@@ -706,20 +673,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                     />
                   </div>
 
-                  <div>
-                    <label className="label flex items-center gap-1.5" htmlFor="instagram">
-                      <Instagram size={13} className="text-violet-500" /> Instagram Handle
-                    </label>
-                    <input
-                      id="instagram"
-                      type="text"
-                      value={singleLead.instagram}
-                      onChange={(e) => setSingleLead({ ...singleLead, instagram: e.target.value })}
-                      placeholder="@company_handle"
-                      className="input"
-                    />
-                  </div>
-
                   <div className="sm:col-span-1">
                     <label className="label flex items-center gap-1.5" htmlFor="website">
                       <Globe size={13} className="text-teal-600" /> Company Website
@@ -730,20 +683,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       value={singleLead.website}
                       onChange={(e) => setSingleLead({ ...singleLead, website: e.target.value })}
                       placeholder="https://example.com"
-                      className="input"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-1">
-                    <label className="label flex items-center gap-1.5" htmlFor="linkedin">
-                      <Linkedin size={13} className="text-sky-600" /> LinkedIn Profile / URL
-                    </label>
-                    <input
-                      id="linkedin"
-                      type="text"
-                      value={singleLead.linkedin}
-                      onChange={(e) => setSingleLead({ ...singleLead, linkedin: e.target.value })}
-                      placeholder="https://linkedin.com/in/prospect"
                       className="input"
                     />
                   </div>
@@ -825,48 +764,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       {singleLead.website.trim() && !singleLead.website.includes('google.com/maps') ? '✓' : ''}
                     </span>
                   </span>
-
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
-                      singleLead.linkedin.trim()
-                        ? 'bg-sky-100 text-sky-900 border-sky-300 shadow-xs'
-                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
-                    }`}
-                  >
-                    <Linkedin
-                      size={12}
-                      className={singleLead.linkedin.trim() ? 'text-sky-600' : 'text-slate-400'}
-                    />
-                    <span>LinkedIn Leads {singleLead.linkedin.trim() ? '✓' : ''}</span>
-                  </span>
-
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
-                      singleLead.instagram.trim()
-                        ? 'bg-purple-100 text-purple-900 border-purple-300 shadow-xs'
-                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
-                    }`}
-                  >
-                    <Instagram
-                      size={12}
-                      className={singleLead.instagram.trim() ? 'text-purple-600' : 'text-slate-400'}
-                    />
-                    <span>Instagram Leads {singleLead.instagram.trim() ? '✓' : ''}</span>
-                  </span>
-
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition-all ${
-                      singleLead.facebook.trim()
-                        ? 'bg-indigo-100 text-indigo-900 border-indigo-300 shadow-xs'
-                        : 'bg-white text-slate-400 border-slate-200 opacity-60'
-                    }`}
-                  >
-                    <Facebook
-                      size={12}
-                      className={singleLead.facebook.trim() ? 'text-indigo-600' : 'text-slate-400'}
-                    />
-                    <span>Facebook Leads {singleLead.facebook.trim() ? '✓' : ''}</span>
-                  </span>
                 </div>
               </div>
 
@@ -927,9 +824,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                               ![
                                 'email leads',
                                 'whatsapp leads',
-                                'linkedin leads',
-                                'instagram leads',
-                                'facebook leads',
                                 'website leads',
                                 'invalid list',
                               ].includes(l.name.toLowerCase())
@@ -1167,12 +1061,12 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                 <h3 className="text-sm font-bold text-ink-900">Paste Raw Text / CSV</h3>
               </div>
               <p className="mb-3 text-xs text-ink-500">
-                Expected columns: business_name, category, phone, email, instagram, facebook, whatsapp
+                Expected columns: business_name, category, phone, email, whatsapp
               </p>
               <textarea
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
-                placeholder="business_name,category,phone,email,instagram,facebook,whatsapp&#10;Acme Corp,Retail,+1 555-0100,hello@acme.com,@acme,AcmeCorp,"
+                placeholder="business_name,category,phone,email,whatsapp&#10;Acme Corp,Retail,+1 555-0100,hello@acme.com,+1 555-0100"
                 rows={10}
                 className="textarea font-mono text-xs"
               />
@@ -1243,24 +1137,6 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200">
                         <Phone size={12} className="text-emerald-600" />
                         <span>WhatsApp Leads List ({importResult.automatedIntake.channelAssignments.addedToWhatsAppList})</span>
-                      </span>
-                    )}
-                    {importResult.automatedIntake.channelAssignments.addedToLinkedInList > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-sky-50 text-sky-800 font-semibold border border-sky-200">
-                        <Linkedin size={12} className="text-sky-600" />
-                        <span>LinkedIn Leads List ({importResult.automatedIntake.channelAssignments.addedToLinkedInList})</span>
-                      </span>
-                    )}
-                    {importResult.automatedIntake.channelAssignments.addedToInstagramList > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-purple-50 text-purple-800 font-semibold border border-purple-200">
-                        <Instagram size={12} className="text-purple-600" />
-                        <span>Instagram Leads List ({importResult.automatedIntake.channelAssignments.addedToInstagramList})</span>
-                      </span>
-                    )}
-                    {Boolean(importResult.automatedIntake.channelAssignments.addedToFacebookList && importResult.automatedIntake.channelAssignments.addedToFacebookList > 0) && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-800 font-semibold border border-indigo-200">
-                        <Facebook size={12} className="text-indigo-600" />
-                        <span>Facebook Leads List ({importResult.automatedIntake.channelAssignments.addedToFacebookList})</span>
                       </span>
                     )}
                     {Boolean(importResult.automatedIntake.channelAssignments.addedToWebsiteList && importResult.automatedIntake.channelAssignments.addedToWebsiteList > 0) && (
@@ -1453,7 +1329,7 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                           Email
                         </th>
                         <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-ink-500">
-                          Social
+                          WhatsApp
                         </th>
                         <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-ink-500">
                           Status
@@ -1492,23 +1368,8 @@ export function LeadImportPage({ store, onNavigate }: Props) {
                             {row.email || <span className="text-ink-300">—</span>}
                           </td>
                           <td className="px-4 py-3 text-ink-500">
-                            {row.instagram || row.facebook || row.whatsapp || row.linkedin ? (
-                              <span className="flex flex-wrap gap-1">
-                                {row.instagram && (
-                                  <span className="text-xs text-violet-600">{row.instagram}</span>
-                                )}
-                                {row.facebook && (
-                                  <span className="text-xs text-blue-600">{row.facebook}</span>
-                                )}
-                                {row.whatsapp && (
-                                  <span className="text-xs text-emerald-600">{row.whatsapp}</span>
-                                )}
-                                {row.linkedin && (
-                                  <span className="text-xs text-sky-600 truncate max-w-[150px] inline-block" title={row.linkedin}>
-                                    {row.linkedin.replace(/^https?:\/\/(www\.)?linkedin\.com\/(in|company)\//, '') || 'LinkedIn'}
-                                  </span>
-                                )}
-                              </span>
+                            {row.whatsapp ? (
+                              <span className="text-xs text-emerald-600">{row.whatsapp}</span>
                             ) : (
                               <span className="text-ink-300">—</span>
                             )}

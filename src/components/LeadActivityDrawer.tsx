@@ -12,7 +12,6 @@ import {
   MessageCircle,
   Phone,
   Globe,
-  Linkedin,
   Plus,
   CheckSquare,
   Square,
@@ -416,19 +415,6 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
               >
                 <Phone size={12} />
                 <span>Call</span>
-              </a>
-            )}
-
-            {lead.linkedin && (
-              <a
-                href={lead.linkedin}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2.5 py-1 rounded-md bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 text-xs font-semibold flex items-center gap-1.5 transition"
-                title="Open LinkedIn profile"
-              >
-                <Linkedin size={12} />
-                <span>LinkedIn</span>
               </a>
             )}
 

@@ -5,6 +5,7 @@ import type { ClientAuditReport } from './clientAuditIntelligenceService';
 import { SENDER_CONFIG } from '../config/senderConfig';
 import { isValidPdfFile } from '../utils/auditPolicy';
 import { query } from '../config/db';
+import { logPipeline } from '../utils/pipelineLogger';
 
 export interface GeneratedPdfResult {
   pdfPath: string;
@@ -412,6 +413,7 @@ export class TechnicalAuditPdfService {
         if (fs.existsSync(targetPdfPath)) {
           const stats = fs.statSync(targetPdfPath);
           console.log(`[TechnicalAuditPdfService] 🌐 Generated PDF via Headless Chrome: ${chromePath} for "${report.domain}" (${stats.size} bytes)`);
+          logPipeline('GENERATED_PDF', `Generated PDF via Chrome: "${pdfName}" for "${businessName || report.domain}" (${stats.size} bytes)`);
           // Cleanup temp html
           try {
             fs.unlinkSync(tempHtmlPath);
@@ -444,6 +446,7 @@ export class TechnicalAuditPdfService {
     this.writeFallbackPdf(targetPdfPath, report, businessName);
 
     const stats = fs.statSync(targetPdfPath);
+    logPipeline('GENERATED_PDF', `Generated fallback PDF: "${pdfName}" for "${businessName || report.domain}" (${stats.size} bytes)`);
     return {
       pdfPath: targetPdfPath,
       pdfName,

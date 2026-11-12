@@ -26,8 +26,6 @@ export class ConversationOrchestratorService {
       category: string;
       phone: string;
       email: string;
-      instagram: string;
-      facebook: string;
       whatsapp: string;
     }>(`SELECT * FROM leads WHERE id = $1`, [leadId]);
 
@@ -69,8 +67,8 @@ export class ConversationOrchestratorService {
     const clientRes = await query<{ id: string }>(
       `INSERT INTO clients (
         original_lead_id, business_name, primary_contact_name, category,
-        phone, email, instagram, facebook, whatsapp, status, contract_value, onboarded_at, notes
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', 1500.00, NOW(), $10)
+        phone, email, whatsapp, status, contract_value, onboarded_at, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 1500.00, NOW(), $8)
       RETURNING id`,
       [
         leadId,
@@ -79,8 +77,6 @@ export class ConversationOrchestratorService {
         lead.category,
         lead.phone,
         lead.email,
-        lead.instagram,
-        lead.facebook,
         lead.whatsapp,
         notes || 'Converted from Cold Outreach reply',
       ]

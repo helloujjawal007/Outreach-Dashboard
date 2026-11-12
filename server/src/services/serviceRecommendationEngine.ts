@@ -144,10 +144,10 @@ export class ServiceRecommendationEngine {
     const matched: MatchedService[] = [];
     const matchedCategories = new Set<string>();
 
-    let perfIssues: string[] = [];
-    let seoIssues: string[] = [];
-    let uiIssues: string[] = [];
-    let secIssues: string[] = [];
+    const perfIssues: string[] = [];
+    const seoIssues: string[] = [];
+    const uiIssues: string[] = [];
+    const secIssues: string[] = [];
 
     findings.forEach((finding) => {
       const lower = finding.toLowerCase();

@@ -5,14 +5,12 @@ import { whatsappValidator } from './whatsappValidator';
 export interface EnrichmentRunResult {
   totalLeadsScanned: number;
   emailsDiscoveredCount: number;
-  socialsDiscoveredCount: number;
   locationsResolvedCount: number;
   phoneNormalizedCount: number;
   details: Array<{
     leadId: string;
     businessName: string;
     discoveredEmail?: string;
-    discoveredSocials?: Record<string, string>;
     location?: string;
   }>;
 }
@@ -105,34 +103,7 @@ export class AutonomousLeadEnricher {
   }
 
   /**
-   * Extracts social links (Instagram, Facebook, LinkedIn) from HTML
-   */
-  private extractSocialsFromHtml(html: string): { instagram?: string; facebook?: string; linkedin?: string } {
-    const socials: { instagram?: string; facebook?: string; linkedin?: string } = {};
-
-    // Instagram
-    const igMatch = html.match(/https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9_.]+)\/?/i);
-    if (igMatch && igMatch[1] && !['p', 'explore', 'stories', 'reel'].includes(igMatch[1])) {
-      socials.instagram = `@${igMatch[1]}`;
-    }
-
-    // Facebook
-    const fbMatch = html.match(/https?:\/\/(?:www\.)?facebook\.com\/([a-zA-Z0-9_.-]+)\/?/i);
-    if (fbMatch && fbMatch[1] && !['sharer', 'share', 'login', 'groups'].includes(fbMatch[1])) {
-      socials.facebook = fbMatch[1];
-    }
-
-    // LinkedIn
-    const liMatch = html.match(/https?:\/\/(?:www\.)?linkedin\.com\/(?:company|in)\/([a-zA-Z0-9_-]+)\/?/i);
-    if (liMatch && liMatch[1]) {
-      socials.linkedin = `https://linkedin.com/company/${liMatch[1]}`;
-    }
-
-    return socials;
-  }
-
-  /**
-   * Runs the autonomous enrichment pipeline across leads missing email or location
+   * Crawls HTML and runs enrichment across leads missing email or location
    */
   async runEnrichmentCycle(limit: number = 30): Promise<EnrichmentRunResult> {
     if (this.isRunning) {
@@ -140,7 +111,6 @@ export class AutonomousLeadEnricher {
       return {
         totalLeadsScanned: 0,
         emailsDiscoveredCount: 0,
-        socialsDiscoveredCount: 0,
         locationsResolvedCount: 0,
         phoneNormalizedCount: 0,
         details: [],
@@ -153,7 +123,6 @@ export class AutonomousLeadEnricher {
     const result: EnrichmentRunResult = {
       totalLeadsScanned: 0,
       emailsDiscoveredCount: 0,
-      socialsDiscoveredCount: 0,
       locationsResolvedCount: 0,
       phoneNormalizedCount: 0,
       details: [],
@@ -204,7 +173,6 @@ export class AutonomousLeadEnricher {
         let targetLocation = lead.location ? lead.location.trim() : '';
         let targetCountry = lead.country ? lead.country.trim() : '';
         let targetPhone = lead.phone ? lead.phone.trim() : '';
-        let discoveredSocials = lead.metadata?.discovered_socials || {};
 
         // 1. Resolve Website URL
         const rawWeb = lead.website || lead.metadata?.google_profile?.website || '';
@@ -219,11 +187,6 @@ export class AutonomousLeadEnricher {
             let discoveredEmails: string[] = [];
             if (homeHtml) {
               discoveredEmails = this.extractEmailsFromHtml(homeHtml);
-              const socials = this.extractSocialsFromHtml(homeHtml);
-              if (Object.keys(socials).length > 0) {
-                discoveredSocials = { ...discoveredSocials, ...socials };
-                result.socialsDiscoveredCount++;
-              }
 
               // If no email on home, check /contact or /about
               if (discoveredEmails.length === 0) {
@@ -288,21 +251,14 @@ export class AutonomousLeadEnricher {
                  phone = COALESCE(NULLIF($2, ''), phone),
                  location = COALESCE(NULLIF($3, ''), location),
                  country = COALESCE(NULLIF($4, ''), country),
-                 metadata = jsonb_set(
-                   COALESCE(metadata, '{}'::jsonb),
-                   '{discovered_socials}',
-                   $5::jsonb,
-                   true
-                 ),
                  last_enriched_at = NOW(),
                  updated_at = NOW()
-             WHERE id = $6`,
+             WHERE id = $5`,
             [
               targetEmail,
               targetPhone,
               targetLocation,
               targetCountry,
-              JSON.stringify(discoveredSocials),
               lead.id,
             ]
           );
@@ -314,7 +270,7 @@ export class AutonomousLeadEnricher {
       }
 
       console.log(
-        `[AutonomousLeadEnricher] Cycle completed: ${result.emailsDiscoveredCount} emails discovered, ${result.locationsResolvedCount} locations resolved, ${result.socialsDiscoveredCount} socials found.`
+        `[AutonomousLeadEnricher] Cycle completed: ${result.emailsDiscoveredCount} emails discovered, ${result.locationsResolvedCount} locations resolved.`
       );
     } catch (err) {
       console.error('[AutonomousLeadEnricher] Enrichment cycle error:', err);

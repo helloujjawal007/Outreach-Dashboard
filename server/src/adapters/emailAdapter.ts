@@ -12,6 +12,7 @@ import { classifySmtpError, type SmtpErrorType } from '../utils/smtpClassifier';
 
 import { signUnsubscribeToken } from '../utils/tokenSigner';
 import { SENDER_CONFIG } from '../config/senderConfig';
+import { logPipeline, logPipelineError } from '../utils/pipelineLogger';
 
 export interface DnsRecord {
   type: 'TXT' | 'CNAME' | 'MX';
@@ -557,9 +558,14 @@ export class EmailAdapter {
         this.mockSentLog.push(record);
         liveDelivery = 'sent_live';
         console.log(`[EmailAdapter] 🧪 [MOCK SMTP JSON Transport] Dispatched to ${params.to} (Slot: ${record.slot}, Message-ID: ${record.messageId}) at ${acceptTime}`);
+        logPipeline(
+          'EMAIL_SENT',
+          `[MOCK SMTP] Email simulated -> ${params.to} | Slot ${record.slot} | Subject: "${finalSubject}" | Attachments: ${finalAttachments.length}`
+        );
       } catch (mockErr: any) {
         liveDelivery = 'smtp_failed';
         liveError = mockErr?.message || 'Mock SMTP error';
+        logPipelineError('Mock SMTP', `Simulated send failed -> ${params.to}`, mockErr);
       }
     } else if (activeInbox) {
       if (this.isTestDatabase()) {
@@ -570,7 +576,7 @@ export class EmailAdapter {
         fromAddress = `"${activeInbox.sender_name}" <${activeInbox.email}>`;
         cleanReplyTo = activeInbox.email;
 
-        await transporter.sendMail({
+        const info = await transporter.sendMail({
           from: fromAddress,
           to: params.to,
           replyTo: cleanReplyTo,
@@ -584,6 +590,10 @@ export class EmailAdapter {
         liveDelivery = 'sent_live';
         await inboxRotationService.recordDispatch(activeInbox.id, true);
         console.log(`[EmailAdapter] Dispatched via Rotating Inbox [${activeInbox.name} (${activeInbox.email})] to ${params.to} with ${finalAttachments.length} attachment(s)`);
+        logPipeline(
+          'EMAIL_SENT',
+          `Sent via [${activeInbox.email}] -> ${params.to} | ${params.slotId ? `Slot ${params.slotId}` : 'Direct'} | Subject: "${finalSubject}" | Attachments: ${finalAttachments.length} | Message-ID: ${info?.messageId || 'n/a'}`
+        );
 
         // Sync sent message to IMAP Sent Mail so it appears in user's Gmail client
         emailSentSyncService.appendSentEmail({
@@ -602,6 +612,7 @@ export class EmailAdapter {
         liveError = rawError;
         await inboxRotationService.recordDispatch(activeInbox.id, false, liveError);
         console.error(`[EmailAdapter] SMTP error on inbox ${activeInbox.email}:`, liveError);
+        logPipelineError(`SMTP | ${activeInbox.email}`, `Send failed -> ${params.to}: ${liveError}`);
       }
     } else if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS && params.to) {
       if (this.isTestDatabase()) {
@@ -637,7 +648,7 @@ export class EmailAdapter {
         fromAddress = cleanFrom.includes('<') ? cleanFrom : `"Cloud Consultancy" <${cleanFrom}>`;
         cleanReplyTo = cleanFrom;
 
-        await transporter.sendMail({
+        const fallbackInfo = await transporter.sendMail({
           from: fromAddress,
           to: params.to,
           replyTo: cleanReplyTo,
@@ -648,6 +659,10 @@ export class EmailAdapter {
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         });
         liveDelivery = 'sent_live';
+        logPipeline(
+          'EMAIL_SENT',
+          `Sent via [${env.SMTP_USER}] -> ${params.to} | ${params.slotId ? `Slot ${params.slotId}` : 'Direct'} | Subject: "${finalSubject}" | Attachments: ${finalAttachments.length} | Message-ID: ${fallbackInfo?.messageId || 'n/a'}`
+        );
 
         // Sync sent message to IMAP Sent Mail
         emailSentSyncService.appendSentEmail({
@@ -662,6 +677,7 @@ export class EmailAdapter {
       } catch (smtpErr: unknown) {
         liveDelivery = 'smtp_failed';
         liveError = smtpErr instanceof Error ? smtpErr.message : 'SMTP delivery failed';
+        logPipelineError(`SMTP | ${env.SMTP_USER || 'env'}`, `Fallback SMTP failed -> ${params.to}: ${liveError}`);
       }
     } else {
       console.log(`[EmailAdapter] Simulation mode: recording to database timeline.`);

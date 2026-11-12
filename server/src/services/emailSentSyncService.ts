@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import { env } from '../config/env';
 import { inboxRotationService } from './inboxRotationService';
+import { logPipelineError } from '../utils/pipelineLogger';
 
 export interface AppendSentEmailParams {
   from: string;
@@ -109,6 +110,7 @@ export class EmailSentSyncService {
       }
     } catch (err: any) {
       console.warn(`[EmailSentSyncService] Failed to append sent message to IMAP Sent Mail:`, err?.message || err);
+      logPipelineError('Gmail Sent Sync', `Failed syncing sent copy for ${params.to} to Gmail Sent`, err);
       return false;
     }
   }

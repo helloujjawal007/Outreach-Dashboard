@@ -2,9 +2,6 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Mail,
   MessageCircle,
-  Instagram,
-  Facebook,
-  Linkedin,
   Sparkles,
   Zap,
   CheckCircle2,
@@ -33,11 +30,9 @@ import {
   CalendarClock,
   Maximize2,
   Minus,
-  Globe,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { ScheduleOutreachModal } from '@/components/ScheduleOutreachModal';
-import { LinkedInOutreachHub } from '@/components/LinkedInOutreachHub';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { api, cleanSiteUrl } from '@/services/api';
 import type {
@@ -98,8 +93,6 @@ export function ChannelOutreachHub({
     phone: string;
     whatsapp: string;
     email: string;
-    facebook: string;
-    instagram: string;
     website: string;
     country: string;
     notes: string;
@@ -111,8 +104,6 @@ export function ChannelOutreachHub({
     phone: '',
     whatsapp: '',
     email: '',
-    facebook: '',
-    instagram: '',
     website: '',
     country: '',
     notes: '',
@@ -208,8 +199,6 @@ export function ChannelOutreachHub({
     const website_form = activeLeads.filter(
       (l) => Boolean(cleanSiteUrl(l.website || l.googleProfile?.website))
     );
-    const instagram = activeLeads.filter((l) => (l.instagram || '').trim().length > 0);
-    const linkedin = activeLeads.filter((l) => (l.linkedin || '').trim().length > 0);
 
     return {
       email,
@@ -217,8 +206,6 @@ export function ChannelOutreachHub({
       whatsappEligible,
       whatsappIneligible,
       website_form,
-      instagram,
-      linkedin,
     };
   }, [leads]);
 
@@ -396,10 +383,7 @@ export function ChannelOutreachHub({
         (l.country && l.country.toLowerCase().includes(q)) ||
         (l.website && l.website.toLowerCase().includes(q)) ||
         l.phone.toLowerCase().includes(q) ||
-        l.email.toLowerCase().includes(q) ||
-        (l.facebook && l.facebook.toLowerCase().includes(q)) ||
-        (l.instagram && l.instagram.toLowerCase().includes(q)) ||
-        (l.linkedin && l.linkedin.toLowerCase().includes(q))
+        l.email.toLowerCase().includes(q)
     );
   }, [activeTabBaseLeads, channelCountryFilter, channelCityFilter, channelCategoryFilter, channelListFilter, channelStatusFilter, channelConsentFilter, search]);
 
@@ -538,8 +522,6 @@ export function ChannelOutreachHub({
       phone: lead.phone || '',
       whatsapp: lead.whatsapp || '',
       email: lead.email || '',
-      facebook: lead.facebook || '',
-      instagram: lead.instagram || '',
       website: cleanSiteUrl(lead.website || lead.googleProfile?.website),
       country: lead.country || '',
       notes: lead.notes || '',
@@ -566,8 +548,6 @@ export function ChannelOutreachHub({
         phone: editFormData.phone.trim(),
         whatsapp: editFormData.whatsapp.trim(),
         email: editFormData.email.trim(),
-        facebook: editFormData.facebook.trim(),
-        instagram: editFormData.instagram.trim(),
         website: editFormData.website.trim(),
         country: editFormData.country.trim(),
         notes: editFormData.notes.trim(),
@@ -3083,36 +3063,6 @@ export function ChannelOutreachHub({
                 </select>
               </div>
 
-              {/* Facebook Profile / Page */}
-              <div className="space-y-1">
-                <label className="label text-xs font-semibold flex items-center gap-1">
-                  <Facebook size={12} className="text-indigo-600" />
-                  <span>Facebook Profile or Page</span>
-                </label>
-                <input
-                  type="text"
-                  value={editFormData.facebook}
-                  onChange={(e) => setEditFormData({ ...editFormData, facebook: e.target.value })}
-                  placeholder="e.g. https://facebook.com/acmedental or acmedental"
-                  className="input text-xs w-full bg-white"
-                />
-              </div>
-
-              {/* Instagram Handle */}
-              <div className="space-y-1">
-                <label className="label text-xs font-semibold flex items-center gap-1">
-                  <Instagram size={12} className="text-pink-600" />
-                  <span>Instagram Handle</span>
-                </label>
-                <input
-                  type="text"
-                  value={editFormData.instagram}
-                  onChange={(e) => setEditFormData({ ...editFormData, instagram: e.target.value })}
-                  placeholder="e.g. @acmedental"
-                  className="input text-xs w-full bg-white font-mono"
-                />
-              </div>
-
               {/* Consent / Stage */}
               <div className="space-y-1 md:col-span-2">
                 <label className="label text-xs font-semibold">Consent &amp; Outreach Stage</label>
@@ -3188,7 +3138,7 @@ export function ChannelOutreachHub({
               <div className="space-y-1">
                 <h4 className="text-sm font-bold">Are you sure you want to delete this lead?</h4>
                 <p className="text-xs text-rose-900/90 leading-relaxed">
-                  <strong>{deletingLead.businessName}</strong> will be removed from all channels (WhatsApp, Email, Instagram)
+                  <strong>{deletingLead.businessName}</strong> will be removed from all channels (WhatsApp, Email, Website)
                   and safely preserved in Trash for 28 days with restore capability.
                 </p>
               </div>

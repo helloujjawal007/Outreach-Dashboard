@@ -12,11 +12,11 @@ export async function migrateWebsiteAndCountry() {
 
     ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_channel_check;
     ALTER TABLE conversations ADD CONSTRAINT conversations_channel_check 
-      CHECK (channel IN ('email', 'whatsapp', 'instagram', 'facebook', 'linkedin', 'website_form'));
+      CHECK (channel IN ('email', 'whatsapp', 'website_form'));
 
     ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_channel_check;
     ALTER TABLE messages ADD CONSTRAINT messages_channel_check 
-      CHECK (channel IN ('email', 'whatsapp', 'instagram', 'facebook', 'linkedin', 'website_form'));
+      CHECK (channel IN ('email', 'whatsapp', 'website_form'));
   `);
 
   // 2. Fetch all leads to backfill

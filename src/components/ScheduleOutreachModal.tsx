@@ -10,8 +10,6 @@ import {
   XCircle,
   MessageCircle,
   Mail,
-  Instagram,
-  Linkedin,
   Loader2,
   Smartphone,
   Search,
@@ -169,8 +167,6 @@ export function ScheduleOutreachModal({
     return targetLeads.filter((l) => {
       if (channel === 'email') return !!(l.email && l.email.trim());
       if (channel === 'whatsapp') return !!((l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
-      if (channel === 'instagram') return !!(l.instagram && l.instagram.trim());
-      if (channel === 'linkedin') return !!(l.linkedin && l.linkedin.trim());
       return false;
     });
   }, [targetLeads, channel]);
@@ -396,7 +392,7 @@ export function ScheduleOutreachModal({
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Automated background scheduling for WhatsApp, Email & Instagram
+                  Automated background scheduling for WhatsApp &amp; Email
                 </p>
               </div>
             </div>
@@ -457,7 +453,7 @@ export function ScheduleOutreachModal({
               <label className="text-xs font-bold text-slate-700 block mb-1.5">
                 Target Outreach Channel:
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {[
                   {
                     id: 'whatsapp' as ChannelType,
@@ -473,28 +469,12 @@ export function ScheduleOutreachModal({
                     activeClass: 'border-blue-500 bg-blue-50 text-blue-900 ring-2 ring-blue-400/20',
                     badgeColor: 'bg-blue-100 text-blue-800',
                   },
-                  {
-                    id: 'instagram' as ChannelType,
-                    name: 'Instagram',
-                    icon: Instagram,
-                    activeClass: 'border-pink-500 bg-pink-50 text-pink-900 ring-2 ring-pink-400/20',
-                    badgeColor: 'bg-pink-100 text-pink-800',
-                  },
-                  {
-                    id: 'linkedin' as ChannelType,
-                    name: 'LinkedIn',
-                    icon: Linkedin,
-                    activeClass: 'border-sky-500 bg-sky-50 text-sky-900 ring-2 ring-sky-400/20',
-                    badgeColor: 'bg-sky-100 text-sky-800',
-                  },
                 ].map((item) => {
                   const Icon = item.icon;
                   const isSelected = channel === item.id;
                   const eligibleCount = targetLeads.filter((l) => {
                     if (item.id === 'email') return !!(l.email && l.email.trim());
                     if (item.id === 'whatsapp') return !!((l.whatsapp && l.whatsapp.trim()) || (l.phone && l.phone.trim()));
-                    if (item.id === 'instagram') return !!(l.instagram && l.instagram.trim());
-                    if (item.id === 'linkedin') return !!(l.linkedin && l.linkedin.trim());
                     return false;
                   }).length;
 
@@ -897,8 +877,6 @@ export function ScheduleOutreachModal({
                   <option value="all">All Channels</option>
                   <option value="whatsapp">WhatsApp</option>
                   <option value="email">Email</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="linkedin">LinkedIn</option>
                 </select>
 
                 <div className="relative">
@@ -972,7 +950,7 @@ export function ScheduleOutreachModal({
                           ? item.recipient_phone || 'WhatsApp'
                           : itemChannel === 'email'
                           ? item.recipient_email || 'Email'
-                          : item.recipient_handle || 'Social Handle';
+                          : item.recipient_handle || 'Website';
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50 transition-colors">
@@ -986,17 +964,6 @@ export function ScheduleOutreachModal({
                               {itemChannel === 'email' && (
                                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] bg-blue-100 text-blue-800">
                                   <Mail size={10} /> Email
-                                </span>
-                              )}
-
-                              {itemChannel === 'instagram' && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] bg-pink-100 text-pink-800">
-                                  <Instagram size={10} /> IG
-                                </span>
-                              )}
-                              {itemChannel === 'linkedin' && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] bg-sky-100 text-sky-800">
-                                  <Linkedin size={10} /> LinkedIn
                                 </span>
                               )}
                               <span className="font-bold text-slate-900 truncate max-w-[140px]">

@@ -1,13 +1,11 @@
 import { query } from '../config/db';
 import { emailAdapter } from '../adapters/emailAdapter';
 import { whatsappAdapter } from '../adapters/whatsappAdapter';
-import { instagramAdapter } from '../adapters/instagramAdapter';
-import { facebookAdapter } from '../adapters/facebookAdapter';
 import { conversationOrchestrator, type ClientConversionResult } from './orchestratorService';
 
 export interface SendResult {
   allowed: boolean;
-  channel: 'email' | 'whatsapp' | 'instagram' | 'facebook' | 'linkedin';
+  channel: 'email' | 'whatsapp';
   actionTaken: 'sent_direct' | 'queued_draft' | 'blocked_consent' | 'blocked_channel_rule' | 'throttled_warmup';
   reason?: string;
   messageId?: string;
@@ -151,11 +149,10 @@ export class OutreachEngineService {
    * 1. Consent Gate: Hard block if lead opted out.
    * 2. Email Adapter: Dispatches through dedicated subdomain with progressive warm-up throttling.
    * 3. WhatsApp Adapter: Cold sends strictly disabled; replies permitted ONLY within active 24h inbound window.
-   * 4. Instagram/FB Adapter: Enqueues draft in human approval queue to prevent platform automation bans.
    */
   async routeOutreachMessage(params: {
     leadId: string;
-    channel: 'email' | 'whatsapp' | 'instagram' | 'facebook' | 'linkedin';
+    channel: 'email' | 'whatsapp';
     text: string;
     campaignId?: string;
     stepId?: string;
@@ -169,13 +166,10 @@ export class OutreachEngineService {
       consent_status: string;
       email: string;
       phone: string;
-      instagram: string;
       whatsapp: string;
-      facebook: string;
-      linkedin: string;
       status: string;
     }>(
-      `SELECT id, business_name, consent_status, email, phone, instagram, whatsapp, facebook, linkedin, status FROM leads WHERE id = $1`,
+      `SELECT id, business_name, consent_status, email, phone, whatsapp, status FROM leads WHERE id = $1`,
       [leadId]
     );
 
@@ -266,73 +260,7 @@ export class OutreachEngineService {
       };
     }
 
-    // B) INSTAGRAM: Draft queue workflow (requires human send)
-    if (channel === 'instagram') {
-      const igResult = await instagramAdapter.enqueueDraft({
-        leadId,
-        campaignId,
-        stepId,
-        handle: lead.instagram || lead.business_name,
-        text,
-      });
-
-      return {
-        allowed: true,
-        channel: 'instagram',
-        actionTaken: 'queued_draft',
-        queueId: igResult.queueId,
-        deepLink: igResult.deepLink,
-        reason: igResult.explanation,
-      };
-    }
-
-    // C) FACEBOOK: Draft queue workflow
-    if (channel === 'facebook') {
-      const fbResult = await facebookAdapter.enqueueDraft({
-        leadId,
-        campaignId,
-        stepId,
-        profileOrPage: lead.facebook || lead.business_name,
-        text,
-      });
-
-      return {
-        allowed: true,
-        channel: 'facebook',
-        actionTaken: 'queued_draft',
-        queueId: fbResult.queueId,
-        deepLink: fbResult.deepLink,
-        reason: fbResult.explanation,
-      };
-    }
-
-    // D) LINKEDIN: Engagement & draft queue for Anupam Kumar
-    if (channel === 'linkedin') {
-      const cleanProfile = (lead.linkedin || '').trim();
-      const deepLink = cleanProfile.startsWith('http')
-        ? cleanProfile
-        : cleanProfile
-        ? `https://${cleanProfile}`
-        : 'https://www.linkedin.com/in/anupam-kumar-seo-specialist/';
-
-      const insertRes = await query<{ id: string }>(
-        `INSERT INTO send_queue (lead_id, campaign_id, step_id, channel, message_preview, status, scheduled_for)
-         VALUES ($1, $2, $3, 'linkedin', $4, 'draft', NOW())
-         RETURNING id`,
-        [leadId, campaignId || null, stepId || null, text]
-      );
-
-      return {
-        allowed: true,
-        channel: 'linkedin',
-        actionTaken: 'queued_draft',
-        queueId: insertRes.rows[0].id,
-        deepLink,
-        reason: 'LinkedIn outreach drafted for Anupam Kumar (@anupam-kumar-seo-specialist).',
-      };
-    }
-
-    // E) EMAIL: Dedicated subdomain with progressive warm-up tracking & auto-throttling
+    // B) EMAIL: Dedicated subdomain with progressive warm-up tracking & auto-throttling
     const emailResult = await emailAdapter.sendEmail({
       to: lead.email,
       subject: `Introduction for ${lead.business_name}`,

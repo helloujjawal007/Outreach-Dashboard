@@ -318,11 +318,11 @@ auditCallbackRouter.post('/', async (req: Request, res: Response) => {
         const tdMetrics = (reportObj?.metrics || req.body?.metrics) as ClientAuditReport['metrics'] | undefined;
         const tdRecs = Array.isArray(reportObj?.recommendations)
           ? reportObj.recommendations.map((r: any) => ({
-              priority: r?.priority === 'low' || r?.priority === 'medium' ? r.priority : 'high',
-              title: String(r?.title || r?.name || ''),
-              detail: String(r?.detail || r?.description || ''),
-              odsSolution: r?.solution ? String(r.solution) : undefined,
-            })).filter((r: any) => r.title)
+            priority: r?.priority === 'low' || r?.priority === 'medium' ? r.priority : 'high',
+            title: String(r?.title || r?.name || ''),
+            detail: String(r?.detail || r?.description || ''),
+            odsSolution: r?.solution ? String(r.solution) : undefined,
+          })).filter((r: any) => r.title)
           : [];
 
         const regenReport: ClientAuditReport = {

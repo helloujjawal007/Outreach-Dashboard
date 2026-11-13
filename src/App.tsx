@@ -8,6 +8,7 @@ import { CrmPage } from '@/pages/CrmPage';
 import { SendingHealthPage } from '@/pages/SendingHealthPage';
 import { AiCopilotPage } from '@/pages/AiCopilotPage';
 import { FailuresPage } from '@/pages/FailuresPage';
+import { DealsPipelinePage } from '@/pages/DealsPipelinePage';
 import { InboundEmailPopup } from '@/components/InboundEmailPopup';
 import { InboundRepliesModal } from '@/components/InboundRepliesModal';
 import { ScheduleListModal } from '@/components/ScheduleListModal';
@@ -20,15 +21,13 @@ import type { CrmSubFilter } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search } from 'lucide-react';
 
-const VALID_PAGES: PageId[] = ['crm', 'builder', 'copilot', 'import', 'scraper', 'health', 'failures'];
+const VALID_PAGES: PageId[] = ['crm', 'builder', 'copilot', 'import', 'scraper', 'health', 'failures', 'pipeline'];
 
 function getInitialPage(): PageId {
   if (typeof window === 'undefined') return 'crm';
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase() as PageId;
-  if (hash === ('pipeline' as any)) return 'crm';
   if (VALID_PAGES.includes(hash)) return hash;
   const path = window.location.pathname.replace(/^\//, '').toLowerCase() as PageId;
-  if (path === ('pipeline' as any)) return 'crm';
   if (VALID_PAGES.includes(path)) return path;
   return 'crm';
 }
@@ -210,6 +209,7 @@ function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
     health: 'Infrastructure Deliverability & Health',
     copilot: 'AI Executive Copilot & Strategy Center',
     failures: 'Outreach Failures & 5-Slot Sender Log',
+    pipeline: 'Deals & Revenue Pipeline',
   };
 
   return (
@@ -352,6 +352,7 @@ function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
               )}
               {page === 'health' && <SendingHealthPage store={store} />}
               {page === 'failures' && <FailuresPage />}
+              {page === 'pipeline' && <DealsPipelinePage />}
             </div>
           )}
         </main>

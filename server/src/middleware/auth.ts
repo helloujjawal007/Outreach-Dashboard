@@ -222,7 +222,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  // Allow PDF download endpoint if it has a valid 60s file-scoped token
+  // Allow PDF download endpoint if it has a valid 60s file-scoped token OR valid session token
   if (fullPath.startsWith('/api/audit/download/') || reqPath.startsWith('/audit/download/')) {
     const rawParam = fullPath.startsWith('/api/audit/download/')
       ? fullPath.substring('/api/audit/download/'.length)
@@ -230,7 +230,10 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     try {
       const filename = path.basename(decodeURIComponent(rawParam));
       const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-      if (filename && queryToken && verifyScopedPdfToken(filename, queryToken)) {
+      if (
+        queryToken &&
+        (verifySessionToken(queryToken) || (filename && verifyScopedPdfToken(filename, queryToken)))
+      ) {
         next();
         return;
       }

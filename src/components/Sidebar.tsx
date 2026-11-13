@@ -23,11 +23,12 @@ import {
   LogOut,
   ShieldAlert,
   Search,
+  TrendingUp,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 import { APP_VERSION, APP_UPDATED_AT, APP_HINT } from '@/version';
 
-export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'health' | 'copilot' | 'failures';
+export type PageId = 'import' | 'scraper' | 'builder' | 'crm' | 'pipeline' | 'health' | 'copilot' | 'failures';
 
 export interface CountryCountItem {
   country: string;
@@ -505,6 +506,28 @@ export function Sidebar({
             </div>
           )}
         </div>
+
+        {/* 3b. Deals & Revenue Pipeline */}
+        <button
+          onClick={() => onNavigate('pipeline')}
+          className={`group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+            current === 'pipeline'
+              ? 'bg-emerald-50 text-emerald-900 font-bold ring-1 ring-emerald-300 shadow-2xs'
+              : 'text-ink-600 hover:bg-slate-50 hover:text-ink-900'
+          }`}
+          title="Deals & High-Ticket Pipeline Visual Board"
+        >
+          <div className="flex items-center gap-3">
+            <TrendingUp
+              size={18}
+              className={current === 'pipeline' ? 'text-emerald-600' : 'text-slate-400 group-hover:text-emerald-600'}
+            />
+            <span className="font-semibold">Deals Pipeline</span>
+          </div>
+          <span className="rounded-full bg-emerald-100 px-1.5 py-0.2 text-[9px] font-extrabold text-emerald-800">
+            Pipeline
+          </span>
+        </button>
 
         {/* 4. Messages & Inbound Inbox */}
         <button

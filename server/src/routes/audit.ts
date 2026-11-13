@@ -79,7 +79,9 @@ auditRouter.get('/download/:filename', async (req: Request, res: Response) => {
       const hasSessionAuth = sessionToken ? verifySessionToken(sessionToken) : false;
 
       const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-      const hasScopedAuth = queryToken ? verifyScopedPdfToken(rawFilename, queryToken) : false;
+      const hasScopedAuth = queryToken
+        ? (verifyScopedPdfToken(rawFilename, queryToken) || verifySessionToken(queryToken))
+        : false;
 
       if (!hasSessionAuth && !hasScopedAuth) {
         return res.status(401).json({
@@ -92,23 +94,101 @@ auditRouter.get('/download/:filename', async (req: Request, res: Response) => {
 
     // Regenerate on demand if purged after initial send or after container restart
     if (!fs.existsSync(pdfPath)) {
-      const leadRes = await query<{
+      // Step 1: Direct match by audit_pdf_name or audit_pdf_path
+      let leadRes = await query<{
+        id: string;
         business_name: string;
         website: string | null;
+        audit_findings: any;
       }>(
-        `SELECT business_name, website FROM leads
+        `SELECT id, business_name, website, audit_findings FROM leads
          WHERE audit_pdf_name = $1 OR audit_pdf_path LIKE '%' || $1
          LIMIT 1`,
         [rawFilename]
-      ).catch(() => ({ rows: [] as Array<{ business_name: string; website: string | null }> }));
+      ).catch(() => ({ rows: [] as any[] }));
 
-      const leadRow = leadRes.rows[0];
-      if (leadRow?.website) {
+      let leadRow = leadRes.rows[0];
+
+      // Step 2: UUID match if filename contains a UUID (e.g. Technical_Audit_<leadId>_...pdf)
+      if (!leadRow) {
+        const uuidMatch = rawFilename.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        if (uuidMatch) {
+          const res = await query<{
+            id: string;
+            business_name: string;
+            website: string | null;
+            audit_findings: any;
+          }>(
+            `SELECT id, business_name, website, audit_findings FROM leads WHERE id = $1 LIMIT 1`,
+            [uuidMatch[0]]
+          ).catch(() => ({ rows: [] as any[] }));
+          leadRow = res.rows[0];
+        }
+      }
+
+      // Step 3: Domain or slug match (e.g. Technical_Audit_austincitydental_com.pdf -> austincitydental.com)
+      if (!leadRow) {
+        const slug = rawFilename
+          .replace(/^Technical_Audit_/i, '')
+          .replace(/\.pdf$/i, '')
+          .replace(/_[a-f0-9]{8,16}$/i, '');
+        const domainCandidate = slug.replace(/_/g, '.');
+        const slugClean = slug.replace(/_/g, '');
+
+        const res = await query<{
+          id: string;
+          business_name: string;
+          website: string | null;
+          audit_findings: any;
+        }>(
+          `SELECT id, business_name, website, audit_findings FROM leads
+           WHERE website ILIKE '%' || $1 || '%'
+              OR REPLACE(REPLACE(LOWER(website), '.', ''), '-', '') ILIKE '%' || $2 || '%'
+              OR REPLACE(REPLACE(LOWER(business_name), ' ', ''), '-', '') ILIKE '%' || $2 || '%'
+           ORDER BY (CASE WHEN website ILIKE '%' || $1 || '%' THEN 1 ELSE 2 END)
+           LIMIT 1`,
+          [domainCandidate, slugClean]
+        ).catch(() => ({ rows: [] as any[] }));
+        leadRow = res.rows[0];
+      }
+
+      const targetWebsite = leadRow?.website || (
+        rawFilename.toLowerCase().startsWith('technical_audit_')
+          ? `https://${rawFilename.replace(/^Technical_Audit_/i, '').replace(/\.pdf$/i, '').replace(/_/g, '.')}`
+          : null
+      );
+      const targetBiz = leadRow?.business_name || (
+        rawFilename
+          .replace(/^Technical_Audit_/i, '')
+          .replace(/\.pdf$/i, '')
+          .replace(/_/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase())
+      );
+
+      if (targetWebsite) {
         try {
-          const report = await clientAuditService.auditWebsite(leadRow.website);
-          const regenerated = await technicalAuditPdfService.generateAuditPdf(report, leadRow.business_name);
+          let report: any = null;
+          if (leadRow?.audit_findings) {
+            try {
+              report = typeof leadRow.audit_findings === 'string'
+                ? JSON.parse(leadRow.audit_findings)
+                : leadRow.audit_findings;
+            } catch {
+              report = null;
+            }
+          }
+          if (!report || !report.healthChecks) {
+            report = await clientAuditService.auditWebsite(targetWebsite);
+          }
+          const regenerated = await technicalAuditPdfService.generateAuditPdf(report, targetBiz);
           if (regenerated?.pdfPath && fs.existsSync(regenerated.pdfPath)) {
             pdfPath = regenerated.pdfPath;
+            if (leadRow?.id) {
+              await query(
+                `UPDATE leads SET audit_pdf_name = $1, audit_pdf_path = $2 WHERE id = $3`,
+                [regenerated.pdfName, regenerated.pdfPath, leadRow.id]
+              ).catch(() => {});
+            }
           }
         } catch (regenErr: any) {
           console.warn(`[auditRouter.download] On-demand PDF regeneration failed:`, regenErr?.message);

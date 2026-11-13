@@ -29,7 +29,7 @@ import {
   Download,
 } from 'lucide-react';
 import { Modal } from './Modal';
-import { api } from '@/services/api';
+import { api, getAuditDownloadUrl } from '@/services/api';
 import type { InboundReplyMessage, WhatsAppSessionStatus, Channel, ConversationMessage } from '@/types';
 
 interface InboundRepliesModalProps {
@@ -1419,7 +1419,7 @@ export function InboundRepliesModal({
                                     <div className="mt-2 space-y-1.5">
                                       {displayAttachments.map((att: any, idx: number) => {
                                         const fname = att.filename || 'Technical_Audit_Report.pdf';
-                                        const downloadUrl = `/api/audit/download/${encodeURIComponent(fname)}`;
+                                        const downloadUrl = getAuditDownloadUrl(fname);
                                         return (
                                           <a
                                             key={idx}

@@ -115,6 +115,17 @@ export function CommandPalette({
       },
     },
     {
+      id: 'nav-pipeline',
+      title: 'Deals & Revenue Pipeline',
+      subtitle: 'View visual deal stages, revenue forecasts & opportunities',
+      icon: TrendingUp,
+      category: 'Navigation',
+      action: () => {
+        onNavigate('pipeline');
+        onClose();
+      },
+    },
+    {
       id: 'nav-health',
       title: 'Sending Health & Mailboxes',
       subtitle: 'Inspect connected SMTP inboxes and rotation limits',

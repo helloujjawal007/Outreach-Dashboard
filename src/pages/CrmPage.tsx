@@ -58,7 +58,7 @@ import { ChannelOutreachHub } from '@/components/ChannelOutreachHub';
 import type { Store } from '@/store';
 import type { Lead, ConsentStatus, Channel, AutoSendNextResult, CrmSubFilter } from '@/types';
 import { channelLabels, consentLabels } from '@/types';
-import { api, cleanSiteUrl } from '@/services/api';
+import { api, cleanSiteUrl, getAuditDownloadUrl } from '@/services/api';
 import { getCountryFlag } from '@/utils/countryFlag';
 import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import { ClientAuditModal } from '@/components/ClientAuditModal';
@@ -5051,7 +5051,7 @@ export function CrmPage({
                               <div className="mt-2 space-y-1.5">
                                 {displayAttachments.map((att: any, idx: number) => {
                                   const fname = att.filename || 'Technical_Audit_Report.pdf';
-                                  const downloadUrl = `/api/audit/download/${encodeURIComponent(fname)}`;
+                                  const downloadUrl = getAuditDownloadUrl(fname);
                                   return (
                                     <a
                                       key={idx}

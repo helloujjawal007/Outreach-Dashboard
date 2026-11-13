@@ -84,6 +84,26 @@ export function setStoredToken(token: string | null): void {
   }
 }
 
+/**
+ * Returns an authenticated direct download / view URL for an audit PDF
+ */
+export function getAuditDownloadUrl(filename: string): string {
+  const token = getStoredToken();
+  const base = `/api/audit/download/${encodeURIComponent(filename)}`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+/**
+ * Returns an authenticated direct download / view URL for a lead's audit PDF
+ */
+export function getLeadAuditPdfUrl(leadId: string, pdfName?: string | null): string {
+  const token = getStoredToken();
+  const base = pdfName
+    ? `/api/audit/download/${encodeURIComponent(pdfName)}`
+    : `/api/audit/lead/${encodeURIComponent(leadId)}/pdf`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
 const eTagCache = new Map<string, { etag: string; data: any }>();
 const MAX_ETAG_CACHE_ENTRIES = 100;
 

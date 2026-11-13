@@ -22,7 +22,7 @@ import {
   Briefcase,
   FileText,
 } from 'lucide-react';
-import { api } from '@/services/api';
+import { api, getLeadAuditPdfUrl } from '@/services/api';
 import type { Lead, LeadActivity, SequenceEnrollment, Deal, CrmTask } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
 
@@ -434,11 +434,7 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
 
             {(lead.auditPdfName || lead.auditStatus === 'completed') && (
               <a
-                href={
-                  lead.auditPdfName
-                    ? `/api/audit/download/${encodeURIComponent(lead.auditPdfName)}`
-                    : `/api/audit/lead/${lead.id}/pdf`
-                }
+                href={getLeadAuditPdfUrl(lead.id, lead.auditPdfName)}
                 target="_blank"
                 rel="noreferrer"
                 className="px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
@@ -466,11 +462,7 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
                 )}
               </div>
               <a
-                href={
-                  lead.auditPdfName
-                    ? `/api/audit/download/${encodeURIComponent(lead.auditPdfName)}`
-                    : `/api/audit/lead/${lead.id}/pdf`
-                }
+                href={getLeadAuditPdfUrl(lead.id, lead.auditPdfName)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[11px] shadow-2xs transition"

@@ -22,15 +22,21 @@ const widthMap = {
 export function Modal({ open, isOpen, onClose, onMinimize, title, children, footer, width = 'lg', maxWidth }: ModalProps) {
   const isVisible = open ?? isOpen ?? false;
   const modalContainerRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const hasFocusedRef = useRef(false);
 
   // Focus trap and keyboard dismiss (Escape & Tab cycling)
   useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible) {
+      hasFocusedRef.current = false;
+      return;
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -59,23 +65,31 @@ export function Modal({ open, isOpen, onClose, onMinimize, title, children, foot
 
     document.addEventListener('keydown', handleKeyDown);
 
-    // Initial focus into modal
-    const timer = setTimeout(() => {
-      if (modalContainerRef.current) {
-        const firstInputOrBtn = modalContainerRef.current.querySelector<HTMLElement>(
-          'input, button:not([title="Close modal"]):not([aria-label="Close modal"]), select, textarea'
-        );
-        if (firstInputOrBtn) {
-          firstInputOrBtn.focus();
+    // Initial focus into modal ONLY once on open; NEVER steal focus on subsequent re-renders or while user is typing
+    let timer: NodeJS.Timeout | null = null;
+    if (!hasFocusedRef.current) {
+      hasFocusedRef.current = true;
+      timer = setTimeout(() => {
+        if (modalContainerRef.current) {
+          // If the user already focused or clicked into an element, do not steal or move cursor
+          if (modalContainerRef.current.contains(document.activeElement)) {
+            return;
+          }
+          const firstInputOrBtn = modalContainerRef.current.querySelector<HTMLElement>(
+            'input, button:not([title="Close modal"]):not([aria-label="Close modal"]):not([disabled]), select, textarea'
+          );
+          if (firstInputOrBtn) {
+            firstInputOrBtn.focus();
+          }
         }
-      }
-    }, 50);
+      }, 50);
+    }
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [isVisible, onClose]);
+  }, [isVisible]);
 
   if (!isVisible) return null;
 

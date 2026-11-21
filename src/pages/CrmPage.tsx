@@ -108,6 +108,242 @@ type EntityTypeFilter = 'all' | 'lead' | 'lead_added' | 'lead_not_added' | 'clie
 type ChannelFilter = 'all' | 'email' | 'whatsapp' | 'whatsapp_mobile' | 'website_form';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
+interface AddToListModalContentProps {
+  lists: Array<{ id: string; name: string; lead_count?: number; description?: string }>;
+  leadCount: number;
+  onAddSelectedToList: (listId: string) => Promise<void>;
+  onCreateNewList: (name: string, description: string) => Promise<void>;
+  isCreating: boolean;
+}
+
+function AddToListModalContent({
+  lists,
+  leadCount,
+  onAddSelectedToList,
+  onCreateNewList,
+  isCreating,
+}: AddToListModalContentProps) {
+  const [name, setName] = useState('');
+  const [desc, setDesc] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!name.trim() || isCreating || isSubmitting) return;
+    try {
+      setIsSubmitting(true);
+      await onCreateNewList(name.trim(), desc.trim());
+      setName('');
+      setDesc('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-ink-600">
+        Add{' '}
+        <strong className="text-brand-700">
+          {leadCount}
+        </strong>{' '}
+        selected lead(s) into an organized list. After saving, these leads will be marked as added with a list badge and removed from the Main List (Unassigned).
+      </p>
+
+      <div className="space-y-2">
+        <label className="text-xs font-semibold uppercase tracking-wider text-ink-400">Choose Existing List</label>
+        {lists.length === 0 ? (
+          <p className="text-xs text-ink-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
+            No custom lists created yet. Create your first list below.
+          </p>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-lg p-2">
+            {lists.map((lst) => (
+              <div
+                key={lst.id}
+                className="flex items-center justify-between p-2 rounded-md hover:bg-slate-50 transition border border-transparent hover:border-slate-200"
+              >
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <Bookmark size={14} className="text-brand-600" />
+                    <span className="text-sm font-semibold text-ink-800">{lst.name}</span>
+                    <span className="text-xs text-ink-400 font-normal">({lst.lead_count || 0})</span>
+                  </div>
+                  {lst.description && <p className="text-xs text-ink-400 mt-0.5">{lst.description}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onAddSelectedToList(lst.id)}
+                  className="btn-secondary py-1 px-2.5 text-xs font-medium flex items-center gap-1 text-brand-600 hover:text-brand-700 hover:bg-brand-50"
+                >
+                  <Plus size={13} />
+                  <span>Add</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-slate-200 pt-3">
+        <label className="text-xs font-semibold uppercase tracking-wider text-ink-400 mb-1.5 block">
+          Or Create New List & Save
+        </label>
+        <div className="space-y-2">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. VIP Tech Founders, Follow-up in Oct"
+            className="input text-xs"
+            autoFocus
+          />
+          <input
+            type="text"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="Description / note (optional)"
+            className="input text-xs"
+          />
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={!name.trim() || isCreating || isSubmitting}
+            className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-1.5"
+          >
+            <FolderPlus size={14} />
+            <span>{isCreating || isSubmitting ? 'Creating...' : 'Create List & Add Selected'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ManageListsModalContentProps {
+  lists: Array<{ id: string; name: string; lead_count?: number; description?: string }>;
+  onSchedule: (listId: string) => void;
+  onViewLeads: (listId: string) => void;
+  onDeleteList: (listId: string) => void;
+  onCreateList: (name: string, description: string) => Promise<void>;
+  isCreating: boolean;
+}
+
+function ManageListsModalContent({
+  lists,
+  onSchedule,
+  onViewLeads,
+  onDeleteList,
+  onCreateList,
+  isCreating,
+}: ManageListsModalContentProps) {
+  const [name, setName] = useState('');
+  const [desc, setDesc] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleCreate = async () => {
+    if (!name.trim() || isCreating || isSubmitting) return;
+    try {
+      setIsSubmitting(true);
+      await onCreateList(name.trim(), desc.trim());
+      setName('');
+      setDesc('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">Create New List</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="text-xs font-medium text-ink-600 mb-1 block">List Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. High Priority Hot Leads"
+              className="input text-xs"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-ink-600 mb-1 block">Description</label>
+            <input
+              type="text"
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="Notes or campaign segment"
+              className="input text-xs"
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleCreate}
+          disabled={!name.trim() || isCreating || isSubmitting}
+          className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
+        >
+          <Plus size={14} />
+          <span>{isCreating || isSubmitting ? 'Creating...' : 'Add List'}</span>
+        </button>
+      </div>
+
+      <div>
+        <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">
+          Existing Lists ({lists.length})
+        </h4>
+        {lists.length === 0 ? (
+          <p className="text-xs text-ink-400 italic py-4 text-center">No lists created yet.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            {lists.map((lst) => (
+              <div key={lst.id} className="flex items-center justify-between p-3 hover:bg-slate-50 transition">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Bookmark size={15} className="text-brand-600" />
+                    <span className="text-sm font-semibold text-ink-900">{lst.name}</span>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
+                      {lst.lead_count || 0} leads
+                    </span>
+                  </div>
+                  {lst.description && <p className="text-xs text-ink-400 mt-1">{lst.description}</p>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onSchedule(lst.id)}
+                    className="btn-primary text-xs py-1 px-2.5 flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white shadow-xs"
+                    title="Schedule automated outreach for this list"
+                  >
+                    <Calendar size={13} />
+                    Schedule
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onViewLeads(lst.id)}
+                    className="btn-secondary text-xs py-1 px-2.5"
+                  >
+                    View Leads
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteList(lst.id)}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                    title="Delete List"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CrmPage({
   store,
   autoOpenContact,
@@ -250,13 +486,20 @@ export function CrmPage({
   const [isManageListsOpen, setIsManageListsOpen] = useState(false);
   const [isAddToListOpen, setIsAddToListOpen] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
-  const [newListName, setNewListName] = useState('');
-  const [newListDesc, setNewListDesc] = useState('');
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [leadsToAddToList, setLeadsToAddToList] = useState<string[]>([]);
   const [isUnmarkingClient, setIsUnmarkingClient] = useState(false);
   const [bulkActionSuccess, setBulkActionSuccess] = useState<string | null>(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+
+  const handleCloseAddToList = useCallback(() => {
+    setIsAddToListOpen(false);
+    setLeadsToAddToList([]);
+  }, []);
+
+  const handleCloseManageLists = useCallback(() => {
+    setIsManageListsOpen(false);
+  }, []);
 
   // Quick Add Contact Modal state
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
@@ -699,9 +942,26 @@ export function CrmPage({
 
   const [isSyncingChannels, setIsSyncingChannels] = useState(false);
 
+  // Memoized deduplicated available lists (case-insensitive name uniqueness)
+  const availableLists = useMemo(() => {
+    const map = new Map<string, (typeof store.lists)[0]>();
+    for (const l of store.lists) {
+      const key = l.name.trim().toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, l);
+      } else {
+        const existing = map.get(key)!;
+        if ((l.lead_count || 0) > (existing.lead_count || 0)) {
+          map.set(key, l);
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [store.lists]);
+
   const channelQuickFilters = useMemo(() => {
     const listMap = new Map<string, (typeof store.lists)[0]>();
-    store.lists.forEach((l) => listMap.set(l.name.toLowerCase(), l));
+    availableLists.forEach((l) => listMap.set(l.name.trim().toLowerCase(), l));
 
     const defs = [
       {
@@ -743,7 +1003,7 @@ export function CrmPage({
       const count = list ? (listCounts.map.get(list.id) || list.lead_count || 0) : 0;
       return { ...d, list, count };
     });
-  }, [store, listCounts]);
+  }, [availableLists, listCounts]);
 
   const customUserLists = useMemo(() => {
     const channelNames = new Set([
@@ -752,8 +1012,8 @@ export function CrmPage({
       'website leads',
       'invalid list',
     ]);
-    return store.lists.filter((l) => !channelNames.has(l.name.toLowerCase()));
-  }, [store]);
+    return availableLists.filter((l) => !channelNames.has(l.name.trim().toLowerCase()));
+  }, [availableLists]);
 
   const handleSyncChannels = useCallback(async () => {
     setIsSyncingChannels(true);
@@ -1414,30 +1674,52 @@ export function CrmPage({
     [leadsToAddToList, selectedIds, store]
   );
 
-  const handleCreateNewList = useCallback(async () => {
-    if (!newListName.trim()) return;
-    try {
-      setIsCreatingList(true);
-      const created = await store.createList(newListName.trim(), newListDesc.trim());
-      const createdName = created.name;
-      setNewListName('');
-      setNewListDesc('');
-      setIsCreatingList(false);
+  const handleCreateAndAddList = useCallback(
+    async (name: string, desc: string) => {
+      if (!name.trim()) return;
+      try {
+        setIsCreatingList(true);
+        const created = await store.createList(name.trim(), desc.trim());
+        const createdName = created.name;
+        setIsCreatingList(false);
 
-      const targetIds = leadsToAddToList.length > 0 ? leadsToAddToList : Array.from(selectedIds);
-      if (isAddToListOpen && targetIds.length > 0) {
-        await store.addLeadsToList(created.id, targetIds);
+        const targetIds = leadsToAddToList.length > 0 ? leadsToAddToList : Array.from(selectedIds);
+        if (targetIds.length > 0) {
+          await store.addLeadsToList(created.id, targetIds);
+        }
         setIsAddToListOpen(false);
         setLeadsToAddToList([]);
         setSelectedIds(new Set());
-        setBulkActionSuccess(`Created "${createdName}" and added ${targetIds.length} lead(s)!`);
+        setBulkActionSuccess(
+          targetIds.length > 0
+            ? `Created "${createdName}" and added ${targetIds.length} lead(s)!`
+            : `Created "${createdName}" list!`
+        );
         setTimeout(() => setBulkActionSuccess(null), 4500);
+      } catch (err) {
+        console.error('Create list failed:', err);
+        setIsCreatingList(false);
       }
-    } catch (err) {
-      console.error('Create list failed:', err);
-      setIsCreatingList(false);
-    }
-  }, [newListName, newListDesc, isAddToListOpen, leadsToAddToList, selectedIds, store]);
+    },
+    [leadsToAddToList, selectedIds, store]
+  );
+
+  const handleCreateManageList = useCallback(
+    async (name: string, desc: string) => {
+      if (!name.trim()) return;
+      try {
+        setIsCreatingList(true);
+        const created = await store.createList(name.trim(), desc.trim());
+        setIsCreatingList(false);
+        setBulkActionSuccess(`Created "${created.name}" list!`);
+        setTimeout(() => setBulkActionSuccess(null), 3000);
+      } catch (err) {
+        console.error('Create list failed:', err);
+        setIsCreatingList(false);
+      }
+    },
+    [store]
+  );
 
   // Remove lead from list (from inside lead modal)
   const handleRemoveLeadFromList = useCallback(
@@ -1513,12 +1795,19 @@ export function CrmPage({
 
   const handleDeleteList = useCallback(
     async (listId: string) => {
+      const target = store.lists.find((l) => l.id === listId);
+      const name = target?.name || 'this list';
+      if (!window.confirm(`Are you sure you want to delete "${name}"? It will be removed from all leads, filters, and scheduled sender queues.`)) {
+        return;
+      }
       try {
         await store.deleteList(listId);
         if (selectedListFilter === listId) {
           setSelectedListFilter('all');
           store.refreshAll('all', selectedBatchFilter);
         }
+        setBulkActionSuccess(`List "${name}" deleted and purged from all locations.`);
+        setTimeout(() => setBulkActionSuccess(null), 4000);
       } catch (err) {
         console.error('Delete list failed:', err);
       }
@@ -4362,8 +4651,13 @@ export function CrmPage({
                     <option value="" disabled>
                       + Add to List...
                     </option>
-                    {store.lists
-                      .filter((l) => !selectedLead.lists?.some((ml) => ml.id === l.id))
+                    {availableLists
+                      .filter(
+                        (l) =>
+                          !selectedLead.lists?.some(
+                            (ml) => ml.id === l.id || ml.name.trim().toLowerCase() === l.name.trim().toLowerCase()
+                          )
+                      )
                       .map((l) => (
                         <option key={l.id} value={l.id}>
                           {l.name}
@@ -5714,189 +6008,43 @@ export function CrmPage({
       {/* Add to List Modal */}
       <Modal
         open={isAddToListOpen}
-        onClose={() => {
-          setIsAddToListOpen(false);
-          setLeadsToAddToList([]);
-        }}
+        onClose={handleCloseAddToList}
         title="Add Leads to List"
         width="md"
       >
-        <div className="space-y-4">
-          <p className="text-sm text-ink-600">
-            Add{' '}
-            <strong className="text-brand-700">
-              {leadsToAddToList.length > 0 ? leadsToAddToList.length : selectedIds.size}
-            </strong>{' '}
-            {leadsToAddToList.length > 0 && selectedIds.size === 0 ? 'filtered' : 'selected'} lead(s)
-            into an organized list. After saving, these leads will be marked as added with a list badge and removed from the Main List (Unassigned).
-          </p>
-
-          <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-ink-400">Choose Existing List</label>
-            {store.lists.length === 0 ? (
-              <p className="text-xs text-ink-400 italic bg-slate-50 p-3 rounded-lg border border-slate-200">
-                No custom lists created yet. Create your first list below.
-              </p>
-            ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-lg p-2">
-                {store.lists.map((lst) => (
-                  <div
-                    key={lst.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-slate-50 transition border border-transparent hover:border-slate-200"
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <Bookmark size={14} className="text-brand-600" />
-                        <span className="text-sm font-semibold text-ink-800">{lst.name}</span>
-                        <span className="text-xs text-ink-400 font-normal">({lst.lead_count})</span>
-                      </div>
-                      {lst.description && <p className="text-xs text-ink-400 mt-0.5">{lst.description}</p>}
-                    </div>
-                    <button
-                      onClick={() => handleAddSelectedToList(lst.id)}
-                      className="btn-secondary py-1 px-2.5 text-xs font-medium flex items-center gap-1 text-brand-600 hover:text-brand-700 hover:bg-brand-50"
-                    >
-                      <Plus size={13} />
-                      <span>Add</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-slate-200 pt-3">
-            <label className="text-xs font-semibold uppercase tracking-wider text-ink-400 mb-1.5 block">
-              Or Create New List & Save
-            </label>
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={newListName}
-                onChange={(e) => setNewListName(e.target.value)}
-                placeholder="e.g. VIP Tech Founders, Follow-up in Oct"
-                className="input text-xs"
-              />
-              <input
-                type="text"
-                value={newListDesc}
-                onChange={(e) => setNewListDesc(e.target.value)}
-                placeholder="Description / note (optional)"
-                className="input text-xs"
-              />
-              <button
-                onClick={handleCreateNewList}
-                disabled={!newListName.trim() || isCreatingList}
-                className="btn-primary w-full text-xs py-2 flex items-center justify-center gap-1.5"
-              >
-                <FolderPlus size={14} />
-                <span>{isCreatingList ? 'Creating...' : 'Create List & Add Selected'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <AddToListModalContent
+          lists={availableLists}
+          leadCount={leadsToAddToList.length > 0 ? leadsToAddToList.length : selectedIds.size}
+          onAddSelectedToList={handleAddSelectedToList}
+          onCreateNewList={handleCreateAndAddList}
+          isCreating={isCreatingList}
+        />
       </Modal>
 
       {/* Manage Lists Modal */}
       <Modal
         open={isManageListsOpen}
-        onClose={() => setIsManageListsOpen(false)}
+        onClose={handleCloseManageLists}
         title="Custom Outreach Lists"
         width="lg"
       >
-        <div className="space-y-5">
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">Create New List</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="text-xs font-medium text-ink-600 mb-1 block">List Name</label>
-                <input
-                  type="text"
-                  value={newListName}
-                  onChange={(e) => setNewListName(e.target.value)}
-                  placeholder="e.g. High Priority Hot Leads"
-                  className="input text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-ink-600 mb-1 block">Description</label>
-                <input
-                  type="text"
-                  value={newListDesc}
-                  onChange={(e) => setNewListDesc(e.target.value)}
-                  placeholder="Notes or campaign segment"
-                  className="input text-xs"
-                />
-              </div>
-            </div>
-            <button
-              onClick={handleCreateNewList}
-              disabled={!newListName.trim() || isCreatingList}
-              className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
-            >
-              <Plus size={14} />
-              <span>{isCreatingList ? 'Creating...' : 'Add List'}</span>
-            </button>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">
-              Existing Lists ({store.lists.length})
-            </h4>
-            {store.lists.length === 0 ? (
-              <p className="text-xs text-ink-400 italic py-4 text-center">No lists created yet.</p>
-            ) : (
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-                {store.lists.map((lst) => (
-                  <div key={lst.id} className="flex items-center justify-between p-3 hover:bg-slate-50 transition">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Bookmark size={15} className="text-brand-600" />
-                        <span className="text-sm font-semibold text-ink-900">{lst.name}</span>
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
-                          {lst.lead_count} leads
-                        </span>
-                      </div>
-                      {lst.description && <p className="text-xs text-ink-400 mt-1">{lst.description}</p>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedListFilter(lst.id);
-                          store.refreshAll(lst.id, selectedBatchFilter);
-                          setIsManageListsOpen(false);
-                          setIsScheduleModalOpen(true);
-                        }}
-                        className="btn-primary text-xs py-1 px-2.5 flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white shadow-xs"
-                        title="Schedule automated outreach for this list"
-                      >
-                        <Calendar size={13} />
-                        Schedule
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedListFilter(lst.id);
-                          store.refreshAll(lst.id, selectedBatchFilter);
-                          setIsManageListsOpen(false);
-                        }}
-                        className="btn-secondary text-xs py-1 px-2.5"
-                      >
-                        View Leads
-                      </button>
-                      <button
-                        onClick={() => handleDeleteList(lst.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
-                        title="Delete List"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        <ManageListsModalContent
+          lists={availableLists}
+          onSchedule={(listId) => {
+            setSelectedListFilter(listId);
+            store.refreshAll(listId, selectedBatchFilter);
+            setIsManageListsOpen(false);
+            setIsScheduleModalOpen(true);
+          }}
+          onViewLeads={(listId) => {
+            setSelectedListFilter(listId);
+            store.refreshAll(listId, selectedBatchFilter);
+            setIsManageListsOpen(false);
+          }}
+          onDeleteList={handleDeleteList}
+          onCreateList={handleCreateManageList}
+          isCreating={isCreatingList}
+        />
       </Modal>
 
       {/* Confirm Bulk Delete Modal */}
@@ -6127,7 +6275,7 @@ export function CrmPage({
                 className="input w-full text-xs"
               >
                 <option value="">No list (Main Database)</option>
-                {store.lists.map((l) => (
+                {availableLists.map((l) => (
                   <option key={l.id} value={l.id}>
                     🏷️ {l.name}
                   </option>

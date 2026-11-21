@@ -64,6 +64,34 @@ export async function runMigrations() {
           PRIMARY KEY (lead_id, list_id)
       );
 
+      -- Deduplicate lists and ensure uniqueness
+      INSERT INTO lead_list_memberships (lead_id, list_id, added_at)
+      SELECT m.lead_id, d.keeper_id, m.added_at
+      FROM lead_list_memberships m
+      JOIN (
+        SELECT id, FIRST_VALUE(id) OVER (PARTITION BY LOWER(TRIM(name)) ORDER BY created_at ASC, id ASC) as keeper_id
+        FROM lists
+      ) d ON m.list_id = d.id AND m.list_id != d.keeper_id
+      ON CONFLICT (lead_id, list_id) DO NOTHING;
+
+      DELETE FROM lead_list_memberships
+      WHERE list_id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(name)) ORDER BY created_at ASC, id ASC) as rn
+          FROM lists
+        ) dl WHERE dl.rn > 1
+      );
+
+      DELETE FROM lists
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY LOWER(TRIM(name)) ORDER BY created_at ASC, id ASC) as rn
+          FROM lists
+        ) dl WHERE dl.rn > 1
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_lists_unique_name ON lists (LOWER(TRIM(name)));
+
       -- Ensure all columns on leads table
       ALTER TABLE leads 
         ADD COLUMN IF NOT EXISTS batch_id UUID REFERENCES upload_batches(id) ON DELETE SET NULL,

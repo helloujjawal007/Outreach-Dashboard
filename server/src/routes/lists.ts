@@ -42,7 +42,7 @@ listsRouter.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// POST /api/lists - Create a new list
+// POST /api/lists - Create a new list or retrieve existing matching list
 listsRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { name, description } = req.body;
@@ -50,11 +50,42 @@ listsRouter.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'List name is required' });
     }
 
+    const cleanName = name.trim();
+
+    // Check if list already exists with same name (case-insensitive deduplication)
+    const existing = await query<{
+      id: string;
+      name: string;
+      description: string;
+      created_at: Date;
+      updated_at: Date;
+    }>(
+      `SELECT id, name, description, created_at, updated_at FROM lists
+       WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))
+       ORDER BY created_at ASC LIMIT 1`,
+      [cleanName]
+    );
+
+    if (existing.rows.length > 0) {
+      const row = existing.rows[0];
+      const countRes = await query<{ count: string }>(
+        `SELECT COUNT(ld.id)::int as count FROM lead_list_memberships m
+         JOIN leads ld ON ld.id = m.lead_id AND ld.deleted_at IS NULL
+         WHERE m.list_id = $1`,
+        [row.id]
+      );
+      return res.status(200).json({
+        success: true,
+        list: { ...row, lead_count: parseInt(countRes.rows[0]?.count || '0', 10) },
+        message: 'Existing list retrieved',
+      });
+    }
+
     const result = await query(
       `INSERT INTO lists (name, description)
        VALUES ($1, $2)
        RETURNING id, name, description, created_at, updated_at`,
-      [name.trim(), description || '']
+      [cleanName, description || '']
     );
 
     res.status(201).json({ success: true, list: { ...result.rows[0], lead_count: 0 } });
@@ -64,21 +95,57 @@ listsRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/lists/:id - Delete a list and unassign its leads from 5-slot queues
+// DELETE /api/lists/:id - Delete a list and purge from each place (slot queues, memberships, dispatches, settings)
 listsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-    await fiveSlotSenderService.handleListDeleted(id).catch((err) => {
-      console.warn('[listsRouter.delete] Slot cleanup warning:', err?.message);
-    });
+    // Get list details to also clean up any duplicate-named copies
+    const targetList = await query<{ id: string; name: string }>(
+      `SELECT id, name FROM lists WHERE id = $1`,
+      [id]
+    );
 
-    const result = await query(`DELETE FROM lists WHERE id = $1 RETURNING id`, [id]);
-    if (result.rows.length === 0) {
+    if (targetList.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'List not found' });
     }
 
-    res.json({ success: true, message: 'List deleted and removed from 5-slot queues successfully' });
+    const listName = targetList.rows[0].name;
+
+    // Find all matching lists (target id + duplicate names)
+    const matchingLists = await query<{ id: string }>(
+      `SELECT id FROM lists WHERE id = $1 OR TRIM(LOWER(name)) = TRIM(LOWER($2))`,
+      [id, listName]
+    );
+    const allIds = matchingLists.rows.map((r) => r.id);
+
+    // 1. Clean up slot sender queues & reset active scoped list for all matching IDs
+    for (const matchId of allIds) {
+      await fiveSlotSenderService.handleListDeleted(matchId).catch((err) => {
+        console.warn('[listsRouter.delete] Slot cleanup warning:', err?.message);
+      });
+    }
+
+    // 2. Remove all references in slot_sender_settings
+    await query(`UPDATE slot_sender_settings SET active_list_id = NULL WHERE active_list_id = ANY($1::uuid[])`, [allIds]).catch(() => {});
+
+    // 3. Delete from lead_list_memberships for all matching lists
+    await query(`DELETE FROM lead_list_memberships WHERE list_id = ANY($1::uuid[])`, [allIds]).catch(() => {});
+
+    // 4. Clear list_id from scheduled_dispatches
+    await query(`UPDATE scheduled_dispatches SET list_id = NULL WHERE list_id = ANY($1::uuid[])`, [allIds]).catch(() => {});
+
+    // 5. Delete lists themselves
+    const result = await query(
+      `DELETE FROM lists WHERE id = ANY($1::uuid[]) RETURNING id`,
+      [allIds]
+    );
+
+    res.json({
+      success: true,
+      message: 'List and all associated references deleted from each place successfully',
+      deletedCount: result.rowCount,
+    });
   } catch (error) {
     console.error('[listsRouter.delete]', error);
     res.status(500).json({ success: false, error: 'Failed to delete list' });

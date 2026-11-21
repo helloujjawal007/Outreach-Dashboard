@@ -41,6 +41,22 @@ function mergeEntityConversations(
   return combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
 }
 
+function deduplicateLists(lists: CustomList[]): CustomList[] {
+  const map = new Map<string, CustomList>();
+  for (const l of lists) {
+    const key = l.name.trim().toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, l);
+    } else {
+      const existing = map.get(key)!;
+      if ((l.lead_count || 0) > (existing.lead_count || 0)) {
+        map.set(key, l);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 function useStoreInternal() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [lists, setLists] = useState<CustomList[]>([]);
@@ -136,7 +152,7 @@ function useStoreInternal() {
         setError('Failed to refresh leads from backend API. Showing cached view.');
       }
 
-      if (listsData !== null) setLists(listsData);
+      if (listsData !== null) setLists(deduplicateLists(listsData));
       if (batchesData !== null) setBatches(batchesData);
       if (trashData !== null) setTrashLeads(trashData);
       if (inboundData !== null) setInboundReplies(inboundData);
@@ -882,7 +898,7 @@ function useStoreInternal() {
   const createList = useCallback(async (name: string, description?: string) => {
     try {
       const newList = await api.createList(name, description);
-      setLists((prev) => [...prev, newList]);
+      setLists((prev) => deduplicateLists([...prev, newList]));
       return newList;
     } catch (err) {
       console.error('[Store] createList error:', err);
@@ -890,16 +906,51 @@ function useStoreInternal() {
     }
   }, []);
 
-  const deleteList = useCallback(async (id: string) => {
-    try {
-      setLists((prev) => prev.filter((l) => l.id !== id));
-      await api.deleteList(id);
-      window.dispatchEvent(new CustomEvent('od:slots-updated'));
-    } catch (err) {
-      console.error('[Store] deleteList error:', err);
-      throw err;
-    }
-  }, []);
+  const deleteList = useCallback(
+    async (id: string) => {
+      try {
+        // Find list name if present to clean up any same-name copies optimistically
+        const targetList = lists.find((l) => l.id === id);
+        const targetName = targetList?.name?.trim().toLowerCase();
+
+        // 1. Optimistically purge list from lists state (both by id and by normalized name)
+        setLists((prev) =>
+          prev.filter((l) => l.id !== id && (!targetName || l.name.trim().toLowerCase() !== targetName))
+        );
+
+        // 2. Optimistically purge list from all leads' lists badges in memory
+        setLeads((prev) =>
+          prev.map((lead) => ({
+            ...lead,
+            lists: lead.lists
+              ? lead.lists.filter((lst) => lst.id !== id && (!targetName || lst.name.trim().toLowerCase() !== targetName))
+              : [],
+          }))
+        );
+
+        // 3. Delete from backend database across each place
+        await api.deleteList(id);
+
+        // 4. Refetch fresh lists, leads, and clients to guarantee 100% synchronization
+        const [freshLists, freshLeads, freshClients] = await Promise.all([
+          api.getLists().catch(() => []),
+          api.getLeads().catch(() => []),
+          api.getClients().catch(() => []),
+        ]);
+        setLists(deduplicateLists(freshLists));
+        if (freshLeads.length > 0 || freshClients.length > 0) {
+          setLeads([...freshLeads, ...freshClients]);
+        }
+
+        window.dispatchEvent(new CustomEvent('od:slots-updated'));
+        window.dispatchEvent(new CustomEvent('od:list-deleted', { detail: { listId: id } }));
+      } catch (err) {
+        console.error('[Store] deleteList error:', err);
+        throw err;
+      }
+    },
+    [lists]
+  );
 
   const addLeadsToList = useCallback(async (listId: string, leadIds: string[]) => {
     try {
@@ -909,7 +960,7 @@ function useStoreInternal() {
         api.getLeads(),
         api.getClients(),
       ]);
-      setLists(freshLists);
+      setLists(deduplicateLists(freshLists));
       setLeads([...freshLeads, ...freshClients]);
     } catch (err) {
       console.error('[Store] addLeadsToList error:', err);
@@ -925,7 +976,7 @@ function useStoreInternal() {
         api.getLeads(),
         api.getClients(),
       ]);
-      setLists(freshLists);
+      setLists(deduplicateLists(freshLists));
       setLeads([...freshLeads, ...freshClients]);
       window.dispatchEvent(new CustomEvent('od:slots-updated'));
     } catch (err) {
@@ -942,7 +993,7 @@ function useStoreInternal() {
         api.getLeads(),
         api.getClients(),
       ]);
-      setLists(freshLists);
+      setLists(deduplicateLists(freshLists));
       setLeads([...freshLeads, ...freshClients]);
       window.dispatchEvent(new CustomEvent('od:slots-updated'));
     } catch (err) {
@@ -959,7 +1010,7 @@ function useStoreInternal() {
         api.getLeads(),
         api.getClients(),
       ]);
-      setLists(freshLists);
+      setLists(deduplicateLists(freshLists));
       setLeads([...freshLeads, ...freshClients]);
       return res;
     } catch (err) {

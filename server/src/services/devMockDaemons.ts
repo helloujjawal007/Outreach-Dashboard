@@ -141,7 +141,7 @@ export function startDevMockDaemons(): void {
                       auditReport: completedPayload,
                     }),
                   });
-                } catch (cbErr: any) {
+                } catch {
                   // Ignore
                 }
               }, 200);

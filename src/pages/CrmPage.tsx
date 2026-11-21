@@ -957,7 +957,7 @@ export function CrmPage({
       }
     }
     return Array.from(map.values());
-  }, [store.lists]);
+  }, [store]);
 
   const channelQuickFilters = useMemo(() => {
     const listMap = new Map<string, (typeof store.lists)[0]>();
@@ -1003,7 +1003,7 @@ export function CrmPage({
       const count = list ? (listCounts.map.get(list.id) || list.lead_count || 0) : 0;
       return { ...d, list, count };
     });
-  }, [availableLists, listCounts]);
+  }, [store, availableLists, listCounts]);
 
   const customUserLists = useMemo(() => {
     const channelNames = new Set([

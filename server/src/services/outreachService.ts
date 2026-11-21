@@ -154,10 +154,10 @@ export class OutreachEngineService {
     leadId: string;
     channel: 'email' | 'whatsapp';
     text: string;
-    campaignId?: string;
-    stepId?: string;
+    _campaignId?: string;
+    _stepId?: string;
   }): Promise<SendResult> {
-    const { leadId, channel, text, campaignId, stepId } = params;
+    const { leadId, channel, text } = params;
 
     // 1. Consent Gate & Hard Suppression Check
     const leadRes = await query<{

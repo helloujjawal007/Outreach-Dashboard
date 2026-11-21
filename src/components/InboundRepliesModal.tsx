@@ -547,7 +547,7 @@ export function InboundRepliesModal({
         setComposerChannel(activeThread.channel || 'email');
       }
     }
-  }, [activeThread?.key]);
+  }, [activeThread?.key, activeThread?.entityId, activeThread?.entityType]);
 
   // Asynchronously fetch full historical messages for active thread
   useEffect(() => {
@@ -601,7 +601,7 @@ export function InboundRepliesModal({
         }
       }, 50);
     }
-  }, [layoutMode, activeThread?.key, activeThreadMessages.length]);
+  }, [layoutMode, activeThread?.key, activeThreadMessages.length, threadHistoryMap]);
 
   // Handlers
   const handleSyncClick = async () => {

@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
 import { env } from './config/env';
@@ -35,9 +36,11 @@ import { emailInboundService } from './services/emailInboundService';
 import { emailSchedulerService } from './services/emailSchedulerService';
 import { fiveSlotSenderService } from './services/fiveSlotSenderService';
 import { startDevMockDaemons, stopDevMockDaemons } from './services/devMockDaemons';
-// Prevent unhandled errors or socket drops from crashing the Express API server
+// Prevent unhandled errors from crashing the Express API server.
+// Exit after logging to avoid running in an inconsistent state; process manager restarts the service.
 process.on('uncaughtException', (err) => {
-  console.error('[Server UncaughtException Handled]', err?.message || err);
+  console.error('[Server UncaughtException]', err?.message || err);
+  process.exit(1);
 });
 
 // 12-Minute Render Keep-Alive Heartbeat (prevents Render 15-minute inactivity spin-down)
@@ -59,10 +62,15 @@ if (process.env.NODE_ENV === 'production' || process.env.KEEP_ALIVE_URL) {
 
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[Server UnhandledRejection Handled]', reason);
+  console.error('[Server UnhandledRejection]', reason);
+  process.exit(1);
 });
 
 const app = express();
+
+// Trust proxy (Render fronts the app with a single proxy hop) so req.ip
+// returns the real client IP instead of the Render load balancer IP.
+app.set('trust proxy', 1);
 
 // Security Hardening: Disable server fingerprints & enforce security headers
 app.disable('x-powered-by');
@@ -74,6 +82,42 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
+
+// ------------------------------------------------------------------
+// Rate Limiting
+// ------------------------------------------------------------------
+// Frontend polls /api/slots/status every 10s (6/min = 90/15min per tab).
+// General limit is 600/15min (~40/min) to give headroom for multiple tabs
+// and users behind the same IP. Health, audit-callback, and auth routes
+// are exempted here because they have their own limits or are public
+// monitoring endpoints that must not be throttled by dashboard traffic.
+
+// Exempted routes (have their own limiters or are public monitoring):
+//   /api/health           - public monitoring, no user action
+//   /api/audit-callback   - TD webhook, has 120/min in-memory limiter
+//   /api/auth/login       - has strict 5/15min limiter in routes/auth.ts
+const globalRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: {
+    success: false,
+    error: 'Too many requests. Please slow down and try again later.',
+    code: 'RATE_LIMITED',
+  },
+  // Skip limiting for exempt routes; they are handled by their own middleware
+  skip: (req) => {
+    const path = req.path;
+    return (
+      path === '/api/health' ||
+      path.startsWith('/api/audit-callback') ||
+      path.startsWith('/api/auth/login')
+    );
+  },
+});
+app.use('/api', globalRateLimiter);
 
 // Security Barrier: Block path traversal, null bytes, and unauthorized access to source/config files
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -140,11 +184,14 @@ if (process.env.ALLOWED_ORIGINS) {
 }
 
 const isOriginAllowed = (origin?: string): boolean => {
+  // No Origin header: server-to-server calls (TD webhook, health probes, etc.)
+  // These authenticate via x-audit-secret / OD_INTERNAL_API_KEY / session token,
+  // not browser cookies. CORS must allow them so the route handler can authenticate.
   if (!origin) return true;
   if (allowedOrigins.has(origin)) return true;
   try {
     const url = new URL(origin);
-    if (url.hostname.endsWith('.onrender.com')) return true;
+    return allowedOrigins.has(url.origin);
   } catch {}
   return false;
 };
@@ -416,7 +463,7 @@ async function startServer() {
     stopDevMockDaemons();
 
     await new Promise<void>((resolve) => {
-      const forceTimeout = setTimeout(resolve, 3000);
+      const forceTimeout = setTimeout(resolve, 10000); // 10s hard timeout
       server.close(() => {
         clearTimeout(forceTimeout);
         resolve();

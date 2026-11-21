@@ -18,7 +18,6 @@ import {
   User,
   MapPin,
   Flame,
-  DollarSign,
   Briefcase,
   FileText,
 } from 'lucide-react';
@@ -60,13 +59,6 @@ function getAvatarGradient(name: string): string {
   }
   const index = Math.abs(hash) % AVATAR_GRADIENTS.length;
   return AVATAR_GRADIENTS[index];
-}
-
-export function computeEstimatedDeal(lead: Lead): number {
-  if (lead.metadata?.deal_value || lead.metadata?.dealValue) {
-    return Number(lead.metadata?.deal_value || lead.metadata?.dealValue);
-  }
-  return 0;
 }
 
 export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onStageChanged }: Props) {
@@ -255,7 +247,6 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
   if (!isOpen || !lead) return null;
 
   const leadScore = Number(lead.metadata?.lead_score || lead.metadata?.leadScore || 85);
-  const dealVal = computeEstimatedDeal(lead);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">

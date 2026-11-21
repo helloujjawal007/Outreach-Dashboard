@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Globe,
   AlertTriangle,
@@ -65,6 +65,32 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
   const isMapsUrl = /google\.com\/maps|maps\.google\.com/i.test(rawLeadWeb);
   const initialHasWeb = Boolean(rawLeadWeb && !isMapsUrl && rawLeadWeb.toLowerCase() !== 'n/a' && rawLeadWeb.toLowerCase() !== 'none');
 
+  const loadInitialPitch = useCallback(async (targetWeb: string) => {
+    if (!lead) return;
+    setIsLoading(true);
+    try {
+      const city = lead.location || lead.country || '';
+      const res = await api.generateAuditPitch({
+        leadId: lead.id,
+        customWebsite: targetWeb,
+        businessName: lead.businessName,
+        category: lead.category,
+        city,
+        contactName: lead.primaryContactName || '',
+      });
+      if (res.success && res.pitch) {
+        setPitchResult(res.pitch);
+        if (res.pitch.auditReport) {
+          setAuditReport(res.pitch.auditReport);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load audit pitch:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [lead]);
+
   useEffect(() => {
     if (!open || !lead) return;
     const initialUrl = initialHasWeb ? rawLeadWeb : '';
@@ -84,7 +110,7 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
     setSelectedBulkListId(initialList);
 
     loadInitialPitch(initialUrl);
-  }, [open, lead?.id, selectedListId, store.lists]);
+  }, [open, lead, lead?.id, selectedListId, store.lists, initialHasWeb, rawLeadWeb, loadInitialPitch]);
 
   const handleSendNow = async () => {
     if (!lead || isSendingNow) return;
@@ -168,32 +194,6 @@ export function ClientAuditModal({ open, onClose, lead, store, selectedListId }:
       setBulkError(err?.message || 'Bulk dispatch encountered an error.');
     } finally {
       setIsSendingBulk(false);
-    }
-  };
-
-  const loadInitialPitch = async (targetWeb: string) => {
-    if (!lead) return;
-    setIsLoading(true);
-    try {
-      const city = lead.location || lead.country || '';
-      const res = await api.generateAuditPitch({
-        leadId: lead.id,
-        customWebsite: targetWeb,
-        businessName: lead.businessName,
-        category: lead.category,
-        city,
-        contactName: lead.primaryContactName || '',
-      });
-      if (res.success && res.pitch) {
-        setPitchResult(res.pitch);
-        if (res.pitch.auditReport) {
-          setAuditReport(res.pitch.auditReport);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load audit pitch:', err);
-    } finally {
-      setIsLoading(false);
     }
   };
 

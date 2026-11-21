@@ -106,7 +106,14 @@ export const env = {
     }
     return pass;
   })(),
-  SESSION_SECRET: getEnvVar('SESSION_SECRET', 'JWT_SECRET') || 'ods-outreach-dashboard-secret-key-2026',
+  SESSION_SECRET: (() => {
+    const secret = getEnvVar('SESSION_SECRET', 'JWT_SECRET');
+    if (!secret || secret.length < 16) {
+      console.error('[FATAL CONFIG] ❌ Refusing to start: SESSION_SECRET environment variable is missing or shorter than 16 characters.');
+      throw new Error('SESSION_SECRET environment variable is missing or shorter than 16 characters.');
+    }
+    return secret;
+  })(),
   // Technical Audit Dashboard (TD) Integration
   APP_URL: getEnvVar('APP_URL'),
   TD_ENDPOINT_URL: getEnvVar('TD_ENDPOINT_URL'),
@@ -116,6 +123,9 @@ export const env = {
   TD_INBOUND_SECRET: getEnvVar('TD_INBOUND_SECRET', 'OD_INBOUND_SECRET'),
   TD_CALLBACK_SECRET: getEnvVar('TD_CALLBACK_SECRET', 'OD_CALLBACK_SECRET'),
   TD_SHARED_SECRET: getEnvVar('TD_SHARED_SECRET'),
+  // Optional legacy secret for verifying unsubscribe tokens signed before
+  // SESSION_SECRET rotation. Never used for signing new tokens.
+  LEGACY_UNSUBSCRIBE_SECRET: getEnvVar('LEGACY_UNSUBSCRIBE_SECRET'),
 };
 
 

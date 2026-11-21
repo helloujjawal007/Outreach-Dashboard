@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 import { query, pool } from '../config/db';
 import { stageOutreachService } from './stageOutreachService';
 import { failureLogService } from './failureLogService';

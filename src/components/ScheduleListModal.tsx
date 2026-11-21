@@ -50,9 +50,9 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
   const [replaceOlderSlots, setReplaceOlderSlots] = useState<boolean>(true);
 
   // Multi-Inbox Rotation State (Email)
-  const [inboxes, setInboxes] = useState<ConnectedInbox[]>([]);
-  const [selectedInboxIds, setSelectedInboxIds] = useState<string[]>([]);
-  const [isLoadingInboxes, setIsLoadingInboxes] = useState(false);
+  const [_inboxes, setInboxes] = useState<ConnectedInbox[]>([]);
+  const [_selectedInboxIds, setSelectedInboxIds] = useState<string[]>([]);
+  const [, setIsLoadingInboxes] = useState(false);
 
   // Execution & Preview State
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -221,39 +221,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
     return 0;
   }, [channel, leadsWithEmailCount, leadsWithPhoneCount]);
 
-  // Selected inboxes calculation
-  const selectedInboxes = useMemo(() => {
-    return inboxes.filter((i) => selectedInboxIds.includes(i.id));
-  }, [inboxes, selectedInboxIds]);
-
-  // Dynamic Load Split breakdown (100% for 1 inbox, 50/50 for 2, N-way for 3+)
-  const splitBreakdown = useMemo(() => {
-    if (selectedInboxes.length === 0 || eligibleLeadsCount === 0) return [];
-    const count = selectedInboxes.length;
-    const baseShare = Math.floor(eligibleLeadsCount / count);
-    const remainder = eligibleLeadsCount % count;
-    return selectedInboxes.map((inbox, idx) => ({
-      ...inbox,
-      assignedCount: baseShare + (idx < remainder ? 1 : 0),
-      percentage: count === 1 ? 100 : count === 2 ? 50 : Math.round((100 / count)),
-    }));
-  }, [selectedInboxes, eligibleLeadsCount]);
-
-  const toggleInboxSelection = (id: string) => {
-    setSelectedInboxIds((prev) => {
-      if (prev.includes(id)) {
-        if (prev.length === 1) return prev; // Keep at least one
-        return prev.filter((item) => item !== id);
-      } else {
-        return [...prev, id];
-      }
-    });
-  };
-
-  const selectAllInboxes = () => {
-    setSelectedInboxIds(inboxes.map((i) => i.id));
-  };
-
   // Channel change handler with safe default intervals
   const handleSelectChannel = (newChannel: 'email' | 'whatsapp') => {
     setChannel(newChannel);
@@ -265,31 +232,6 @@ export function ScheduleListModal({ open, onClose, store, defaultListId, onSched
       setIntervalPreset('45s');
     }
   };
-
-  // Dynamic Campaign Timeline calculation
-  const scheduleTimeline = useMemo(() => {
-    if (eligibleLeadsCount <= 0) return null;
-    let base = new Date();
-    if (sendMode === 'later' && scheduledDateTime) {
-      const parsed = new Date(scheduledDateTime);
-      if (!isNaN(parsed.getTime())) {
-        base = parsed;
-      }
-    }
-    const totalSeconds = Math.max(0, (eligibleLeadsCount - 1) * intervalSeconds);
-    const end = new Date(base.getTime() + totalSeconds * 1000);
-    const totalMinutes = Math.max(1, Math.ceil(totalSeconds / 60));
-
-    const formatTime = (d: Date) =>
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    return {
-      startTime: sendMode === 'now' ? 'Immediate' : formatTime(base),
-      endTime: formatTime(end),
-      totalMinutes,
-      totalSeconds,
-    };
-  }, [eligibleLeadsCount, intervalSeconds, sendMode, scheduledDateTime]);
 
   // Fetch sample humanized email preview
   const fetchPreview = useCallback(async () => {

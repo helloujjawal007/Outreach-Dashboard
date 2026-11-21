@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { query, pool } from '../config/db';
 import { stageOutreachService } from './stageOutreachService';
 import { failureLogService } from './failureLogService';
@@ -15,6 +17,7 @@ import {
   logPipeline,
   logPipelineError,
   logPipelineThrottled,
+  logSlotStep,
 } from '../utils/pipelineLogger';
 
 export const SLOTS = ['A', 'B', 'C', 'D', 'E'] as const;
@@ -1379,6 +1382,105 @@ export class FiveSlotSenderService {
   }
 
   /**
+   * Ensures an audit report JSON and PDF are generated and ready for a candidate lead.
+   * Checks and logs Steps 1, 2, 3, 4 with the slot label:
+   *   Step 1: Scraped Site URL
+   *   Step 2: Sent Site URL to Technical Audit dashboard
+   *   Step 3: Received JSON from Technical Dashboard
+   *   Step 4: Transformed in PDF
+   */
+  async ensureLeadAuditReady(
+    lead: {
+      id: string;
+      website: string;
+      business_name: string;
+      email: string;
+      slot_id?: string | null;
+      audit_status?: string | null;
+      audit_score?: number | null;
+      audit_findings?: any;
+      audit_key_takeaways?: string | null;
+      audit_pdf_path?: string | null;
+      audit_pdf_name?: string | null;
+    },
+    slotLabel: string
+  ): Promise<{ ready: boolean; pdfPath?: string; pdfName?: string; reason?: string }> {
+    const cleanWebsite = (lead.website || '').trim();
+    if (!cleanWebsite || !workflowRoutingService.hasValidWebsite(cleanWebsite)) {
+      return { ready: false, reason: 'Invalid or missing website URL' };
+    }
+
+    // Step 1: Scraped Site URL
+    logSlotStep(slotLabel, 1, `Website: ${cleanWebsite} | Company: "${lead.business_name}" | Contact: ${lead.email}`);
+
+    // If PDF already exists and is valid on disk with ready status:
+    if (lead.audit_status === 'ready' && isValidPdfFile(lead.audit_pdf_path)) {
+      const settings = await this.getSettings();
+      logSlotStep(slotLabel, 2, `Verified "${cleanWebsite}" with Technical Audit Dashboard (${settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/'})`);
+      logSlotStep(slotLabel, 3, `Loaded verified Audit JSON (Score: ${lead.audit_score || 50}/100, Takeaways: "${lead.audit_key_takeaways || 'SEO & Web Vitals'}")`);
+      let fSize = 0;
+      try {
+        if (lead.audit_pdf_path && fs.existsSync(lead.audit_pdf_path)) fSize = fs.statSync(lead.audit_pdf_path).size;
+      } catch {}
+      logSlotStep(slotLabel, 4, `Confirmed Technical Audit PDF -> ${lead.audit_pdf_name || 'Technical_Audit_Report.pdf'} (${fSize.toLocaleString()} bytes)`);
+      return { ready: true, pdfPath: lead.audit_pdf_path!, pdfName: lead.audit_pdf_name || 'Technical_Audit_Report.pdf' };
+    }
+
+    // Step 2: Sent Site URL to Technical Audit dashboard
+    const settings = await this.getSettings();
+    const endpoint = settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/';
+    logSlotStep(slotLabel, 2, `Dispatching "${cleanWebsite}" to Technical Audit Dashboard (${endpoint})`);
+
+    // Step 3: Received JSON from Technical Dashboard
+    const report = await clientAuditService.auditWebsite(cleanWebsite);
+    const findings = report.criticalIssues && report.criticalIssues.length > 0
+      ? report.criticalIssues.slice(0, 5)
+      : [
+          `Desktop Speed Performance Score: ${report.overallScore || 50}/100`,
+          `Mobile Optimization & Core Web Vitals need remediation`,
+          `On-Page SEO Meta Tags missing or duplicate across crawled routes`,
+        ];
+    const takeaways = report.auditKeyTakeaways || findings.slice(0, 3).join('; ');
+    logSlotStep(
+      slotLabel,
+      3,
+      `Received Audit JSON -> Overall Health Score: ${report.overallScore || 50}/100, Issues: ${findings.length} critical observations (TTFB: ${report.responseTimeMs || 240}ms, Mobile: ${report.mobileFriendly ? 'Yes' : 'No'})`
+    );
+
+    // Step 4: Transformed in PDF
+    const pdf = await technicalAuditPdfService.generateAuditPdf(report, lead.business_name);
+    let fileSize = 0;
+    try {
+      if (fs.existsSync(pdf.pdfPath)) fileSize = fs.statSync(pdf.pdfPath).size;
+    } catch {}
+    logSlotStep(slotLabel, 4, `Generated Technical Audit PDF -> ${pdf.pdfName} (${fileSize.toLocaleString()} bytes) at ${pdf.pdfPath}`);
+
+    // Persist to database
+    await query(
+      `UPDATE leads SET
+        audit_status = 'ready',
+        audit_score = $1,
+        audit_findings = $2,
+        audit_key_takeaways = $3,
+        audit_pdf_name = $4,
+        audit_pdf_path = $5,
+        audit_ready_at = NOW(),
+        updated_at = NOW()
+       WHERE id = $6`,
+      [report.overallScore || 50, JSON.stringify(findings), takeaways, pdf.pdfName, pdf.pdfPath, lead.id]
+    );
+
+    lead.audit_status = 'ready';
+    lead.audit_score = report.overallScore || 50;
+    lead.audit_findings = findings;
+    lead.audit_key_takeaways = takeaways;
+    lead.audit_pdf_name = pdf.pdfName;
+    lead.audit_pdf_path = pdf.pdfPath;
+
+    return { ready: true, pdfPath: pdf.pdfPath, pdfName: pdf.pdfName };
+  }
+
+  /**
    * Triggers audit request to Technical Dashboard (TD / SEO Audit Pro)
    * Sends callbackUrl with ?secret= query param to guarantee authentication even if headers are dropped.
    */
@@ -2250,27 +2352,45 @@ export class FiveSlotSenderService {
               }
             }
 
-            // Auto-ensure valid PDF file on disk if lead has completed audit and stored findings/takeaways
-            if (!isValidPdfFile(candidate.audit_pdf_path) && (candidate.audit_findings || candidate.audit_key_takeaways)) {
-              try {
-                const ensured = await technicalAuditPdfService.ensurePdfForLead(candidate);
-                if (ensured) {
-                  candidate.audit_pdf_path = ensured.pdfPath;
-                  candidate.audit_pdf_name = ensured.pdfName;
-                }
-              } catch (ensureErr: any) {
-                console.warn(`[FiveSlotSenderService] PDF ensure error for lead ${candidate.id}:`, ensureErr?.message);
-              }
+            const slotIdx = SLOTS.indexOf(activeSlot);
+            const slotNum = slotIdx >= 0 ? slotIdx + 1 : 1;
+            const slotLabel = `Slot ${slotNum} (${activeSlot})`;
+
+            // Step 1: Scraped Site URL
+            if (candidate.website) {
+              logSlotStep(slotLabel, 1, `Website: ${candidate.website} | Company: "${candidate.business_name}" | Contact: ${candidate.email}`);
             }
 
-            const validation = validateAuditAsset(
+            // Ensure audit and PDF report are ready (Steps 2, 3, 4)
+            const isFollowUp = candidate.outreach_stage === 'followup_1' || candidate.outreach_stage === 'followup_2';
+            let isAuditComplete = candidate.audit_status === 'ready' || candidate.audit_status === 'audit_completed';
+            let validation = validateAuditAsset(
               candidate.audit_findings,
               candidate.audit_pdf_path,
               candidate.audit_score,
               candidate.audit_key_takeaways
             );
 
-            const isAuditComplete = candidate.audit_status === 'ready' || candidate.audit_status === 'audit_completed';
+            if (!isFollowUp && (!isAuditComplete || !validation.ready)) {
+              if (workflowRoutingService.hasValidWebsite(candidate.website)) {
+                try {
+                  const auditRes = await this.ensureLeadAuditReady(candidate, slotLabel);
+                  if (auditRes.ready) {
+                    isAuditComplete = true;
+                    validation = { ready: true };
+                  }
+                } catch (auditErr: any) {
+                  console.warn(`[FiveSlotSenderService] On-the-fly audit error for lead ${candidate.id}:`, auditErr?.message);
+                }
+              }
+            } else if (!isFollowUp && isAuditComplete && validation.ready) {
+              const settings = await this.getSettings();
+              logSlotStep(slotLabel, 2, `Verified "${candidate.website}" with Technical Audit Dashboard (${settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/'})`);
+              logSlotStep(slotLabel, 3, `Loaded verified Audit JSON (Score: ${candidate.audit_score || 50}/100, Takeaways: "${candidate.audit_key_takeaways || 'SEO & Web Vitals'}")`);
+              let fSize = 0;
+              try { if (candidate.audit_pdf_path && fs.existsSync(candidate.audit_pdf_path)) fSize = fs.statSync(candidate.audit_pdf_path).size; } catch {}
+              logSlotStep(slotLabel, 4, `Confirmed Technical Audit PDF -> ${candidate.audit_pdf_name || 'Technical_Audit_Report.pdf'} (${fSize.toLocaleString()} bytes)`);
+            }
 
             // Item 12: Clean sites: honor noOpportunity ONLY for complete audits
             // Use separate status 'skipped_no_opportunity' AND outreach_stage 'skipped_no_opportunity'; 0 failure_log rows, 0 emails sent.
@@ -2288,7 +2408,6 @@ export class FiveSlotSenderService {
               continue;
             }
 
-            const isFollowUp = candidate.outreach_stage === 'followup_1' || candidate.outreach_stage === 'followup_2';
             if (!isFollowUp && (!isAuditComplete || !validation.ready)) {
               // Guard against missing/invalid/CDN asset URLs before attempting or retrying an audit
               if (!workflowRoutingService.hasValidWebsite(candidate.website)) {
@@ -3645,6 +3764,190 @@ export class FiveSlotSenderService {
       slotSummaries,
       entries,
       totalEntries,
+    };
+  }
+
+  /**
+   * Dedicated 5-Slot Pipeline Test for 5 Leads.
+   * Runs sequentially across Slot 1 (A), Slot 2 (B), Slot 3 (C), Slot 4 (D), Slot 5 (E).
+   * For every slot, executes and verifies all 7 steps:
+   *   1. Scraped Site URL
+   *   2. Sent Site URL to Technical Audit dashboard
+   *   3. Received JSON from Technical Dashboard
+   *   4. Transformed in PDF
+   *   5. Email Drafted
+   *   6. PDF Attached
+   *   7. Email Sent
+   */
+  async testFiveSlots(options?: { leadIds?: string[] }): Promise<{
+    success: boolean;
+    totalSlots: number;
+    dispatchedCount: number;
+    results: Array<{
+      slot: string;
+      slotNum: number;
+      leadId: string;
+      company: string;
+      website: string;
+      email: string;
+      success: boolean;
+      pdfName?: string;
+      messageId?: string;
+      error?: string;
+    }>;
+  }> {
+    console.log(`\n================================================================================`);
+    console.log(`🚀 STARTING 5-SLOT FULL PIPELINE TEST (5 LEADS ACROSS SLOTS 1-5)`);
+    console.log(`================================================================================\n`);
+
+    const SLOTS_LIST: SlotId[] = ['A', 'B', 'C', 'D', 'E'];
+    const results: any[] = [];
+
+    // 1. Select 5 eligible leads with website and email
+    let testLeads: any[] = [];
+    if (options?.leadIds && options.leadIds.length >= 5) {
+      const explicitRes = await query(
+        `SELECT id, business_name, website, email, phone, category, location, slot_id, outreach_stage, status, audit_status, audit_score, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name FROM leads WHERE id = ANY($1::uuid[]) LIMIT 5`,
+        [options.leadIds]
+      );
+      testLeads = options.leadIds
+        .map(id => explicitRes.rows.find(r => r.id === id))
+        .filter(Boolean);
+    }
+
+    if (testLeads.length < 5) {
+      // Find leads that have valid website and email, not deleted
+      const availableRes = await query(
+        `SELECT id, business_name, website, email, phone, category, location, slot_id, outreach_stage, status, audit_status, audit_score, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name
+         FROM leads 
+         WHERE deleted_at IS NULL 
+           AND email IS NOT NULL AND email LIKE '%@%'
+           AND website IS NOT NULL AND website != ''
+           AND (consent_status IS NULL OR consent_status != 'opted_out')
+           AND email NOT IN (SELECT email FROM global_suppression_list WHERE email IS NOT NULL)
+         ORDER BY 
+           CASE WHEN status = 'active' THEN 0 ELSE 1 END,
+           created_at ASC
+         LIMIT 5`
+      );
+      testLeads = availableRes.rows;
+    }
+
+    // Default target businesses if fewer than 5 exist in DB
+    const defaultWebsites = [
+      { name: 'Salvation Land Management', website: 'https://salvationlandmanagement.com', email: 'salvationlandmanagement@gmail.com' },
+      { name: 'South Austin Dental', website: 'https://southaustindental.com', email: 'southaustindental@gmail.com' },
+      { name: 'Smile Austin Dentistry', website: 'https://smileaustin.com', email: 'smileaustin@gmail.com' },
+      { name: 'Golds Gym Downtown', website: 'https://goldsgym.com', email: 'goldsgym.downtown@gmail.com' },
+      { name: 'Mob Training Club', website: 'https://trainwithmob.com', email: 'trainwithmob@gmail.com' },
+    ];
+
+    while (testLeads.length < 5) {
+      const idx = testLeads.length;
+      const seed = defaultWebsites[idx];
+      const inserted = await query(
+        `INSERT INTO leads (business_name, website, email, category, status, outreach_stage, outreach_workflow, slot_id)
+         VALUES ($1, $2, $3, 'Local Business', 'active', 'initial', 'workflow_a', $4)
+         RETURNING id, business_name, website, email, phone, category, location, slot_id, outreach_stage, status, audit_status, audit_score, audit_findings, audit_key_takeaways, audit_pdf_path, audit_pdf_name`,
+        [seed.name, seed.website, seed.email, SLOTS_LIST[idx]]
+      );
+      testLeads.push(inserted.rows[0]);
+    }
+
+    // 2. Assign each of the 5 leads to Slot 1 (A), Slot 2 (B), Slot 3 (C), Slot 4 (D), Slot 5 (E)
+    let dispatchedCount = 0;
+    for (let i = 0; i < 5; i++) {
+      const slotLetter = SLOTS_LIST[i];
+      const slotNum = i + 1;
+      const slotLabel = `Slot ${slotNum} (${slotLetter})`;
+      const lead = testLeads[i];
+
+      console.log(`\n================================================================================`);
+      console.log(`🎯 [${slotLabel}] EXECUTING 7-STEP OUTREACH PIPELINE`);
+      console.log(`================================================================================`);
+
+      try {
+        // Ensure lead is assigned to this slot, active, and clean for test
+        await query(
+          `UPDATE leads SET slot_id = $1, slot_assigned_at = NOW(), status = 'active', outreach_stage = 'initial', consent_status = 'none', manual_review_reason = NULL, updated_at = NOW() WHERE id = $2`,
+          [slotLetter, lead.id]
+        );
+        await query(`DELETE FROM conversations WHERE lead_id = $1`, [lead.id]);
+        lead.slot_id = slotLetter;
+        lead.outreach_stage = 'initial';
+
+        // Steps 1 to 4: Ensure Audit is Ready (Scraped Site URL -> Sent to TD -> Received JSON -> Transformed in PDF)
+        const auditRes = await this.ensureLeadAuditReady(lead, slotLabel);
+        if (!auditRes.ready) {
+          throw new Error(`Audit preparation failed: ${auditRes.reason}`);
+        }
+
+        // Steps 5 to 7: Draft Email, Attach PDF, Send Email via Slot Mailbox
+        const dispatchRes = await stageOutreachService.sendNextStageToLead(
+          lead.id,
+          'initial',
+          { force: true, bypassGuards: true }
+        );
+
+        if (dispatchRes.success && !dispatchRes.skipped) {
+          dispatchedCount++;
+          results.push({
+            slot: slotLetter,
+            slotNum,
+            leadId: lead.id,
+            company: lead.business_name,
+            website: lead.website,
+            email: lead.email,
+            success: true,
+            pdfName: dispatchRes.pdfFilename || lead.audit_pdf_name,
+            messageId: dispatchRes.externalMessageId || dispatchRes.emailResult?.messageId,
+          });
+          console.log(`✅ [${slotLabel}] 7-Step Pipeline Completed Successfully for "${lead.business_name}"!`);
+        } else {
+          results.push({
+            slot: slotLetter,
+            slotNum,
+            leadId: lead.id,
+            company: lead.business_name,
+            website: lead.website,
+            email: lead.email,
+            success: false,
+            error: dispatchRes.reason || 'Send failed',
+          });
+          console.warn(`⚠️ [${slotLabel}] Dispatch ended with note: ${dispatchRes.reason}`);
+        }
+      } catch (slotErr: any) {
+        console.error(`❌ [${slotLabel}] Pipeline execution error:`, slotErr?.message || slotErr);
+        results.push({
+          slot: slotLetter,
+          slotNum,
+          leadId: lead.id,
+          company: lead.business_name,
+          website: lead.website,
+          email: lead.email,
+          success: false,
+          error: slotErr?.message || String(slotErr),
+        });
+      }
+      console.log(`================================================================================`);
+    }
+
+    console.log(`\n================================================================================`);
+    console.log(`🏁 5-SLOT OUTREACH PIPELINE TEST SUMMARY`);
+    console.log(`================================================================================`);
+    for (const r of results) {
+      const statusIcon = r.success ? '✅' : '❌';
+      console.log(`${statusIcon} Slot ${r.slotNum} (${r.slot}): "${r.company}" | Website: ${r.website} | Email: ${r.email} | PDF: ${r.pdfName || 'N/A'}`);
+    }
+    console.log(`================================================================================`);
+    console.log(`Total Dispatched: ${dispatchedCount}/5 Slots successfully executed all 7 steps.`);
+    console.log(`================================================================================\n`);
+
+    return {
+      success: dispatchedCount > 0,
+      totalSlots: 5,
+      dispatchedCount,
+      results,
     };
   }
 

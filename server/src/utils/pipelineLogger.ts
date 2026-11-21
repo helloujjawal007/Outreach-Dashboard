@@ -103,6 +103,44 @@ export function clearPipelineThrottle(key: string): void {
 }
 
 /**
+ * Emits a standardized 7-step pipeline console log for each of the 5 slots:
+ * Step 1: Scraped Site URL
+ * Step 2: Sent Site URL to Technical Audit dashboard
+ * Step 3: Received JSON from Technical Dashboard
+ * Step 4: Transformed in PDF
+ * Step 5: Email Drafted
+ * Step 6: PDF Attached
+ * Step 7: Email Sent
+ */
+export function logSlotStep(
+  slotLabel: string, // e.g. "Slot 1 (A)"
+  step: 1 | 2 | 3 | 4 | 5 | 6 | 7,
+  details: string
+): void {
+  const stepTitles: Record<number, string> = {
+    1: 'Scraped Site URL',
+    2: 'Sent Site URL to Technical Audit dashboard',
+    3: 'Received JSON from Technical Dashboard',
+    4: 'Transformed in PDF',
+    5: 'Email Drafted',
+    6: 'PDF Attached',
+    7: 'Email Sent',
+  };
+  const stepIcons: Record<number, string> = {
+    1: '🌐',
+    2: '📡',
+    3: '📥',
+    4: '📄',
+    5: '✍️',
+    6: '📎',
+    7: '🚀',
+  };
+  const title = stepTitles[step] || `Step ${step}`;
+  const icon = stepIcons[step] || '🔹';
+  console.log(`[${slotLabel}] [Step ${step}/7 - ${title}] ${icon} ${details}`);
+}
+
+/**
  * Emits a standardized console error line for any pipeline failure or exception encountered.
  */
 export function logPipelineError(context: string, message: string, err?: unknown): void {

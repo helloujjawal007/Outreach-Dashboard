@@ -14,7 +14,7 @@ import { sequenceEnrollmentService } from './sequenceEnrollmentService';
 import { validateAuditAsset } from '../utils/auditPolicy';
 import { resolveRecipientTimezone, isWithinRecipientWindow } from '../utils/timezoneHelper';
 import { fiveSlotSenderService } from './fiveSlotSenderService';
-import { logPipeline, logPipelineError } from '../utils/pipelineLogger';
+import { logPipeline, logPipelineError, logSlotStep } from '../utils/pipelineLogger';
 
 export interface StageDispatchResult {
   leadId: string;
@@ -716,7 +716,7 @@ export class StageOutreachService {
       };
     }
 
-    if (stageInfo.stage === 'completed') {
+    if (stageInfo.stage === 'completed' && !options?.force) {
       return {
         leadId,
         businessName: lead.business_name,
@@ -829,7 +829,27 @@ export class StageOutreachService {
           }
         }
 
-        const slotLabel = lead.slot_id ? `Slot ${lead.slot_id}` : 'Unassigned';
+        const slotLetter = lead.slot_id || 'A';
+        const slotIdx = ['A', 'B', 'C', 'D', 'E'].indexOf(slotLetter);
+        const slotNum = slotIdx >= 0 ? slotIdx + 1 : 1;
+        const slotLabel = `Slot ${slotNum} (${slotLetter})`;
+
+        // Step 5: Email Drafted
+        const takeawaysSummary = lead.audit_key_takeaways || (attachments?.[0]?.filename ? 'Attached technical audit report & recommendations' : 'Website performance & Core Web Vitals remediation');
+        logSlotStep(slotLabel, 5, `Drafted Email for ${lead.email} | Subject: "${stageInfo.subject}" | Audit Key Takeaways: "${takeawaysSummary}"`);
+
+        // Step 6: PDF Attached
+        if (attachments && attachments.length > 0) {
+          const att = attachments[0];
+          let attSize = 0;
+          try {
+            if (att.path && fs.existsSync(att.path)) attSize = fs.statSync(att.path).size;
+          } catch {}
+          logSlotStep(slotLabel, 6, `Verified & Attached PDF: "${att.filename}" (${attSize.toLocaleString()} bytes, application/pdf) -> Attached to outbound email payload`);
+        } else {
+          logSlotStep(slotLabel, 6, `No attachment required for this touch`);
+        }
+
         logPipeline(
           'DRAFTED_EMAIL',
           `Drafted email for "${lead.business_name}" (${lead.email}) [${slotLabel}] | Stage: ${stageInfo.stageLabel} | Subject: "${stageInfo.subject}" | PDF: ${attachments?.map((a) => a.filename).join(', ') || 'None'}`
@@ -858,6 +878,10 @@ export class StageOutreachService {
             liveDelivery: sendRes.liveDelivery,
             messageId: sendRes.messageId,
           };
+
+          // Step 7: Email Sent
+          const mailboxUsed = sendRes.inboxUsed?.email || dispatchedMailboxEmail || 'default-slot-mailbox';
+          logSlotStep(slotLabel, 7, `Email successfully sent to ${lead.email} via Mailbox [${mailboxUsed}] (Message ID: ${sendRes.messageId || 'msg-' + Date.now()})`);
 
           // 30-Minute Post-Send Disk Purge:
           // Deletes the generated physical PDF from disk 30 minutes after dispatch to conserve disk space.

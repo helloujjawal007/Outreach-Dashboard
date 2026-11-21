@@ -27,6 +27,21 @@ export interface SuppressionStats {
   invalidMx: number;
 }
 
+const COMMON_WEBMAIL_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'yahoo.com',
+  'hotmail.com',
+  'outlook.com',
+  'live.com',
+  'icloud.com',
+  'aol.com',
+  'mail.com',
+  'protonmail.com',
+  'proton.me',
+  'zoho.com',
+]);
+
 export class SuppressionService {
   /**
    * Fast pre-send check to verify if an email, phone, or domain is globally suppressed
@@ -41,7 +56,10 @@ export class SuppressionService {
     let domain = params.domain ? params.domain.toLowerCase().trim() : null;
 
     if (!domain && email && email.includes('@')) {
-      domain = email.split('@')[1];
+      const ext = email.split('@')[1]?.toLowerCase().trim();
+      if (ext && !COMMON_WEBMAIL_DOMAINS.has(ext)) {
+        domain = ext;
+      }
     }
 
     if (!email && !phone && !domain) {
@@ -134,7 +152,10 @@ export class SuppressionService {
     let domain = params.domain ? params.domain.toLowerCase().trim() : null;
 
     if (!domain && email && email.includes('@')) {
-      domain = email.split('@')[1];
+      const ext = email.split('@')[1]?.toLowerCase().trim();
+      if (ext && !COMMON_WEBMAIL_DOMAINS.has(ext)) {
+        domain = ext;
+      }
     }
 
     const reason = params.reason || 'unsubscribed';

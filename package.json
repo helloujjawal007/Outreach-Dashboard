@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test:five-slots": "tsx scripts/test-five-slots.ts",
     "db:migrate": "tsx server/src/db/migrate.ts",
     "db:seed": "tsx server/src/db/seed.ts",
     "keep-alive": "node scripts/keep-alive.js",

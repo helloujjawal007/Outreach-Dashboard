@@ -164,6 +164,28 @@ slotsRouter.post('/test-td-connection', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/slots/test-five-leads
+ * Executes 7-step pipeline test across all 5 slots (Slot 1 to 5) for 5 leads and logs steps to console:
+ *   1. Scraped Site URL
+ *   2. Sent Site URL to Technical Audit dashboard
+ *   3. Received JSON from Technical Dashboard
+ *   4. Transformed in PDF
+ *   5. Email Drafted
+ *   6. PDF Attached
+ *   7. Email Sent
+ */
+slotsRouter.post('/test-five-leads', async (req: Request, res: Response) => {
+  try {
+    const { leadIds } = req.body || {};
+    const result = await fiveSlotSenderService.testFiveSlots({ leadIds });
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[slotsRouter.test-five-leads] Error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Failed to execute 5-slot test' });
+  }
+});
+
+/**
  * GET /api/slots/history
  * Returns slot-wise sending history, all lists with total leads & per-slot breakdown, and exact sent message logs
  */

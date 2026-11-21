@@ -178,7 +178,7 @@ slotsRouter.post('/test-five-leads', async (req: Request, res: Response) => {
   try {
     const { leadIds } = req.body || {};
     const result = await fiveSlotSenderService.testFiveSlots({ leadIds });
-    res.json({ success: true, ...result });
+    res.json({ ...result, success: true });
   } catch (err: any) {
     console.error('[slotsRouter.test-five-leads] Error:', err);
     res.status(500).json({ success: false, error: err?.message || 'Failed to execute 5-slot test' });

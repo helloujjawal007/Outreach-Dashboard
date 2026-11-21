@@ -95,7 +95,7 @@ auditRouter.get('/download/:filename', async (req: Request, res: Response) => {
     // Regenerate on demand if purged after initial send or after container restart
     if (!fs.existsSync(pdfPath)) {
       // Step 1: Direct match by audit_pdf_name or audit_pdf_path
-      let leadRes = await query<{
+      const leadRes = await query<{
         id: string;
         business_name: string;
         website: string | null;

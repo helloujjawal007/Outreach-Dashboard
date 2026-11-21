@@ -1472,7 +1472,7 @@ export class FiveSlotSenderService {
       source: 'technical-audit-dashboard',
     });
 
-    let report: ClientAuditReport;
+    let report!: ClientAuditReport;
     let auditSource: 'technical-audit-dashboard' | 'local-fallback' = 'technical-audit-dashboard';
     let auditHttpStatus = 0;
     let auditId = '';
@@ -1500,7 +1500,7 @@ export class FiveSlotSenderService {
       auditHttpStatus = response.status;
 
       if (response.ok) {
-        const data = await response.json().catch(() => null);
+        const data: any = await response.json().catch(() => null);
         if (data && data.source === 'technical-audit-dashboard' && data.status === 'completed') {
           remoteSuccess = true;
           auditId = data.auditId || `td_${Date.now()}`;
@@ -2553,7 +2553,7 @@ export class FiveSlotSenderService {
                   const auditRes = await this.ensureLeadAuditReady(candidate, slotLabel);
                   if (auditRes.ready) {
                     isAuditComplete = true;
-                    validation = { ready: true };
+                    validation = { ready: true, findings: [], score: 0 };
                   }
                 } catch (auditErr: any) {
                   console.warn(`[FiveSlotSenderService] On-the-fly audit error for lead ${candidate.id}:`, auditErr?.message);

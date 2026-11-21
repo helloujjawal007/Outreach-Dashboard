@@ -83,6 +83,8 @@ export interface ClientAuditReport {
   grade: 'Good' | 'Needs Work' | 'Poor';
   responseTimeMs: number;
   mobileFriendly: boolean;
+  auditId?: string;
+  source?: 'technical-audit-dashboard' | 'local-fallback';
   semrushAudit?: SemrushSiteAuditSummary;
   crawlStatus?: AuditCrawlStatus;
   metrics?: AuditMetrics;
@@ -446,6 +448,8 @@ export class ClientAuditIntelligenceService {
       grade,
       responseTimeMs,
       mobileFriendly,
+      auditId: data.auditId || `td_${Date.now()}`,
+      source: 'technical-audit-dashboard',
       semrushAudit,
       crawlStatus: {
         httpStatus: 200,
@@ -637,6 +641,8 @@ export class ClientAuditIntelligenceService {
         grade,
         responseTimeMs: 8000,
         mobileFriendly: false,
+        auditId: `local_audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        source: 'local-fallback',
         crawlStatus: {
           httpStatus,
           redirectFollowed: false,
@@ -704,6 +710,8 @@ export class ClientAuditIntelligenceService {
         grade: 'Poor',
         responseTimeMs,
         mobileFriendly: true,
+        auditId: `local_audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+        source: 'local-fallback',
         crawlStatus: {
           httpStatus,
           redirectFollowed,
@@ -1336,6 +1344,8 @@ export class ClientAuditIntelligenceService {
       grade,
       responseTimeMs,
       mobileFriendly,
+      auditId: `local_audit_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      source: 'local-fallback',
       semrushAudit,
       crawlStatus,
       metrics,

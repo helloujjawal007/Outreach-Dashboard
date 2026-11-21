@@ -20,7 +20,7 @@ export function startDevMockDaemons(): void {
       // CORS headers
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-audit-secret, x-td-secret');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-audit-secret, x-td-secret');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -40,7 +40,19 @@ export function startDevMockDaemons(): void {
         req.on('end', () => {
           try {
             const body = bodyStr ? JSON.parse(bodyStr) : {};
+            const authHeader = req.headers['authorization'] || '';
             const secret = req.headers['x-audit-secret'] || req.headers['x-td-secret'] || '';
+            const expectedKey = process.env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
+
+            // Verify bearer token or secret if provided
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+              const token = authHeader.slice(7).trim();
+              if (token !== expectedKey && token !== 'td-secret-key-2026') {
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: false, error: 'Unauthorized: Invalid bearer token' }));
+                return;
+              }
+            }
 
             // Handle ping/probe check
             if (body.ping || body.testProbe) {
@@ -55,36 +67,65 @@ export function startDevMockDaemons(): void {
               return;
             }
 
-            // Acknowledge audit request
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+            const targetUrl = body.websiteUrl || body.website || 'example.com';
+            const companyName = body.companyName || 'Your Business';
+            const cleanDomain = targetUrl.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+            const leadIdPart = body.leadId ? String(body.leadId).slice(0, 8) : Math.random().toString(36).substring(2, 8);
+            const auditId = `td_audit_${leadIdPart}_${Date.now().toString(36)}`;
+            const score = 84;
+
+            const completedPayload = {
               ok: true,
               success: true,
-              status: 'queued',
-              message: 'Audit request accepted by TD',
-              leadId: body.leadId,
-            }));
+              status: 'completed',
+              source: 'technical-audit-dashboard',
+              auditId,
+              cached: false,
+              score,
+              metrics: {
+                lcpEstimateMs: 1850,
+                clsScore: 0.03,
+                inpEstimateMs: 110,
+                responseTimeMs: 160,
+                imagesTotal: 22,
+                imagesMissingAlt: 3,
+                hasLocalBusinessSchema: true,
+                hasViewport: true,
+                hasSsl: true,
+                pageWeightKb: 1140,
+              },
+              keyTakeaways: `Desktop Speed (LCP: 1.8s); Core Web Vitals Passing; 3 images missing alt tags; HTTPS enforced`,
+              criticalIssues: [
+                `Desktop Speed Performance Score: ${score}/100 (LCP 1.8s)`,
+                `3 images missing descriptive alt tags for accessibility and image search`,
+                `HSTS Security Header recommended to prevent protocol downgrade attacks`,
+              ],
+              recommendations: [
+                {
+                  priority: 'high',
+                  title: 'Add descriptive alt attributes to high-traffic images',
+                  detail: 'Adding keyword-relevant alt attributes improves image search discoverability.',
+                  odsSolution: 'Automatic image optimization & accessibility tagging',
+                },
+                {
+                  priority: 'medium',
+                  title: 'Configure HTTP Strict Transport Security (HSTS)',
+                  detail: 'Enforce HTTPS with max-age=31536000 and includeSubDomains.',
+                  odsSolution: 'Edge security headers hardening',
+                },
+              ],
+              summary: `Technical SEO & Speed Audit for ${companyName} (${cleanDomain})`,
+              auditedAt: new Date().toISOString(),
+            };
 
-            // If callbackUrl provided, asynchronously send realistic audit findings
+            // Respond synchronously with completed payload
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(completedPayload));
+
+            // If callbackUrl provided, also dispatch asynchronously for webhook subscribers
             if (body.callbackUrl && body.leadId) {
               setTimeout(async () => {
                 try {
-                  const auditPayload = {
-                    leadId: body.leadId,
-                    website: body.website || 'example.com',
-                    status: 'completed',
-                    auditReport: {
-                      score: 42,
-                      performanceScore: 48,
-                      seoScore: 55,
-                      criticalIssues: [
-                        'High-Performance Website Development & Core Web Vitals Optimization: LCP is 4.8s (exceeds recommended 2.5s)',
-                        'Missing SSL/TLS HSTS security header configuration',
-                        'Mobile layout viewport shift on navigation menu',
-                      ],
-                    },
-                  };
-
                   await fetch(body.callbackUrl, {
                     method: 'POST',
                     headers: {
@@ -92,12 +133,18 @@ export function startDevMockDaemons(): void {
                       'x-audit-secret': (secret as string) || 'td-secret-key-2026',
                       'x-td-secret': (secret as string) || 'td-secret-key-2026',
                     },
-                    body: JSON.stringify(auditPayload),
+                    body: JSON.stringify({
+                      leadId: body.leadId,
+                      website: targetUrl,
+                      status: 'completed',
+                      source: 'technical-audit-dashboard',
+                      auditReport: completedPayload,
+                    }),
                   });
                 } catch (cbErr: any) {
-                  console.warn('[TD Dev Daemon] Callback dispatch notice:', cbErr?.message);
+                  // Ignore
                 }
-              }, 400);
+              }, 200);
             }
           } catch (err: any) {
             res.writeHead(400, { 'Content-Type': 'application/json' });

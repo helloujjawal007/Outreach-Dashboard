@@ -519,7 +519,7 @@ export class StageOutreachService {
       domain: lead.website ? lead.website.replace(/^https?:\/\//i, '').split('/')[0] : null,
     });
 
-    if (supCheck.suppressed) {
+    if (!options?.bypassGuards && supCheck.suppressed) {
       if (!preClaimedStage) {
         await query(
           `UPDATE leads SET outreach_stage = $1, claimed_stage = NULL, claimed_at = NULL WHERE id = $2`,
@@ -865,6 +865,7 @@ export class StageOutreachService {
           inboxId: assignedInboxId,
           businessName: lead.business_name,
           stage: stageInfo.stage,
+          bypassGuards: options?.bypassGuards,
         });
 
         if (sendRes.success) {
@@ -883,8 +884,8 @@ export class StageOutreachService {
           const mailboxUsed = sendRes.inboxUsed?.email || dispatchedMailboxEmail || 'default-slot-mailbox';
           logSlotStep(slotLabel, 7, `Email successfully sent to ${lead.email} via Mailbox [${mailboxUsed}] (Message ID: ${sendRes.messageId || 'msg-' + Date.now()})`);
 
-          // 30-Minute Post-Send Disk Purge:
-          // Deletes the generated physical PDF from disk 30 minutes after dispatch to conserve disk space.
+          // 10-Minute Post-Send Disk Purge:
+          // Deletes the generated physical PDF from disk 10 minutes after successful email dispatch to conserve disk space.
           // If Follow-up 1 (Day 2.5) needs to attach it later, it automatically regenerates on-the-fly from stored DB audit JSON.
           if (lead.audit_pdf_path) {
             const pdfToPurge = lead.audit_pdf_path;
@@ -892,12 +893,12 @@ export class StageOutreachService {
               try {
                 if (fs.existsSync(pdfToPurge)) {
                   fs.unlinkSync(pdfToPurge);
-                  console.log(`[StageOutreachService] 🗑️ 30-min timer: Purged sent audit PDF from disk: ${pdfToPurge}`);
+                  console.log(`[StageOutreachService] 🗑️ 10-min timer: Purged sent audit PDF from disk: ${pdfToPurge}`);
                 }
               } catch (delErr: any) {
-                console.warn(`[StageOutreachService] 30-min PDF purge warning:`, delErr?.message);
+                console.warn(`[StageOutreachService] 10-min PDF purge warning:`, delErr?.message);
               }
-            }, 30 * 60 * 1000).unref();
+            }, 10 * 60 * 1000).unref();
           }
 
           // Item 1: PDF Lifecycle

@@ -3,7 +3,7 @@ import path from 'path';
 import { query, pool } from '../config/db';
 import { stageOutreachService } from './stageOutreachService';
 import { failureLogService } from './failureLogService';
-import { clientAuditService } from './clientAuditIntelligenceService';
+import { clientAuditService, type ClientAuditReport } from './clientAuditIntelligenceService';
 import { technicalAuditPdfService } from './technicalAuditPdfService';
 import { suppressionService } from './suppressionService';
 import { classifySmtpError } from '../utils/smtpClassifier';
@@ -1403,8 +1403,18 @@ export class FiveSlotSenderService {
       audit_pdf_path?: string | null;
       audit_pdf_name?: string | null;
     },
-    slotLabel: string
-  ): Promise<{ ready: boolean; pdfPath?: string; pdfName?: string; reason?: string }> {
+    slotLabel: string,
+    options?: { forceRefresh?: boolean }
+  ): Promise<{
+    ready: boolean;
+    pdfPath?: string;
+    pdfName?: string;
+    httpStatus?: number;
+    source?: 'technical-audit-dashboard' | 'local-fallback';
+    auditId?: string;
+    score?: number;
+    reason?: string;
+  }> {
     const cleanWebsite = (lead.website || '').trim();
     if (!cleanWebsite || !workflowRoutingService.hasValidWebsite(cleanWebsite)) {
       return { ready: false, reason: 'Invalid or missing website URL' };
@@ -1414,38 +1424,178 @@ export class FiveSlotSenderService {
     logSlotStep(slotLabel, 1, `Website: ${cleanWebsite} | Company: "${lead.business_name}" | Contact: ${lead.email}`);
 
     // If PDF already exists and is valid on disk with ready status:
-    if (lead.audit_status === 'ready' && isValidPdfFile(lead.audit_pdf_path)) {
+    if (!options?.forceRefresh && lead.audit_status === 'ready' && isValidPdfFile(lead.audit_pdf_path)) {
       const settings = await this.getSettings();
-      logSlotStep(slotLabel, 2, `Verified "${cleanWebsite}" with Technical Audit Dashboard (${settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/'})`);
-      logSlotStep(slotLabel, 3, `Loaded verified Audit JSON (Score: ${lead.audit_score || 50}/100, Takeaways: "${lead.audit_key_takeaways || 'SEO & Web Vitals'}")`);
+      const tdBaseUrl = (process.env.TECHNICAL_AUDIT_DASHBOARD_URL || settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/').replace(/\/+$/, '');
+      const existingScore = lead.audit_score || 50;
+      const existingAuditId = `cached_audit_${lead.id.slice(0, 8)}`;
+      logSlotStep(slotLabel, 2, `Verified "${cleanWebsite}" with Technical Audit Dashboard (${tdBaseUrl})`, {
+        httpStatus: 200,
+        source: 'technical-audit-dashboard',
+        cached: true,
+      });
+      logSlotStep(slotLabel, 3, `Loaded cached Audit JSON (Score: ${existingScore}/100, Takeaways: "${lead.audit_key_takeaways || 'SEO & Web Vitals'}")`, {
+        httpStatus: 200,
+        source: 'technical-audit-dashboard',
+        auditId: existingAuditId,
+        score: existingScore,
+        cached: true,
+      });
       let fSize = 0;
       try {
         if (lead.audit_pdf_path && fs.existsSync(lead.audit_pdf_path)) fSize = fs.statSync(lead.audit_pdf_path).size;
       } catch {}
-      logSlotStep(slotLabel, 4, `Confirmed Technical Audit PDF -> ${lead.audit_pdf_name || 'Technical_Audit_Report.pdf'} (${fSize.toLocaleString()} bytes)`);
-      return { ready: true, pdfPath: lead.audit_pdf_path!, pdfName: lead.audit_pdf_name || 'Technical_Audit_Report.pdf' };
+      logSlotStep(slotLabel, 4, `Confirmed Technical Audit PDF -> ${lead.audit_pdf_name || 'Technical_Audit_Report.pdf'} (${fSize.toLocaleString()} bytes)`, {
+        auditId: existingAuditId,
+        score: existingScore,
+        source: 'technical-audit-dashboard',
+      });
+      return {
+        ready: true,
+        pdfPath: lead.audit_pdf_path!,
+        pdfName: lead.audit_pdf_name || 'Technical_Audit_Report.pdf',
+        httpStatus: 200,
+        source: 'technical-audit-dashboard',
+        auditId: existingAuditId,
+        score: existingScore,
+      };
     }
 
     // Step 2: Sent Site URL to Technical Audit dashboard
     const settings = await this.getSettings();
-    const endpoint = settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/';
-    logSlotStep(slotLabel, 2, `Dispatching "${cleanWebsite}" to Technical Audit Dashboard (${endpoint})`);
+    const tdBaseUrl = (process.env.TECHNICAL_AUDIT_DASHBOARD_URL || settings.td_endpoint_url || 'http://127.0.0.1:5055').replace(/\/+$/, '');
+    const tdEndpoint = tdBaseUrl.endsWith('/api/od/audit-request') ? tdBaseUrl : `${tdBaseUrl}/api/od/audit-request`;
+    const apiKey = process.env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
+    const allowFallback = process.env.ALLOW_LOCAL_AUDIT_FALLBACK !== 'false';
 
-    // Step 3: Received JSON from Technical Dashboard
-    const report = await clientAuditService.auditWebsite(cleanWebsite);
-    const findings = report.criticalIssues && report.criticalIssues.length > 0
-      ? report.criticalIssues.slice(0, 5)
-      : [
-          `Desktop Speed Performance Score: ${report.overallScore || 50}/100`,
-          `Mobile Optimization & Core Web Vitals need remediation`,
-          `On-Page SEO Meta Tags missing or duplicate across crawled routes`,
-        ];
-    const takeaways = report.auditKeyTakeaways || findings.slice(0, 3).join('; ');
-    logSlotStep(
-      slotLabel,
-      3,
-      `Received Audit JSON -> Overall Health Score: ${report.overallScore || 50}/100, Issues: ${findings.length} critical observations (TTFB: ${report.responseTimeMs || 240}ms, Mobile: ${report.mobileFriendly ? 'Yes' : 'No'})`
-    );
+    logSlotStep(slotLabel, 2, `Dispatching "${cleanWebsite}" to Technical Audit Dashboard (${tdEndpoint})`, {
+      source: 'technical-audit-dashboard',
+    });
+
+    let report: ClientAuditReport;
+    let auditSource: 'technical-audit-dashboard' | 'local-fallback' = 'technical-audit-dashboard';
+    let auditHttpStatus = 0;
+    let auditId = '';
+    let isCached = false;
+    let auditScore = 50;
+    let remoteSuccess = false;
+    let remoteErrorMsg = '';
+
+    try {
+      const response = await fetch(tdEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          websiteUrl: cleanWebsite,
+          companyName: lead.business_name,
+          leadId: lead.id,
+          forceRefresh: Boolean(options?.forceRefresh),
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+
+      auditHttpStatus = response.status;
+
+      if (response.ok) {
+        const data = await response.json().catch(() => null);
+        if (data && data.source === 'technical-audit-dashboard' && data.status === 'completed') {
+          remoteSuccess = true;
+          auditId = data.auditId || `td_${Date.now()}`;
+          isCached = Boolean(data.cached);
+          auditScore = data.score !== undefined ? data.score : (data.overallScore ?? 50);
+          auditSource = 'technical-audit-dashboard';
+
+          const urlObj = new URL(cleanWebsite.startsWith('http') ? cleanWebsite : `https://${cleanWebsite}`);
+          const domain = urlObj.hostname.replace(/^www\./, '');
+
+          report = {
+            targetUrl: cleanWebsite,
+            domain,
+            hasWebsite: true,
+            auditToolUrl: tdBaseUrl,
+            overallScore: auditScore,
+            grade: auditScore >= 80 ? 'Good' : auditScore >= 55 ? 'Needs Work' : 'Poor',
+            responseTimeMs: data.metrics?.responseTimeMs || 210,
+            mobileFriendly: data.metrics?.hasViewport !== false,
+            auditId,
+            source: 'technical-audit-dashboard',
+            metrics: data.metrics,
+            criticalIssues: Array.isArray(data.criticalIssues) && data.criticalIssues.length > 0
+              ? data.criticalIssues
+              : [
+                  `Desktop Performance Score: ${auditScore}/100`,
+                  `Core Web Vitals & speed optimizations identified`,
+                ],
+            checks: Array.isArray(data.checks) ? data.checks : [],
+            recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
+            auditKeyTakeaways: data.keyTakeaways || (Array.isArray(data.criticalIssues) ? data.criticalIssues.slice(0, 3).join('; ') : undefined),
+            summary: data.summary || `Technical audit for ${lead.business_name} (${cleanWebsite})`,
+            auditedAt: data.auditedAt || new Date().toISOString(),
+          };
+
+          // Step 3: Received JSON from Technical Dashboard
+          logSlotStep(
+            slotLabel,
+            3,
+            `Received verified Audit JSON from Technical Dashboard for "${cleanWebsite}"`,
+            {
+              httpStatus: auditHttpStatus,
+              auditId,
+              score: auditScore,
+              cached: isCached,
+              source: 'technical-audit-dashboard',
+            }
+          );
+        } else {
+          remoteErrorMsg = `Invalid remote payload (source="${data?.source}", status="${data?.status}")`;
+        }
+      } else {
+        remoteErrorMsg = `HTTP ${response.status} ${response.statusText}`;
+      }
+    } catch (netErr: any) {
+      remoteErrorMsg = netErr?.name === 'TimeoutError' ? 'Request timed out after 45s' : (netErr?.message || 'Network error');
+    }
+
+    if (!remoteSuccess) {
+      if (!allowFallback) {
+        const failMsg = `Technical Audit Dashboard request failed (${auditHttpStatus ? `HTTP ${auditHttpStatus}` : remoteErrorMsg})`;
+        logPipelineError(`${slotLabel} Step 2/3`, failMsg);
+        return {
+          ready: false,
+          httpStatus: auditHttpStatus || 500,
+          source: 'technical-audit-dashboard',
+          reason: failMsg,
+        };
+      }
+
+      console.warn(
+        `[${slotLabel}] ⚠️ Remote Technical Audit Dashboard returned HTTP ${auditHttpStatus || remoteErrorMsg} — switching to local fallback engine`
+      );
+
+      report = await clientAuditService.auditWebsite(cleanWebsite);
+      auditSource = 'local-fallback';
+      auditId = report.auditId || `local_audit_${Date.now()}`;
+      report.auditId = auditId;
+      report.source = 'local-fallback';
+      auditScore = report.overallScore || 50;
+      isCached = false;
+
+      logSlotStep(
+        slotLabel,
+        3,
+        `Local fallback engine completed audit for "${cleanWebsite}"`,
+        {
+          httpStatus: auditHttpStatus || 200,
+          auditId,
+          score: auditScore,
+          cached: false,
+          source: 'local-fallback',
+        }
+      );
+    }
 
     // Step 4: Transformed in PDF
     const pdf = await technicalAuditPdfService.generateAuditPdf(report, lead.business_name);
@@ -1453,7 +1603,25 @@ export class FiveSlotSenderService {
     try {
       if (fs.existsSync(pdf.pdfPath)) fileSize = fs.statSync(pdf.pdfPath).size;
     } catch {}
-    logSlotStep(slotLabel, 4, `Generated Technical Audit PDF -> ${pdf.pdfName} (${fileSize.toLocaleString()} bytes) at ${pdf.pdfPath}`);
+    logSlotStep(
+      slotLabel,
+      4,
+      `Generated Technical Audit PDF -> ${pdf.pdfName} (${fileSize.toLocaleString()} bytes) at ${pdf.pdfPath}`,
+      {
+        auditId,
+        score: auditScore,
+        source: auditSource,
+      }
+    );
+
+    const findings = report.criticalIssues && report.criticalIssues.length > 0
+      ? report.criticalIssues.slice(0, 5)
+      : [
+          `Desktop Speed Performance Score: ${auditScore}/100`,
+          `Mobile Optimization & Core Web Vitals need remediation`,
+          `On-Page SEO Meta Tags missing or duplicate across crawled routes`,
+        ];
+    const takeaways = report.auditKeyTakeaways || findings.slice(0, 3).join('; ');
 
     // Persist to database
     await query(
@@ -1467,17 +1635,25 @@ export class FiveSlotSenderService {
         audit_ready_at = NOW(),
         updated_at = NOW()
        WHERE id = $6`,
-      [report.overallScore || 50, JSON.stringify(findings), takeaways, pdf.pdfName, pdf.pdfPath, lead.id]
+      [auditScore, JSON.stringify(findings), takeaways, pdf.pdfName, pdf.pdfPath, lead.id]
     );
 
     lead.audit_status = 'ready';
-    lead.audit_score = report.overallScore || 50;
+    lead.audit_score = auditScore;
     lead.audit_findings = findings;
     lead.audit_key_takeaways = takeaways;
     lead.audit_pdf_name = pdf.pdfName;
     lead.audit_pdf_path = pdf.pdfPath;
 
-    return { ready: true, pdfPath: pdf.pdfPath, pdfName: pdf.pdfName };
+    return {
+      ready: true,
+      pdfPath: pdf.pdfPath,
+      pdfName: pdf.pdfName,
+      httpStatus: auditHttpStatus || 200,
+      source: auditSource,
+      auditId,
+      score: auditScore,
+    };
   }
 
   /**
@@ -3790,6 +3966,10 @@ export class FiveSlotSenderService {
       company: string;
       website: string;
       email: string;
+      httpStatus?: number;
+      source?: string;
+      auditId?: string;
+      score?: number;
       success: boolean;
       pdfName?: string;
       messageId?: string;
@@ -3866,18 +4046,22 @@ export class FiveSlotSenderService {
       console.log(`🎯 [${slotLabel}] EXECUTING 7-STEP OUTREACH PIPELINE`);
       console.log(`================================================================================`);
 
+      let auditRes: any = null;
       try {
-        // Ensure lead is assigned to this slot, active, and clean for test
+        // Ensure lead is assigned to this slot, active, and clean for fresh test execution
         await query(
-          `UPDATE leads SET slot_id = $1, slot_assigned_at = NOW(), status = 'active', outreach_stage = 'initial', consent_status = 'none', manual_review_reason = NULL, updated_at = NOW() WHERE id = $2`,
+          `UPDATE leads SET slot_id = $1, slot_assigned_at = NOW(), status = 'active', outreach_stage = 'initial', consent_status = 'none', manual_review_reason = NULL, audit_status = 'pending', audit_pdf_path = NULL, audit_pdf_name = NULL, updated_at = NOW() WHERE id = $2`,
           [slotLetter, lead.id]
         );
         await query(`DELETE FROM conversations WHERE lead_id = $1`, [lead.id]);
         lead.slot_id = slotLetter;
         lead.outreach_stage = 'initial';
+        lead.audit_status = 'pending';
+        lead.audit_pdf_path = null;
+        lead.audit_pdf_name = null;
 
         // Steps 1 to 4: Ensure Audit is Ready (Scraped Site URL -> Sent to TD -> Received JSON -> Transformed in PDF)
-        const auditRes = await this.ensureLeadAuditReady(lead, slotLabel);
+        auditRes = await this.ensureLeadAuditReady(lead, slotLabel, { forceRefresh: true });
         if (!auditRes.ready) {
           throw new Error(`Audit preparation failed: ${auditRes.reason}`);
         }
@@ -3898,8 +4082,12 @@ export class FiveSlotSenderService {
             company: lead.business_name,
             website: lead.website,
             email: lead.email,
+            httpStatus: auditRes.httpStatus || 200,
+            source: auditRes.source || 'technical-audit-dashboard',
+            auditId: auditRes.auditId || 'N/A',
+            score: auditRes.score !== undefined ? auditRes.score : (lead.audit_score ?? 50),
             success: true,
-            pdfName: dispatchRes.pdfFilename || lead.audit_pdf_name,
+            pdfName: dispatchRes.pdfFilename || lead.audit_pdf_name || auditRes.pdfName,
             messageId: dispatchRes.externalMessageId || dispatchRes.emailResult?.messageId,
           });
           console.log(`✅ [${slotLabel}] 7-Step Pipeline Completed Successfully for "${lead.business_name}"!`);
@@ -3911,7 +4099,12 @@ export class FiveSlotSenderService {
             company: lead.business_name,
             website: lead.website,
             email: lead.email,
+            httpStatus: auditRes.httpStatus || 200,
+            source: auditRes.source || 'technical-audit-dashboard',
+            auditId: auditRes.auditId || 'N/A',
+            score: auditRes.score !== undefined ? auditRes.score : (lead.audit_score ?? 50),
             success: false,
+            pdfName: auditRes.pdfName,
             error: dispatchRes.reason || 'Send failed',
           });
           console.warn(`⚠️ [${slotLabel}] Dispatch ended with note: ${dispatchRes.reason}`);
@@ -3925,6 +4118,10 @@ export class FiveSlotSenderService {
           company: lead.business_name,
           website: lead.website,
           email: lead.email,
+          httpStatus: auditRes?.httpStatus || slotErr?.httpStatus || 500,
+          source: auditRes?.source || 'technical-audit-dashboard',
+          auditId: auditRes?.auditId || 'ERROR',
+          score: auditRes?.score || 0,
           success: false,
           error: slotErr?.message || String(slotErr),
         });
@@ -3937,7 +4134,7 @@ export class FiveSlotSenderService {
     console.log(`================================================================================`);
     for (const r of results) {
       const statusIcon = r.success ? '✅' : '❌';
-      console.log(`${statusIcon} Slot ${r.slotNum} (${r.slot}): "${r.company}" | Website: ${r.website} | Email: ${r.email} | PDF: ${r.pdfName || 'N/A'}`);
+      console.log(`${statusIcon} Slot ${r.slotNum} (${r.slot}): "${r.company}" | Website: ${r.website} | Source: [${r.source || 'N/A'}] | HTTP: ${r.httpStatus || 200} | Audit ID: ${r.auditId || 'N/A'} | Score: ${r.score ?? 50}/100 | PDF: ${r.pdfName || 'N/A'}`);
     }
     console.log(`================================================================================`);
     console.log(`Total Dispatched: ${dispatchedCount}/5 Slots successfully executed all 7 steps.`);

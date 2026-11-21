@@ -393,6 +393,29 @@ export class TechnicalAuditPdfService {
       });
     }
 
+    if (metrics.clsScore > 0) {
+      const isShiftHigh = metrics.clsScore > 0.1;
+      healthRows.push({
+        area: 'Layout Visual Stability (CLS)',
+        result: `${metrics.clsScore.toFixed(2)}`,
+        goal: 'Under 0.10',
+        statusLabel: isShiftHigh ? 'Needs Fix' : 'Good',
+        statusColor: isShiftHigh ? '#b91c1c' : '#047857',
+        statusBg: isShiftHigh ? '#fef2f2' : '#ecfdf5',
+      });
+    }
+
+    if (metrics.imagesMissingAlt > 0) {
+      healthRows.push({
+        area: 'Image Alt Text Accessibility',
+        result: `${metrics.imagesMissingAlt} image${metrics.imagesMissingAlt === 1 ? '' : 's'} missing alt tags`,
+        goal: 'All images tagged',
+        statusLabel: 'Quick Win',
+        statusColor: '#b45309',
+        statusBg: '#fffbeb',
+      });
+    }
+
     healthRows.push({
       area: 'Mobile Screen Compatibility',
       result: report.mobileFriendly ? 'Mobile-friendly layout detected' : 'Needs mobile viewport fix',
@@ -571,6 +594,7 @@ export class TechnicalAuditPdfService {
     </div>
     <div style="text-align: right;">
       <div style="font-size: 10.5px; font-weight: 600; color: #334155;">Prepared: ${this.escapeHtml(formattedDate)}</div>
+      ${report.auditId ? `<div style="font-size: 9.5px; font-weight: 700; color: #0d9488; margin-top: 2px;">Audit Ref: ${this.escapeHtml(report.auditId)}</div>` : ''}
       <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">Confidential Report for ${this.escapeHtml(cleanBiz)}</div>
     </div>
   </div>
@@ -583,6 +607,7 @@ export class TechnicalAuditPdfService {
       <p style="margin: 8px 0 0 0; font-size: 10.5px; color: #334155; line-height: 1.5;">
         ${overviewSentence} ${impactSummary}
       </p>
+      ${report.auditKeyTakeaways ? `<div style="margin-top: 8px; font-size: 10px; color: #0f766e; background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 6px; padding: 5px 8px; font-weight: 600;">⚡ Key Findings: ${this.escapeHtml(report.auditKeyTakeaways)}</div>` : ''}
     </div>
     <div style="text-align: center; background: ${scoreBand.bg}; border: 1px solid ${scoreBand.border}; border-radius: 8px; padding: 10px 8px;">
       <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; color: #475569;">Website Health Score</div>
@@ -629,7 +654,7 @@ export class TechnicalAuditPdfService {
 
   <div class="footer">
     <div><strong>${this.escapeHtml(SENDER_CONFIG.company)}</strong> • ${this.escapeHtml(SENDER_CONFIG.website)} • ${this.escapeHtml(SENDER_CONFIG.email)}</div>
-    <div>Prepared for ${this.escapeHtml(cleanBiz)}</div>
+    <div>${report.auditId ? `<span style="font-weight: 600; color: #0d9488;">Audit ID: ${this.escapeHtml(report.auditId)}</span> • ` : ''}Prepared for ${this.escapeHtml(cleanBiz)}</div>
   </div>
 
 </body>

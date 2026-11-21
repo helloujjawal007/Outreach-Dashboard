@@ -267,13 +267,13 @@ async function run28DayRetentionCleanup() {
   }
 }
 
-// Automatic 30-Minute Post-Send PDF Storage Purge Routine
-function run30MinAuditPdfCleanup() {
+// Automatic 10-Minute Post-Send PDF Storage Purge Routine
+function run10MinAuditPdfCleanup() {
   try {
     const auditsDir = path.resolve(process.cwd(), 'server', 'data', 'audits');
     if (!fs.existsSync(auditsDir)) return;
     const now = Date.now();
-    const maxAgeMs = 30 * 60 * 1000; // 30 minutes
+    const maxAgeMs = 10 * 60 * 1000; // 10 minutes
     const files = fs.readdirSync(auditsDir);
     let purgedCount = 0;
     for (const file of files) {
@@ -289,10 +289,10 @@ function run30MinAuditPdfCleanup() {
       }
     }
     if (purgedCount > 0) {
-      console.log(`[Storage Cleanup] 🗑️ Purged ${purgedCount} sent audit PDF(s) older than 30 minutes.`);
+      console.log(`[Storage Cleanup] 🗑️ Purged ${purgedCount} sent audit PDF(s) older than 10 minutes.`);
     }
   } catch (err: any) {
-    console.warn('[Storage Cleanup] 30-minute PDF cleanup notice:', err?.message);
+    console.warn('[Storage Cleanup] 10-minute PDF cleanup notice:', err?.message);
   }
 }
 
@@ -353,9 +353,9 @@ async function startServer() {
   await run28DayRetentionCleanup();
   const retentionTimer = setInterval(run28DayRetentionCleanup, 24 * 60 * 60 * 1000);
 
-  // Run 30-minute PDF disk storage purge on startup and every 10 minutes
-  run30MinAuditPdfCleanup();
-  const pdfCleanupTimer = setInterval(run30MinAuditPdfCleanup, 10 * 60 * 1000);
+  // Run 10-minute PDF disk storage purge on startup and every 5 minutes
+  run10MinAuditPdfCleanup();
+  const pdfCleanupTimer = setInterval(run10MinAuditPdfCleanup, 5 * 60 * 1000);
 
   // 1. Email Channel: Automated Gmail IMAP polling for inbound replies (every 30s)
   emailInboundService.startPolling(30000);

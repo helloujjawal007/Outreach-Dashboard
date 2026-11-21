@@ -102,6 +102,14 @@ export function clearPipelineThrottle(key: string): void {
   throttleState.delete(key);
 }
 
+export interface SlotStepMeta {
+  httpStatus?: number;
+  auditId?: string;
+  cached?: boolean;
+  score?: number;
+  source?: 'technical-audit-dashboard' | 'local-fallback';
+}
+
 /**
  * Emits a standardized 7-step pipeline console log for each of the 5 slots:
  * Step 1: Scraped Site URL
@@ -115,7 +123,8 @@ export function clearPipelineThrottle(key: string): void {
 export function logSlotStep(
   slotLabel: string, // e.g. "Slot 1 (A)"
   step: 1 | 2 | 3 | 4 | 5 | 6 | 7,
-  details: string
+  details: string,
+  meta?: SlotStepMeta
 ): void {
   const stepTitles: Record<number, string> = {
     1: 'Scraped Site URL',
@@ -137,7 +146,21 @@ export function logSlotStep(
   };
   const title = stepTitles[step] || `Step ${step}`;
   const icon = stepIcons[step] || '🔹';
-  console.log(`[${slotLabel}] [Step ${step}/7 - ${title}] ${icon} ${details}`);
+
+  let metaString = '';
+  if (meta) {
+    const parts: string[] = [];
+    if (meta.httpStatus !== undefined) parts.push(`HTTP: ${meta.httpStatus}`);
+    if (meta.source) parts.push(`Source: [${meta.source}]`);
+    if (meta.auditId) parts.push(`Audit ID: ${meta.auditId}`);
+    if (meta.score !== undefined) parts.push(`Score: ${meta.score}/100`);
+    if (meta.cached !== undefined) parts.push(`Cached: ${meta.cached ? 'true' : 'false'}`);
+    if (parts.length > 0) {
+      metaString = ` | ${parts.join(' | ')}`;
+    }
+  }
+
+  console.log(`[${slotLabel}] [Step ${step}/7 - ${title}] ${icon} ${details}${metaString}`);
 }
 
 /**

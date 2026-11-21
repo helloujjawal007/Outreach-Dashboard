@@ -107,7 +107,11 @@ export function getLeadAuditPdfUrl(leadId: string, pdfName?: string | null): str
 const eTagCache = new Map<string, { etag: string; data: any }>();
 const MAX_ETAG_CACHE_ENTRIES = 100;
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export interface ApiRequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+async function request<T>(path: string, options?: ApiRequestOptions): Promise<T> {
   const token = getStoredToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -129,10 +133,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     eTagCache.clear();
   }
 
+  const timeoutMs = options?.timeoutMs || 35000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => {
+    controller.abort(new DOMException(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds`, 'TimeoutError'));
+  }, timeoutMs);
+
   if (options?.signal) {
-    options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    options.signal.addEventListener('abort', () => {
+      controller.abort(options.signal?.reason || new DOMException('Operation aborted by user', 'AbortError'));
+    }, { once: true });
   }
 
   let res: Response;
@@ -143,6 +153,16 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       signal: controller.signal,
       headers,
     });
+  } catch (fetchErr: any) {
+    if (controller.signal.aborted) {
+      const reasonMsg = controller.signal.reason instanceof Error
+        ? controller.signal.reason.message
+        : typeof controller.signal.reason === 'string'
+        ? controller.signal.reason
+        : (controller.signal.reason as any)?.message;
+      throw new Error(reasonMsg || `Request timed out after ${Math.round(timeoutMs / 1000)} seconds`);
+    }
+    throw fetchErr;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -789,6 +809,7 @@ export const api = {
       };
     }>(`/leads/${leadId}/scrape-location`, {
       method: 'POST',
+      timeoutMs: 60000,
     });
     return {
       success: data.success,
@@ -1788,9 +1809,12 @@ export const api = {
     leads: ScrapedLead[];
     query: any;
   }> {
+    // Lead scraping crawls Google Maps listings and multiple business websites.
+    // Allow up to 180 seconds so large batches or slower sites do not get aborted.
     return request('/scraper/search', {
       method: 'POST',
       body: JSON.stringify(params),
+      timeoutMs: 180000,
     });
   },
 
@@ -1798,6 +1822,7 @@ export const api = {
     return request('/scraper/import', {
       method: 'POST',
       body: JSON.stringify(params),
+      timeoutMs: 60000,
     });
   },
 

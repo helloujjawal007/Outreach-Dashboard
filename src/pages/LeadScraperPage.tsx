@@ -584,7 +584,12 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       }
     } catch (err: any) {
       console.error('[LeadScraperPage] Scrape error:', err);
-      setError(err.message || 'Failed to search Google Business Profiles');
+      const msg = String(err?.message || '');
+      if (msg.includes('aborted') || msg.includes('timed out') || msg.includes('TimeoutError')) {
+        setError('Scraping took longer than expected due to slow or unresponsive business websites. Try searching with a smaller batch limit or a specific city.');
+      } else {
+        setError(msg || 'Failed to search Google Business Profiles');
+      }
     } finally {
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);

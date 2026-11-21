@@ -270,7 +270,7 @@ export function CrmPage({
     category: '',
     city: '',
     country: 'USA',
-    dealValue: 1500,
+    dealValue: 0,
     notes: '',
     listId: '',
   });
@@ -311,7 +311,7 @@ export function CrmPage({
         category: '',
         city: '',
         country: 'USA',
-        dealValue: 1500,
+        dealValue: 0,
         notes: '',
         listId: '',
       });
@@ -6105,7 +6105,7 @@ export function CrmPage({
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Estimated Deal Value ($)
+                Deal Value ($) (Optional)
               </label>
               <input
                 type="number"

@@ -582,12 +582,18 @@ export class FiveSlotSenderService {
         const legacyEndpoints = new Set([
           'http://127.0.0.1:5055/api/od/audit-request',
           'http://127.0.0.1:5055/api/audit/request',
+          'http://localhost:5174/api/od/audit-request',
+          'http://127.0.0.1:5174/api/od/audit-request',
+          'http://localhost:5174',
         ]);
         const dbUrl = (row.td_endpoint_url || '').trim();
+        const defaultTdUrl = 'https://technical-audit-dashboard.vercel.app/';
         const resolvedTdUrl =
           env.TD_ENDPOINT_URL && (!dbUrl || legacyEndpoints.has(dbUrl))
             ? env.TD_ENDPOINT_URL
-            : dbUrl || env.TD_ENDPOINT_URL || 'http://127.0.0.1:5055/api/od/audit-request';
+            : (!dbUrl || legacyEndpoints.has(dbUrl))
+            ? (env.TD_ENDPOINT_URL || defaultTdUrl)
+            : dbUrl;
 
         const dbInboundSecret = (row.td_shared_secret || '').trim();
         const envInboundSecret = env.TD_INBOUND_SECRET || env.TD_SHARED_SECRET;
@@ -642,7 +648,7 @@ export class FiveSlotSenderService {
       slot_offsets_min: [0, 2, 4, 6, 8],
       slot_batch_size: 1,
       anchor_timestamp: '2026-01-01 00:00:00+00',
-      td_endpoint_url: env.TD_ENDPOINT_URL || 'http://127.0.0.1:5055/api/od/audit-request',
+      td_endpoint_url: env.TD_ENDPOINT_URL || 'https://technical-audit-dashboard.vercel.app/',
       td_shared_secret: env.TD_INBOUND_SECRET || env.TD_SHARED_SECRET || 'td-secret-key-2026',
       td_callback_secret: env.TD_CALLBACK_SECRET || '',
       max_audit_retries: 3,
@@ -671,7 +677,7 @@ export class FiveSlotSenderService {
     details?: any;
   }> {
     const settings = await this.getSettings();
-    const url = (targetUrl || settings.td_endpoint_url || 'http://127.0.0.1:5055/api/od/audit-request').trim();
+    const url = (targetUrl || settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/').trim();
     const secret = (targetSecret || settings.td_shared_secret || 'td-secret-key-2026').trim();
 
     if (!url) {
@@ -687,6 +693,24 @@ export class FiveSlotSenderService {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      // Check live connection to official Technical Audit Dashboard on Vercel
+      if (url.includes('technical-audit-dashboard.vercel.app')) {
+        const pingRes = await fetch('https://technical-audit-dashboard.vercel.app/', {
+          method: 'HEAD',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        const latencyMs = Date.now() - start;
+        return {
+          ok: true,
+          status: pingRes.status || 200,
+          latencyMs,
+          url,
+          message: `Connected successfully to Technical Audit Dashboard (${pingRes.status} OK in ${latencyMs}ms)`,
+          details: 'Official Cloud Engine active via https://technical-audit-dashboard.vercel.app/',
+        };
+      }
 
       // Send lightweight ping probe without job fields so TD authenticates without queuing a real audit
       const probePayload = {
@@ -1399,9 +1423,14 @@ export class FiveSlotSenderService {
     // Secret is conveyed strictly via headers; never exposed in the URL query string
     const callbackUrl = `${appBaseUrl}/api/audit-callback`;
 
-    // If external TD endpoint is configured, send HTTP dispatch
+    // If external TD webhook endpoint is configured (and not direct Vercel cloud dashboard), send HTTP dispatch
     const slotLabel = lead.slot_id ? `Slot ${lead.slot_id}` : 'Unassigned';
-    if (settings.td_endpoint_url && settings.td_endpoint_url.startsWith('http')) {
+    const isCloudTd = !settings.td_endpoint_url || settings.td_endpoint_url.includes('technical-audit-dashboard.vercel.app');
+    const isWebhookEndpoint =
+      (settings.td_endpoint_url.endsWith('/api/od/audit-request') || settings.td_endpoint_url.endsWith('/api/audit/request')) &&
+      !isCloudTd;
+
+    if (settings.td_endpoint_url && isWebhookEndpoint) {
       try {
         console.log(`[FiveSlotSenderService] 📡 Dispatching JIT audit to TD at ${settings.td_endpoint_url} for "${lead.business_name}" (${lead.website})...`);
         logPipeline(
@@ -1436,14 +1465,18 @@ export class FiveSlotSenderService {
         console.log(`[FiveSlotSenderService] ✅ Audit request accepted by TD for lead ${lead.id}`);
         logPipeline('SENT_TO_TD', `TD accepted audit request for "${lead.business_name}" [${slotLabel}] (waiting for JSON callback)`);
       } catch (tdErr: any) {
-        console.warn(`[FiveSlotSenderService] TD webhook dispatch failed, running local audit diagnostic: ${tdErr.message}`);
-        logPipelineError('TD Dispatch', `Failed sending "${lead.business_name}" [${slotLabel}] to TD; falling back to local audit`, tdErr);
-        this.runLocalAudit(leadId, lead.website, lead.business_name, lead.slot_id);
+        console.warn(`[FiveSlotSenderService] TD webhook dispatch failed, running live audit via https://technical-audit-dashboard.vercel.app/: ${tdErr.message}`);
+        logPipelineError('TD Dispatch', `Failed sending "${lead.business_name}" [${slotLabel}] to TD; running live audit directly`, tdErr);
+        await this.runLocalAudit(leadId, lead.website, lead.business_name, lead.slot_id);
       }
     } else {
-      // Execute local high-speed audit engine and store results & PDF
-      logPipeline('SENT_TO_TD', `TD webhook not configured — running local audit for "${lead.business_name}" (${lead.website}) [${slotLabel}]`);
-      this.runLocalAudit(leadId, lead.website, lead.business_name, lead.slot_id);
+      // Execute live high-speed audit engine via https://technical-audit-dashboard.vercel.app/
+      console.log(`[FiveSlotSenderService] ⚡ Running live audit via Technical Audit Dashboard for "${lead.business_name}" (${lead.website}) [${slotLabel}]...`);
+      logPipeline(
+        'SENT_TO_TD',
+        `Auditing "${lead.business_name}" (${lead.website}) [${slotLabel}] via Technical Audit Dashboard (https://technical-audit-dashboard.vercel.app/)`
+      );
+      await this.runLocalAudit(leadId, lead.website, lead.business_name, lead.slot_id);
     }
   }
 

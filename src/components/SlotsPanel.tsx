@@ -673,15 +673,15 @@ export function SlotsPanel() {
               </span>
             </div>
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">TD Audit Webhook URL</label>
+              <label className="block font-semibold text-slate-700 mb-1">Technical Audit Platform URL</label>
               <input
                 type="text"
-                placeholder="https://td.example.com/api/audit"
+                placeholder="https://technical-audit-dashboard.vercel.app/"
                 value={tdUrlInput}
                 onChange={(e) => setTdUrlInput(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md focus:ring-1 focus:ring-indigo-500"
               />
-              <span className="text-[10px] text-slate-500">TD SEO Audit Pro endpoint (optional)</span>
+              <span className="text-[10px] text-slate-500">Default: https://technical-audit-dashboard.vercel.app/</span>
             </div>
           </div>
 

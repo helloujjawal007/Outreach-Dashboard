@@ -66,20 +66,7 @@ export function computeEstimatedDeal(lead: Lead): number {
   if (lead.metadata?.deal_value || lead.metadata?.dealValue) {
     return Number(lead.metadata?.deal_value || lead.metadata?.dealValue);
   }
-  const cat = (lead.category || '').toLowerCase();
-  let base = 24000;
-  if (cat.includes('logistics') || cat.includes('supply chain') || cat.includes('b2b') || cat.includes('pharma')) base = 48000;
-  else if (cat.includes('legal') || cat.includes('law') || cat.includes('wealth') || cat.includes('finance')) base = 42000;
-  else if (cat.includes('dental') || cat.includes('medical') || cat.includes('clinic') || cat.includes('health')) base = 32000;
-  else if (cat.includes('agency') || cat.includes('design') || cat.includes('media') || cat.includes('real estate') || cat.includes('fitness')) base = 26000;
-  else base = 18000;
-
-  const rawWeb = (lead.website || lead.googleProfile?.website || '').trim();
-  const hasWebsite = Boolean(rawWeb && !/google\.com\/maps/i.test(rawWeb) && rawWeb.toLowerCase() !== 'n/a');
-  if (!hasWebsite) base += 8000;
-  else if (lead.auditScore && lead.auditScore < 50) base += 6000;
-  else if (lead.auditScore && lead.auditScore < 75) base += 3500;
-  return base;
+  return 0;
 }
 
 export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onStageChanged }: Props) {
@@ -144,9 +131,9 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
 
   useEffect(() => {
     if (isOpen && lead) {
-      setDealTitle(`${lead.businessName} - Omnichannel Growth Retainer`);
-      const estimatedValue = computeEstimatedDeal(lead);
-      setDealValue(String(estimatedValue));
+      setDealTitle(`${lead.businessName} - Opportunity`);
+      const savedDealVal = Number(lead.metadata?.deal_value || lead.metadata?.dealValue || 0);
+      setDealValue(savedDealVal > 0 ? String(savedDealVal) : '');
       setCurrentStage(lead.outreachStage || lead.stage || 'initial');
       fetchHistory();
     }
@@ -371,12 +358,6 @@ export function LeadActivityDrawer({ isOpen, lead, onClose, onDealCreated, onSta
               <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs">
                 <Flame size={13} className="text-amber-500 fill-amber-500" />
                 <span>Score: {leadScore}/100</span>
-              </div>
-
-              {/* Deal Value */}
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-xs">
-                <DollarSign size={13} className="text-emerald-600" />
-                <span>Est: ${dealVal.toLocaleString()}</span>
               </div>
             </div>
           </div>

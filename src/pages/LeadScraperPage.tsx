@@ -111,7 +111,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [excludedDbDuplicates, setExcludedDbDuplicates] = useState<number>(0);
 
   // Filter & Import State
-  const [filterType, setFilterType] = useState<'all' | 'with_email' | 'with_phone' | 'with_website'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'with_email' | 'with_phone' | 'with_website' | 'without_website'>('all');
   const [targetListId, setTargetListId] = useState<string>('none');
   const [batchName, setBatchName] = useState<string>('');
   const [isImporting, setIsImporting] = useState(false);
@@ -585,7 +585,15 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
     } catch (err: any) {
       console.error('[LeadScraperPage] Scrape error:', err);
       const msg = String(err?.message || '');
-      if (msg.includes('aborted') || msg.includes('timed out') || msg.includes('TimeoutError')) {
+      // Check for various abort/timout patterns including "signal is aborted without reason"
+      const isAbortOrTimeout = msg.includes('aborted') || 
+                              msg.includes('timed out') || 
+                              msg.includes('TimeoutError') ||
+                              msg.includes('signal is aborted') ||
+                              msg.includes('AbortError') ||
+                              msg.includes('NetworkError') ||
+                              msg.includes('ConnectionAbortedError');
+      if (isAbortOrTimeout) {
         setError('Scraping took longer than expected due to slow or unresponsive business websites. Try searching with a smaller batch limit or a specific city.');
       } else {
         setError(msg || 'Failed to search Google Business Profiles');
@@ -605,6 +613,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
       if (filterType === 'with_email') return Boolean(l.email && l.email.includes('@'));
       if (filterType === 'with_phone') return Boolean(l.phone && l.phone.trim());
       if (filterType === 'with_website') return Boolean(l.website && l.website.trim());
+      if (filterType === 'without_website') return !l.website || l.website.trim() === '';
       return true;
     });
   }, [scrapedLeads, filterType]);
@@ -1607,6 +1616,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                   { id: 'with_email', label: `With Email (${stats.withEmail})` },
                   { id: 'with_phone', label: `With Phone (${stats.withPhone})` },
                   { id: 'with_website', label: `With Website (${stats.withWebsite})` },
+                  { id: 'without_website', label: `Without Website (${scrapedLeads.length - stats.withWebsite})` },
                 ] as const
               ).map((f) => (
                 <button

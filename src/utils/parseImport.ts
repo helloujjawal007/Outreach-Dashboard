@@ -261,36 +261,46 @@ export function markDuplicates(rows: ParsedLeadRow[], existingRecords: Lead[]): 
 
     let isDuplicate = false;
     let duplicateReason = '';
+    const duplicateReasons = [];
 
     if (email && seenEmails.has(email)) {
       isDuplicate = true;
-      duplicateReason = `Email ${email} already exists (${seenEmails.get(email)})`;
-    } else if (pKeys.full && seenFullPhones.has(pKeys.full)) {
+      duplicateReasons.push(`Email ${email} already exists (${seenEmails.get(email)})`);
+    }
+    if (pKeys.full && seenFullPhones.has(pKeys.full)) {
       isDuplicate = true;
-      duplicateReason = `Phone number already exists (${seenFullPhones.get(pKeys.full)})`;
-    } else if (pKeys.last10 && seenLast10Phones.has(pKeys.last10)) {
+      duplicateReasons.push(`Phone number already exists (${seenFullPhones.get(pKeys.full)})`);
+    }
+    if (pKeys.last10 && seenLast10Phones.has(pKeys.last10)) {
       isDuplicate = true;
-      duplicateReason = `Phone number already exists (${seenLast10Phones.get(pKeys.last10)})`;
-    } else if (waKeys.full && seenFullPhones.has(waKeys.full)) {
+      duplicateReasons.push(`Phone number already exists (${seenLast10Phones.get(pKeys.last10)})`);
+    }
+    if (waKeys.full && seenFullPhones.has(waKeys.full)) {
       isDuplicate = true;
-      duplicateReason = `WhatsApp number already exists (${seenFullPhones.get(waKeys.full)})`;
-    } else if (waKeys.last10 && seenLast10Phones.has(waKeys.last10)) {
+      duplicateReasons.push(`WhatsApp number already exists (${seenFullPhones.get(waKeys.full)})`);
+    }
+    if (waKeys.last10 && seenLast10Phones.has(waKeys.last10)) {
       isDuplicate = true;
-      duplicateReason = `WhatsApp number already exists (${seenLast10Phones.get(waKeys.last10)})`;
-    } else if (cleanName.length >= 3 && seenBusinessNames.has(cleanName)) {
+      duplicateReasons.push(`WhatsApp number already exists (${seenLast10Phones.get(waKeys.last10)})`);
+    }
+    if (cleanName.length >= 3 && seenBusinessNames.has(cleanName)) {
       isDuplicate = true;
-      duplicateReason = `Business "${seenBusinessNames.get(cleanName)}" already exists in CRM`;
+      duplicateReasons.push(`Business "${seenBusinessNames.get(cleanName)}" already exists in CRM`);
+    }
+
+    if (isDuplicate) {
+      duplicateReason = duplicateReasons.join(', ');
     }
 
     // If this row is valid and not a dupe, record it so subsequent batch items with same details are caught
     if (!isDuplicate) {
-      const fileLabel = row.businessName || 'Row in this file';
+      const fileLabel = row.businessName ? row.businessName : 'Row in this file';
       if (email) seenEmails.set(email, `${fileLabel} (earlier in file)`);
       if (pKeys.full) seenFullPhones.set(pKeys.full, `${fileLabel} (earlier in file)`);
       if (pKeys.last10) seenLast10Phones.set(pKeys.last10, `${fileLabel} (earlier in file)`);
       if (waKeys.full) seenFullPhones.set(waKeys.full, `${fileLabel} (earlier in file)`);
       if (waKeys.last10) seenLast10Phones.set(waKeys.last10, `${fileLabel} (earlier in file)`);
-      if (cleanName.length >= 3) seenBusinessNames.set(cleanName, `${row.businessName} (earlier in file)`);
+      if (cleanName.length >= 3 && row.businessName) seenBusinessNames.set(cleanName, `${row.businessName} (earlier in file)`);
     }
 
     return {

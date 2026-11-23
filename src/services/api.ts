@@ -89,7 +89,9 @@ export function setStoredToken(token: string | null): void {
  */
 export function getAuditDownloadUrl(filename: string): string {
   const token = getStoredToken();
-  const base = `/api/audit/download/${encodeURIComponent(filename)}`;
+  // Sanitize filename against path traversal attacks
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '');
+  const base = `/api/audit/download/${encodeURIComponent(safeFilename)}`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
@@ -98,7 +100,7 @@ export function getAuditDownloadUrl(filename: string): string {
  */
 export function getLeadAuditPdfUrl(leadId: string, pdfName?: string | null): string {
   const token = getStoredToken();
-  const base = pdfName
+  const base = pdfName && pdfName.trim()
     ? `/api/audit/download/${encodeURIComponent(pdfName)}`
     : `/api/audit/lead/${encodeURIComponent(leadId)}/pdf`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;

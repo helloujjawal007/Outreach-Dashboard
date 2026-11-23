@@ -126,8 +126,8 @@ export async function assertNotProduction(contextName = 'Test Harness', targetPo
       throw err;
     }
     // If query fails, verify connection string directly
-    const parsedDb = connectionString.split('/').pop()?.split('?')[0];
-    if (!TEST_DB_ALLOWLIST.includes(parsedDb || '')) {
+    const parsedDb = (connectionString || '').split('/').pop()?.split('?')[0] || '';
+    if (!TEST_DB_ALLOWLIST.includes(parsedDb)) {
       throw new Error(
         `[CRITICAL SAFETY ERROR] ${contextName} refused: Configured database "${parsedDb}" is NOT in test allowlist [${TEST_DB_ALLOWLIST.join(', ')}]!`
       );

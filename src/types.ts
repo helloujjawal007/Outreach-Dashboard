@@ -570,6 +570,7 @@ export interface GmbSearchParams {
   locations?: Array<GmbLocationTarget | string>;
   limit: number;
   leadsPerLocation?: number;
+  requireWebsite?: boolean;
 }
 
 export interface GmbImportParams {

@@ -562,13 +562,16 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         locations: locationsToSend,
         limit,
         leadsPerLocation: leadsPerCity > 0 ? leadsPerCity : undefined,
+        requireWebsite: true,
       });
 
       if (res.success && res.leads) {
-        setScrapedLeads(res.leads);
+        // Enforce that all scraped leads strictly have a valid website
+        const leadsWithWebsite = res.leads.filter((l) => Boolean(l.website && l.website.trim()));
+        setScrapedLeads(leadsWithWebsite);
         setExcludedDbDuplicates(res.excludedDuplicatesCount || 0);
         // Default select all discovered leads
-        const allIdx = new Set(res.leads.map((_, i) => i));
+        const allIdx = new Set(leadsWithWebsite.map((_, i) => i));
         setSelectedIndices(allIdx);
 
         // Pre-fill suggested batch name
@@ -1616,12 +1619,11 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                   { id: 'with_email', label: `With Email (${stats.withEmail})` },
                   { id: 'with_phone', label: `With Phone (${stats.withPhone})` },
                   { id: 'with_website', label: `With Website (${stats.withWebsite})` },
-                  { id: 'without_website', label: `Without Website (${scrapedLeads.length - stats.withWebsite})` },
                 ] as const
               ).map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => setFilterType(f.id)}
+                  onClick={() => setFilterType(f.id as any)}
                   className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
                     filterType === f.id
                       ? 'bg-brand-600 text-white shadow-2xs'
@@ -1631,6 +1633,9 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                   {f.label}
                 </button>
               ))}
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
+                🌐 Websites Enforced
+              </span>
             </div>
 
             {/* Selection & Export Tools */}

@@ -48,6 +48,7 @@ export interface GmbSearchParams {
   locations?: Array<GmbLocationTarget | string>;
   limit: number;
   leadsPerLocation?: number;
+  requireWebsite?: boolean;
 }
 
 
@@ -585,6 +586,11 @@ export class GmbScraperService {
         if (rawList.length >= effectiveLimit) break;
         if (currentLocCount >= perLocationQuota) break;
 
+        const cleanWeb = this.normalizeGmbWebsiteUrl(r.website);
+        if (params.requireWebsite !== false && !cleanWeb) {
+          continue; // Scraped leads MUST have a website
+        }
+
         const normName = this.cleanBizName(r.businessName);
         const pDigits = (r.phone || '').replace(/\D/g, '');
         const pLast10 = pDigits.length >= 7 ? pDigits.slice(-10) : '';
@@ -593,9 +599,9 @@ export class GmbScraperService {
         let isDbMatch = false;
         if (normName && dbNames.has(normName)) isDbMatch = true;
         else if (pLast10 && dbPhones.has(pLast10)) isDbMatch = true;
-        else if (r.website) {
+        else if (cleanWeb) {
           try {
-            const u = new URL(r.website.startsWith('http') ? r.website : `https://${r.website}`);
+            const u = new URL(cleanWeb);
             const host = u.hostname.replace(/^www\./, '').toLowerCase();
             if (host.length > 3 && dbDomains.has(host)) isDbMatch = true;
           } catch {}
@@ -610,7 +616,10 @@ export class GmbScraperService {
         if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
           existingNames.add(normName);
           if (pDigits) existingPhones.add(pDigits);
-          rawList.push(r);
+          rawList.push({
+            ...r,
+            website: cleanWeb,
+          });
           locationCounts.set(locationKey, (locationCounts.get(locationKey) || 0) + 1);
         }
       }
@@ -690,9 +699,11 @@ export class GmbScraperService {
         console.log(`[GmbScraperService] Approaching 48s deadline (${Date.now() - START_TIME}ms elapsed). Preserving remaining ${selected.length - i} leads without deep crawl.`);
         for (let j = i; j < selected.length; j++) {
           const item = selected[j];
+          const cleanWeb = this.normalizeGmbWebsiteUrl(item.website);
+          if (params.requireWebsite !== false && !cleanWeb) continue;
           enriched.push({
             ...item,
-            website: this.normalizeGmbWebsiteUrl(item.website),
+            website: cleanWeb,
             email: item.email && this.isValidBusinessEmail(item.email) ? item.email : '',
             emailDiscovered: false,
           });
@@ -724,6 +735,11 @@ export class GmbScraperService {
             }
           }
 
+          // If website is required and absent/invalid, skip lead
+          if (params.requireWebsite !== false && !verifiedWebsite) {
+            return null;
+          }
+
           let discoveredEmail = '';
           let emailDiscovered = false;
           let emailSource: string | undefined = undefined;
@@ -752,7 +768,7 @@ export class GmbScraperService {
           };
         })
       );
-      enriched.push(...processedChunk);
+      enriched.push(...(processedChunk.filter(Boolean) as ScrapedLeadItem[]));
     }
 
     console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} genuine businesses ready in ${Date.now() - START_TIME}ms.`);
@@ -773,7 +789,8 @@ export class GmbScraperService {
     fallbackCategory: string,
     queryStr: string,
     targetCountry?: string,
-    limit: number = 50
+    limit: number = 50,
+    requireWebsite: boolean = true
   ): ScrapedLeadItem[] {
     const results: ScrapedLeadItem[] = [];
     const jsonStr = (raw || '').replace(/^[^{[]+/, '');
@@ -876,6 +893,8 @@ export class GmbScraperService {
       }
 
       const cleanWeb = this.normalizeGmbWebsiteUrl(website);
+      // STRICT REQUIREMENT: Only businesses with a valid website are eligible
+      if (requireWebsite && !cleanWeb) continue;
 
       // Rating & Reviews
       let rating = 4.8;
@@ -944,7 +963,8 @@ export class GmbScraperService {
   public async scrapeBatchWithCdp(
     tasks: Array<{ queryStr: string; category: string; targetCountry?: string; limit: number; locationKey?: string }>,
     deadlineMs: number,
-    maxTotalResults: number = 240
+    maxTotalResults: number = 300,
+    requireWebsite: boolean = true
   ): Promise<ScrapedLeadItem[]> {
     if (!tasks || tasks.length === 0) return [];
 
@@ -1107,7 +1127,8 @@ export class GmbScraperService {
                   task.category,
                   task.queryStr,
                   task.targetCountry,
-                  task.limit
+                  task.limit,
+                  requireWebsite
                 );
               }
             } catch (bodyErr: any) {
@@ -1165,12 +1186,14 @@ export class GmbScraperService {
                 for (const item of extracted) {
                   if (taskResults.length >= task.limit) break;
                   if (!item.businessName) continue;
+                  const cleanWeb = this.normalizeGmbWebsiteUrl(item.website);
+                  if (requireWebsite && !cleanWeb) continue;
                   taskResults.push({
                     businessName: item.businessName,
                     category: task.category || task.queryStr.split(' in ')[0] || 'Local Services',
                     phone: item.phone || '',
                     email: '',
-                    website: this.normalizeGmbWebsiteUrl(item.website),
+                    website: cleanWeb,
                     address: item.address || task.queryStr.split(' in ')[1] || '',
                     country: task.targetCountry || 'USA',
                     rating: item.rating || 4.8,
@@ -1214,12 +1237,13 @@ export class GmbScraperService {
    * Spawns headless Chrome and captures Google Maps tbm=map response for a single query.
    * Delegates to scrapeBatchWithCdp for unified session lifecycle.
    */
-  public async scrapeWithCdp(queryStr: string, limit: number, targetCountry?: string): Promise<ScrapedLeadItem[]> {
+  public async scrapeWithCdp(queryStr: string, limit: number, targetCountry?: string, requireWebsite: boolean = true): Promise<ScrapedLeadItem[]> {
     const category = queryStr.split(' in ')[0] || 'Local Services';
     return this.scrapeBatchWithCdp(
       [{ queryStr, category, targetCountry, limit }],
       Date.now() + 30000,
-      limit
+      limit,
+      requireWebsite
     );
   }
 

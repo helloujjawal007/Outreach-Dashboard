@@ -7,7 +7,7 @@ export const scraperRouter = Router();
 // POST /api/scraper/search - Search Google Business Profiles with live email & website crawling
 scraperRouter.post('/search', async (req: Request, res: Response) => {
   try {
-    const { category, categories, country, state, city, locations, limit, leadsPerLocation, continent } = req.body;
+    const { category, categories, country, state, city, locations, limit, leadsPerLocation, continent, requireWebsite } = req.body;
 
     let targetCategories: string[] = [];
     if (Array.isArray(categories) && categories.length > 0) {
@@ -39,6 +39,7 @@ scraperRouter.post('/search', async (req: Request, res: Response) => {
       locations: hasLocations ? locations : undefined,
       limit: parsedLimit,
       leadsPerLocation: parsedLeadsPerLocation,
+      requireWebsite: requireWebsite !== undefined ? Boolean(requireWebsite) : true,
     });
 
     res.json({

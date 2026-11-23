@@ -51,6 +51,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [city, setCity] = useState<string>('Austin');
   const [customCity, setCustomCity] = useState<string>('');
   const [limit, setLimit] = useState<number>(10);
+  const [requireEmail, setRequireEmail] = useState<boolean>(false);
   const [leadsPerCity, setLeadsPerCity] = useState<number>(0);
   const [leadsPerCityMode, setLeadsPerCityMode] = useState<'auto' | '10' | '20' | 'custom'>('auto');
   const [customLeadsPerCityInput, setCustomLeadsPerCityInput] = useState<string>('');
@@ -563,15 +564,18 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         limit,
         leadsPerLocation: leadsPerCity > 0 ? leadsPerCity : undefined,
         requireWebsite: true,
+        requireEmail,
       });
 
       if (res.success && res.leads) {
-        // Enforce that all scraped leads strictly have a valid website
-        const leadsWithWebsite = res.leads.filter((l) => Boolean(l.website && l.website.trim()));
-        setScrapedLeads(leadsWithWebsite);
+        // Enforce that all scraped leads strictly have a valid website (and email if required)
+        const leadsFiltered = res.leads.filter(
+          (l) => Boolean(l.website && l.website.trim()) && (!requireEmail || Boolean(l.email && l.email.includes('@')))
+        );
+        setScrapedLeads(leadsFiltered);
         setExcludedDbDuplicates(res.excludedDuplicatesCount || 0);
         // Default select all discovered leads
-        const allIdx = new Set(leadsWithWebsite.map((_, i) => i));
+        const allIdx = new Set(leadsFiltered.map((_, i) => i));
         setSelectedIndices(allIdx);
 
         // Pre-fill suggested batch name
@@ -983,6 +987,28 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                     </div>
                   )}
                 </div>
+
+                {/* Option to require email on all scraped leads */}
+                <button
+                  type="button"
+                  onClick={() => setRequireEmail(!requireEmail)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all shadow-2xs shrink-0 cursor-pointer ${
+                    requireEmail
+                      ? 'bg-emerald-600 border-emerald-700 text-white shadow-emerald-500/20'
+                      : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                  }`}
+                  title="Require Email: only keep leads where an email address was found"
+                >
+                  <Mail size={13} className={requireEmail ? 'text-white' : 'text-slate-400'} />
+                  <span>Must Have Email</span>
+                  <span
+                    className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-black tracking-wide ${
+                      requireEmail ? 'bg-white text-emerald-800' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {requireEmail ? '100% ON' : 'OPTIONAL'}
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -1636,6 +1662,11 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
               <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
                 🌐 Websites Enforced
               </span>
+              {requireEmail && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 border border-amber-200">
+                  ✉️ 100% Emails Enforced
+                </span>
+              )}
             </div>
 
             {/* Selection & Export Tools */}

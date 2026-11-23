@@ -571,6 +571,7 @@ export interface GmbSearchParams {
   limit: number;
   leadsPerLocation?: number;
   requireWebsite?: boolean;
+  requireEmail?: boolean;
 }
 
 export interface GmbImportParams {

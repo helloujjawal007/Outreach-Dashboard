@@ -49,6 +49,7 @@ export interface GmbSearchParams {
   limit: number;
   leadsPerLocation?: number;
   requireWebsite?: boolean;
+  requireEmail?: boolean;
 }
 
 
@@ -512,10 +513,12 @@ export class GmbScraperService {
     }
 
     const effectiveLimit = Math.max(1, limit);
+    const candidateMultiplier = params.requireEmail ? 2 : 1;
+    const targetCandidateLimit = Math.min(500, effectiveLimit * candidateMultiplier);
     const perLocationQuota = leadsPerLocation && leadsPerLocation > 0 ? leadsPerLocation : effectiveLimit;
 
     console.log(
-      `[GmbScraperService] Initiating search for [${targetCategories.join(', ')}] across ${locationQueries.length} location(s): [${locationQueries.join('; ')}] (Target limit: ${effectiveLimit}, Leads/location quota: ${perLocationQuota})`
+      `[GmbScraperService] Initiating search for [${targetCategories.join(', ')}] across ${locationQueries.length} location(s): [${locationQueries.join('; ')}] (Target limit: ${effectiveLimit}, Leads/location quota: ${perLocationQuota}, RequireEmail: ${Boolean(params.requireEmail)})`
     );
 
     // Pre-flight check: ensure Chrome/Chromium is installed or can be downloaded
@@ -583,7 +586,7 @@ export class GmbScraperService {
     const addResults = (batchResults: ScrapedLeadItem[], locationKey: string) => {
       const currentLocCount = locationCounts.get(locationKey) || 0;
       for (const r of batchResults) {
-        if (rawList.length >= effectiveLimit) break;
+        if (rawList.length >= targetCandidateLimit) break;
         if (currentLocCount >= perLocationQuota) break;
 
         const cleanWeb = this.normalizeGmbWebsiteUrl(r.website);
@@ -635,7 +638,8 @@ export class GmbScraperService {
           locationKey: t.locationKey,
         })),
         HARD_DEADLINE,
-        effectiveLimit
+        targetCandidateLimit,
+        params.requireWebsite !== false
       );
 
       for (const item of batchOutputs) {
@@ -671,7 +675,8 @@ export class GmbScraperService {
             locationKey: t.locationKey,
           })),
           HARD_DEADLINE,
-          effectiveLimit
+          targetCandidateLimit,
+          params.requireWebsite !== false
         );
         for (const item of fallbackOutputs) {
           addResults([item], item.address || locationQueries[0] || '');
@@ -686,26 +691,30 @@ export class GmbScraperService {
     }
 
     // Limit to requested count (strictly authentic leads from Google Maps)
-    const selected = rawList.slice(0, effectiveLimit);
+    const selected = rawList.slice(0, targetCandidateLimit);
 
     // High-speed parallel verification of websites & genuine contact discovery
     console.log(`[GmbScraperService] ⚡ High-speed parallel verification & contact discovery for ${selected.length} listings (Elapsed: ${Date.now() - START_TIME}ms)...`);
     const enriched: ScrapedLeadItem[] = [];
-    const chunkSize = 10; // Balanced concurrency prevents outbound TLS/socket timeout storms
+    const chunkSize = 12; // Balanced concurrency prevents outbound TLS/socket timeout storms
 
     for (let i = 0; i < selected.length; i += chunkSize) {
+      if (enriched.length >= effectiveLimit) break;
+
       // Check if approaching 48s deadline: preserve remaining leads immediately without further deep crawl
       if (Date.now() >= HARD_DEADLINE - 4000) {
         console.log(`[GmbScraperService] Approaching 48s deadline (${Date.now() - START_TIME}ms elapsed). Preserving remaining ${selected.length - i} leads without deep crawl.`);
         for (let j = i; j < selected.length; j++) {
+          if (enriched.length >= effectiveLimit) break;
           const item = selected[j];
           const cleanWeb = this.normalizeGmbWebsiteUrl(item.website);
           if (params.requireWebsite !== false && !cleanWeb) continue;
+          if (params.requireEmail === true && !item.email) continue;
           enriched.push({
             ...item,
             website: cleanWeb,
             email: item.email && this.isValidBusinessEmail(item.email) ? item.email : '',
-            emailDiscovered: false,
+            emailDiscovered: Boolean(item.email),
           });
         }
         break;
@@ -759,26 +768,40 @@ export class GmbScraperService {
             } catch (_) {}
           }
 
+          const finalEmail = discoveredEmail || (item.email && this.isValidBusinessEmail(item.email) ? item.email : '');
+
+          // If email is required and absent/invalid, skip lead
+          if (params.requireEmail === true && !finalEmail) {
+            return null;
+          }
+
           return {
             ...item,
             website: verifiedWebsite,
-            email: discoveredEmail || (item.email && this.isValidBusinessEmail(item.email) ? item.email : ''),
-            emailDiscovered,
+            email: finalEmail,
+            emailDiscovered: Boolean(discoveredEmail),
             emailSource,
           };
         })
       );
-      enriched.push(...(processedChunk.filter(Boolean) as ScrapedLeadItem[]));
+
+      const validProcessed = processedChunk.filter(Boolean) as ScrapedLeadItem[];
+      enriched.push(...validProcessed);
+      if (enriched.length >= effectiveLimit) {
+        break;
+      }
     }
 
-    console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} genuine businesses ready in ${Date.now() - START_TIME}ms.`);
-    const withEmailCount = enriched.filter((l) => Boolean(l.email)).length;
-    const withSiteCount = enriched.filter((l) => Boolean(l.website)).length;
+    const finalEnriched = enriched.slice(0, effectiveLimit);
+
+    console.log(`[GmbScraperService] Completed GMB scrape: ${finalEnriched.length} genuine businesses ready in ${Date.now() - START_TIME}ms.`);
+    const withEmailCount = finalEnriched.filter((l) => Boolean(l.email)).length;
+    const withSiteCount = finalEnriched.filter((l) => Boolean(l.website)).length;
     logPipeline(
       'LEAD_SCRAPED',
-      `Scraped ${enriched.length} lead(s) for "${params.categories?.join(', ') || params.category}" (${params.country || 'USA'}) [Email: ${withEmailCount}, Website: ${withSiteCount}]`
+      `Scraped ${finalEnriched.length} lead(s) for "${params.categories?.join(', ') || params.category}" (${params.country || 'USA'}) [Email: ${withEmailCount}, Website: ${withSiteCount}]`
     );
-    return enriched;
+    return finalEnriched;
   }
 
   /**
@@ -1248,65 +1271,186 @@ export class GmbScraperService {
   }
 
   /**
-   * Crawls a business website and discovers contact email
+   * Intelligently crawls a business website and discovers genuine contact emails
+   * from Homepage, About pages, Contact pages, JSON-LD schemas, and Cloudflare protected tags.
    */
   public async crawlWebsiteForContact(siteUrl: string): Promise<{ email: string }> {
     if (!siteUrl) return { email: '' };
 
-    const emailsFound = new Set<string>();
-    const pagesToTry = [siteUrl];
-
+    let parsedOrigin = '';
+    let parsedHostname = '';
     try {
       const parsed = new URL(siteUrl);
-      const origin = parsed.origin;
-      pagesToTry.push(`${origin}/contact`);
-    } catch (_) {}
+      parsedOrigin = parsed.origin;
+      parsedHostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    } catch {
+      return { email: '' };
+    }
 
-    const targets = pagesToTry.slice(0, 2);
-    const fetchPromises = targets.map(async (pageUrl) => {
+    const emailsFound = new Set<string>();
+
+    const browserHeaders = {
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    };
+
+    const fetchPageHtml = async (targetUrl: string): Promise<string> => {
       try {
-        const res = await fetch(pageUrl, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-            Accept: 'text/html,application/xhtml+xml',
-          },
-          signal: AbortSignal.timeout(2500),
+        const res = await fetch(targetUrl, {
+          headers: browserHeaders,
+          redirect: 'follow',
+          signal: AbortSignal.timeout(2800),
         });
-
         if (!res.ok) return '';
         return await res.text();
-      } catch (_) {
+      } catch {
         return '';
       }
-    });
+    };
 
-    const pageResults = await Promise.allSettled(fetchPromises);
-    for (const settled of pageResults) {
-      if (settled.status === 'fulfilled' && settled.value) {
-        const html = settled.value;
+    const extractEmailsFromHtml = (html: string) => {
+      if (!html) return;
 
-        // 1. Mailto links
-        const mailtoMatches = Array.from(
-          html.matchAll(/mailto:([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi)
-        ).map((m) => m[1]);
+      // 1. Mailto links (standard, URL-encoded, entity-encoded)
+      const mailtoMatches = Array.from(
+        html.matchAll(/mailto:([a-zA-Z0-9._%+-]+(?:%40|@)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi)
+      ).map((m) => decodeURIComponent(m[1]).split('?')[0].trim());
 
-        // 2. Regex email matches
-        const generalMatches = Array.from(
-          html.matchAll(/\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/g)
-        ).map((m) => m[1]);
+      for (const m of mailtoMatches) {
+        if (this.isValidBusinessEmail(m)) {
+          emailsFound.add(m.toLowerCase());
+        }
+      }
 
-        for (const e of [...mailtoMatches, ...generalMatches]) {
-          const lower = e.toLowerCase().trim();
-          if (this.isValidBusinessEmail(lower)) {
-            emailsFound.add(lower);
+      // 2. Cloudflare email protection de-obfuscation: data-cfemail="hex"
+      const cfMatches = Array.from(html.matchAll(/data-cfemail=["']([0-9a-fA-F]+)["']/gi));
+      for (const match of cfMatches) {
+        const hex = match[1];
+        try {
+          const key = parseInt(hex.slice(0, 2), 16);
+          let decoded = '';
+          for (let n = 2; n < hex.length; n += 2) {
+            decoded += String.fromCharCode(parseInt(hex.slice(n, n + 2), 16) ^ key);
           }
+          if (this.isValidBusinessEmail(decoded)) {
+            emailsFound.add(decoded.toLowerCase().trim());
+          }
+        } catch (_) {}
+      }
+
+      // 3. JSON-LD structured metadata (<script type="application/ld+json">)
+      const jsonLdBlocks = Array.from(html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi));
+      for (const block of jsonLdBlocks) {
+        try {
+          const json = JSON.parse(block[1]);
+          const walkJson = (node: any) => {
+            if (!node) return;
+            if (typeof node === 'string') {
+              if (node.includes('@') && this.isValidBusinessEmail(node)) {
+                emailsFound.add(node.toLowerCase().trim());
+              }
+            } else if (Array.isArray(node)) {
+              node.forEach(walkJson);
+            } else if (typeof node === 'object') {
+              Object.values(node).forEach(walkJson);
+            }
+          };
+          walkJson(json);
+        } catch (_) {}
+      }
+
+      // 4. Regex email matches across text
+      const textMatches = Array.from(
+        html.matchAll(/\b([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\b/g)
+      ).map((m) => m[1]);
+
+      for (const em of textMatches) {
+        if (this.isValidBusinessEmail(em)) {
+          emailsFound.add(em.toLowerCase().trim());
+        }
+      }
+    };
+
+    // Step 1: Fetch Homepage first
+    const homeHtml = await fetchPageHtml(siteUrl);
+    extractEmailsFromHtml(homeHtml);
+
+    // Helper to select the highest-quality business email
+    const selectBestEmail = (): string => {
+      if (emailsFound.size === 0) return '';
+      const list = Array.from(emailsFound);
+
+      // Priority 1: Email matching the exact domain of the website (e.g. info@ketteringroofing.com)
+      const domainMatches = list.filter((em) => em.endsWith(`@${parsedHostname}`) || em.endsWith(`.${parsedHostname}`));
+      if (domainMatches.length > 0) {
+        const roleEmail = domainMatches.find((e) => /^(info|contact|office|hello|admin|sales|team|support)@/i.test(e));
+        return roleEmail || domainMatches[0];
+      }
+
+      // Priority 2: Common business role prefix on any domain
+      const rolePrefix = list.find((e) => /^(info|contact|office|hello|admin|sales|team|support)@/i.test(e));
+      if (rolePrefix) return rolePrefix;
+
+      return list[0];
+    };
+
+    // If an email matching the business domain is already found on the homepage, return immediately
+    const bestHomeEmail = selectBestEmail();
+    if (bestHomeEmail && (bestHomeEmail.endsWith(`@${parsedHostname}`) || bestHomeEmail.endsWith(`.${parsedHostname}`))) {
+      return { email: bestHomeEmail };
+    }
+
+    // Step 2: Discover internal Contact and About links from Homepage navigation/footer
+    const discoveredPages: string[] = [];
+    if (homeHtml) {
+      const linkMatches = Array.from(homeHtml.matchAll(/<a[^>]+href=["']([^"'#\s]+)["'][^>]*>([\s\S]*?)<\/a>/gi));
+      for (const [, href, anchorText] of linkMatches) {
+        if (discoveredPages.length >= 2) break;
+        const lowerHref = href.toLowerCase();
+        const lowerText = anchorText.replace(/<[^>]+>/g, '').toLowerCase();
+        const isContactLink =
+          lowerHref.includes('contact') ||
+          lowerText.includes('contact') ||
+          lowerHref.includes('reach') ||
+          lowerText.includes('get in touch');
+        const isAboutLink =
+          lowerHref.includes('about') ||
+          lowerText.includes('about') ||
+          lowerHref.includes('team') ||
+          lowerText.includes('who-we-are');
+
+        if (isContactLink || isAboutLink) {
+          try {
+            const resolved = new URL(href, siteUrl);
+            if (
+              resolved.origin === parsedOrigin &&
+              resolved.pathname !== '/' &&
+              !discoveredPages.includes(resolved.toString())
+            ) {
+              discoveredPages.push(resolved.toString());
+            }
+          } catch (_) {}
         }
       }
     }
 
-    const email = Array.from(emailsFound)[0] || '';
-    return { email };
+    // Fallback: If no explicit internal links were found on homepage, try standard paths
+    if (discoveredPages.length === 0) {
+      discoveredPages.push(`${parsedOrigin}/contact`, `${parsedOrigin}/about`);
+    }
+
+    // Step 3: Concurrently fetch discovered Contact and About pages
+    const targetSubpages = discoveredPages.slice(0, 2);
+    const subpageResults = await Promise.allSettled(targetSubpages.map(fetchPageHtml));
+    for (const settled of subpageResults) {
+      if (settled.status === 'fulfilled' && settled.value) {
+        extractEmailsFromHtml(settled.value);
+      }
+    }
+
+    const finalEmail = selectBestEmail();
+    return { email: finalEmail };
   }
 
   /**

@@ -12,6 +12,14 @@ import { emailValidatorService } from './emailValidatorService';
 import { workflowRoutingService } from './workflowRoutingService';
 import { logPipeline } from '../utils/pipelineLogger';
 
+export interface ScrapedLeadSocials {
+  facebook?: string;
+  instagram?: string;
+  linkedin?: string;
+  twitter?: string;
+  youtube?: string;
+}
+
 export interface ScrapedLeadItem {
   id?: string;
   businessName: string;
@@ -29,6 +37,7 @@ export interface ScrapedLeadItem {
   placeId?: string;
   emailDiscovered: boolean;
   emailSource?: string;
+  socials?: ScrapedLeadSocials;
 }
 
 export interface GmbLocationTarget {
@@ -752,11 +761,12 @@ export class GmbScraperService {
           let discoveredEmail = '';
           let emailDiscovered = false;
           let emailSource: string | undefined = undefined;
+          let discoveredSocials: ScrapedLeadSocials = {};
 
           // Only crawl website if we still have >= 6 seconds before deadline
           if (crawlTargetUrl && Date.now() < HARD_DEADLINE - 6000) {
             try {
-              const { email } = await this.crawlWebsiteForContact(crawlTargetUrl);
+              const { email, socials } = await this.crawlWebsiteForContact(crawlTargetUrl);
               if (email) {
                 const emailValidation = await emailValidatorService.validateEmail(email);
                 if (emailValidation.isValid) {
@@ -764,6 +774,9 @@ export class GmbScraperService {
                   emailDiscovered = true;
                   emailSource = 'website_crawl';
                 }
+              }
+              if (socials && Object.keys(socials).length > 0) {
+                discoveredSocials = socials;
               }
             } catch (_) {}
           }
@@ -781,6 +794,7 @@ export class GmbScraperService {
             email: finalEmail,
             emailDiscovered: Boolean(discoveredEmail),
             emailSource,
+            socials: Object.keys(discoveredSocials).length > 0 ? discoveredSocials : undefined,
           };
         })
       );
@@ -1273,9 +1287,11 @@ export class GmbScraperService {
   /**
    * Intelligently crawls a business website and discovers genuine contact emails
    * from Homepage, About pages, Contact pages, JSON-LD schemas, and Cloudflare protected tags.
+   * Email extraction is first priority, followed by social account discovery (IG, FB, LinkedIn, X, YT).
    */
-  public async crawlWebsiteForContact(siteUrl: string): Promise<{ email: string }> {
-    if (!siteUrl) return { email: '' };
+  public async crawlWebsiteForContact(siteUrl: string): Promise<{ email: string; socials: ScrapedLeadSocials }> {
+    const emptyResult = { email: '', socials: {} };
+    if (!siteUrl) return emptyResult;
 
     let parsedOrigin = '';
     let parsedHostname = '';
@@ -1284,10 +1300,11 @@ export class GmbScraperService {
       parsedOrigin = parsed.origin;
       parsedHostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
     } catch {
-      return { email: '' };
+      return emptyResult;
     }
 
     const emailsFound = new Set<string>();
+    const socials: ScrapedLeadSocials = {};
 
     const browserHeaders = {
       'User-Agent':
@@ -1306,6 +1323,70 @@ export class GmbScraperService {
         return await res.text();
       } catch {
         return '';
+      }
+    };
+
+    const extractSocialsFromHtml = (html: string) => {
+      if (!html) return;
+
+      // 1. Instagram
+      if (!socials.instagram) {
+        const igMatch = html.match(/https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9_.-]+)\/?/i);
+        if (igMatch && igMatch[1]) {
+          const handle = igMatch[1].toLowerCase().replace(/\/$/, '');
+          const ignored = ['p', 'reel', 'reels', 'explore', 'stories', 'direct', 'accounts', 'developer', 'about', 'legal', 'tags', 'tv', 'sharer'];
+          if (!ignored.includes(handle) && handle.length > 1) {
+            socials.instagram = `https://instagram.com/${handle}`;
+          }
+        }
+      }
+
+      // 2. Facebook
+      if (!socials.facebook) {
+        const fbMatch = html.match(/https?:\/\/(?:www\.)?(?:facebook\.com|fb\.me)\/([a-zA-Z0-9_.-]+)\/?/i);
+        if (fbMatch && fbMatch[1]) {
+          const handle = fbMatch[1].toLowerCase().replace(/\/$/, '');
+          const ignored = ['sharer', 'share', 'share.php', 'plugins', 'dialog', 'login', 'groups', 'pages', 'events', 'help', 'policies', 'privacy', 'tr', 'home', 'r.php'];
+          if (!ignored.includes(handle) && handle.length > 1) {
+            socials.facebook = `https://facebook.com/${handle}`;
+          }
+        }
+      }
+
+      // 3. LinkedIn
+      if (!socials.linkedin) {
+        const liMatch = html.match(/https?:\/\/(?:www\.)?linkedin\.com\/(?:company|in|school)\/([a-zA-Z0-9_-]+)\/?/i);
+        if (liMatch && liMatch[0]) {
+          const cleanUrl = liMatch[0].replace(/\/$/, '');
+          if (!cleanUrl.includes('/shareArticle') && !cleanUrl.includes('/sharing')) {
+            socials.linkedin = cleanUrl;
+          }
+        }
+      }
+
+      // 4. Twitter / X
+      if (!socials.twitter) {
+        const twMatch = html.match(/https?:\/\/(?:www\.)?(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)\/?/i);
+        if (twMatch && twMatch[1]) {
+          const handle = twMatch[1].toLowerCase();
+          const ignored = ['intent', 'share', 'home', 'explore', 'search', 'hashtag', 'i', 'privacy', 'tos', 'personalization'];
+          if (!ignored.includes(handle) && handle.length > 1) {
+            socials.twitter = `https://x.com/${handle}`;
+          }
+        }
+      }
+
+      // 5. YouTube
+      if (!socials.youtube) {
+        const ytMatch = html.match(/https?:\/\/(?:www\.)?youtube\.com\/(?:@|c\/|channel\/|user\/)?([a-zA-Z0-9_.-]+)\/?/i);
+        if (ytMatch && ytMatch[0]) {
+          const fullMatch = ytMatch[0].replace(/\/$/, '');
+          const ignored = ['watch', 'embed', 'results', 'shorts', 'feed', 'playlist', 'live', 'premium'];
+          const segment = ytMatch[1]?.toLowerCase() || '';
+          if (!ignored.includes(segment)) {
+            socials.youtube = fullMatch;
+          }
+        }
       }
     };
 
@@ -1375,6 +1456,7 @@ export class GmbScraperService {
     // Step 1: Fetch Homepage first
     const homeHtml = await fetchPageHtml(siteUrl);
     extractEmailsFromHtml(homeHtml);
+    extractSocialsFromHtml(homeHtml);
 
     // Helper to select the highest-quality business email
     const selectBestEmail = (): string => {
@@ -1395,10 +1477,14 @@ export class GmbScraperService {
       return list[0];
     };
 
-    // If an email matching the business domain is already found on the homepage, return immediately
+    // If both domain email AND major socials are already found, return early
     const bestHomeEmail = selectBestEmail();
-    if (bestHomeEmail && (bestHomeEmail.endsWith(`@${parsedHostname}`) || bestHomeEmail.endsWith(`.${parsedHostname}`))) {
-      return { email: bestHomeEmail };
+    const hasDomainEmail = bestHomeEmail && (bestHomeEmail.endsWith(`@${parsedHostname}`) || bestHomeEmail.endsWith(`.${parsedHostname}`));
+    const hasSocials = Object.keys(socials).length > 0;
+
+    // If we have domain-matched email and at least one social, or if homeHtml was empty, return early
+    if (hasDomainEmail && hasSocials) {
+      return { email: bestHomeEmail, socials };
     }
 
     // Step 2: Discover internal Contact and About links from Homepage navigation/footer
@@ -1446,11 +1532,12 @@ export class GmbScraperService {
     for (const settled of subpageResults) {
       if (settled.status === 'fulfilled' && settled.value) {
         extractEmailsFromHtml(settled.value);
+        extractSocialsFromHtml(settled.value);
       }
     }
 
     const finalEmail = selectBestEmail();
-    return { email: finalEmail };
+    return { email: finalEmail, socials };
   }
 
   /**
@@ -1634,7 +1721,9 @@ export class GmbScraperService {
         status: 'OPERATIONAL',
         website: validWebsiteUrl || undefined,
         phone: item.phone || undefined,
+        email: email || undefined,
         googleMapsUrl: item.googleMapsUrl || undefined,
+        socials: item.socials || {},
         hasGbpClaimed: true,
         userVerified: true,
         lastEnrichedAt: new Date().toISOString(),
@@ -1643,6 +1732,7 @@ export class GmbScraperService {
       const metadata = {
         source: 'gmb_scraper',
         google_profile: googleProfile,
+        socials: item.socials || {},
       };
 
       const location = [item.city, item.state, item.country].filter(Boolean).join(', ') || item.address;
@@ -1652,12 +1742,12 @@ export class GmbScraperService {
           business_name, category, phone, email, website, location, country,
           whatsapp,
           status, consent_status, batch_id, whatsapp_eligible, whatsapp_decision_reason,
-          metadata, discovered_emails, last_enriched_at
+          metadata, discovered_emails, discovered_socials, last_enriched_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8,
           $9, 'none', $10, $11, $12,
-          $13, $14, NOW()
+          $13, $14, $15, NOW()
         ) RETURNING *`,
         [
           bName,
@@ -1674,6 +1764,7 @@ export class GmbScraperService {
           waReason,
           JSON.stringify(metadata),
           email ? JSON.stringify([email]) : JSON.stringify([]),
+          JSON.stringify(item.socials || {}),
         ]
       );
 

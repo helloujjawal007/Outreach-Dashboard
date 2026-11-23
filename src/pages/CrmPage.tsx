@@ -47,6 +47,9 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  Instagram,
+  Facebook,
+  Linkedin,
 } from 'lucide-react';
 import { PageHeader } from '@/components/Sidebar';
 import { Badge } from '@/components/Badge';
@@ -2932,10 +2935,6 @@ export function CrmPage({
               <option value="createdAt-asc">📅 Date Added (Oldest)</option>
               <option value="businessName-asc">🏢 Company (A → Z)</option>
               <option value="businessName-desc">🏢 Company (Z → A)</option>
-              <option value="score-desc">🔥 Score (Highest)</option>
-              <option value="score-asc">🔥 Score (Lowest)</option>
-              <option value="dealValue-desc">💰 Deal Value (Highest)</option>
-              <option value="dealValue-asc">💰 Deal Value (Lowest)</option>
               <option value="stage-asc">📊 Stage</option>
               <option value="lastContactedAt-desc">🕒 Last Contacted</option>
             </select>
@@ -3749,26 +3748,6 @@ export function CrmPage({
                       {renderSortIcon('category')}
                     </div>
                   </th>
-                  <th
-                    onClick={() => handleToggleSort('dealValue')}
-                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
-                    title="Click to sort by Deal Value"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Deal Value</span>
-                      {renderSortIcon('dealValue')}
-                    </div>
-                  </th>
-                  <th
-                    onClick={() => handleToggleSort('score')}
-                    className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 group transition select-none"
-                    title="Click to sort by Lead Score"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Score</span>
-                      {renderSortIcon('score')}
-                    </div>
-                  </th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-600">Channels</th>
                   <th
                     onClick={() => handleToggleSort('stage')}
@@ -3798,7 +3777,7 @@ export function CrmPage({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={entityFilter === 'trash' ? 7 : (entityFilter === 'manual_review' || entityFilter === 'invalid_list' || entityFilter === 'duplicates') ? 6 : 10}
+                    colSpan={entityFilter === 'trash' ? 7 : (entityFilter === 'manual_review' || entityFilter === 'invalid_list' || entityFilter === 'duplicates') ? 6 : 8}
                     className="px-4 py-12 text-center text-ink-300"
                   >
                     {entityFilter === 'trash'
@@ -4172,51 +4151,7 @@ export function CrmPage({
                         </div>
                       </td>
 
-                      {/* 3. Deal Value */}
-                      <td className="px-4 py-3">
-                        {(() => {
-                          const rawVal = lead.metadata?.deal_value ?? lead.metadata?.dealValue;
-                          const val = rawVal !== undefined && rawVal !== null ? Number(rawVal) : 0;
-                          if (!Number.isFinite(val) || val <= 0) {
-                            return <span className="text-xs text-slate-400">—</span>;
-                          }
-                          return (
-                            <div className="flex items-center gap-1">
-                              <DollarSign size={13} className="text-emerald-600 shrink-0" />
-                              <span className="font-extrabold text-xs text-emerald-700 font-mono">
-                                ${val.toLocaleString()}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </td>
-
-                      {/* 4. Score / Intent */}
-                      <td className="px-4 py-3">
-                        {(() => {
-                          const rawScore = lead.metadata?.lead_score ?? lead.metadata?.leadScore;
-                          const score = rawScore !== undefined && rawScore !== null ? Number(rawScore) : null;
-                          if (score === null || !Number.isFinite(score)) {
-                            return <span className="text-xs text-slate-400">—</span>;
-                          }
-                          return (
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                                score >= 90
-                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                  : score >= 80
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200'
-                              }`}
-                            >
-                              <Flame size={11} className={score >= 80 ? 'text-amber-500 fill-amber-500' : 'text-slate-400'} />
-                              <span>{score}{score >= 80 ? ' Hot' : ''}</span>
-                            </span>
-                          );
-                        })()}
-                      </td>
-
-                      {/* 5. Omni-Channels */}
+                      {/* 3. Omni-Channels */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {lead.email && (
@@ -4234,6 +4169,50 @@ export function CrmPage({
                               <Globe size={12} />
                             </span>
                           )}
+                          {(() => {
+                            const socials = (lead as any).discovered_socials || (lead as any).discoveredSocials || lead.metadata?.discovered_socials || lead.metadata?.socials || lead.metadata?.google_profile?.socials;
+                            if (!socials || typeof socials !== 'object') return null;
+                            return (
+                              <>
+                                {socials.instagram && (
+                                  <a
+                                    href={socials.instagram.startsWith('http') ? socials.instagram : `https://instagram.com/${socials.instagram.replace(/^@/, '')}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 rounded bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 transition"
+                                    title={`Instagram: ${socials.instagram}`}
+                                  >
+                                    <Instagram size={12} />
+                                  </a>
+                                )}
+                                {socials.facebook && (
+                                  <a
+                                    href={socials.facebook.startsWith('http') ? socials.facebook : `https://facebook.com/${socials.facebook}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition"
+                                    title={`Facebook: ${socials.facebook}`}
+                                  >
+                                    <Facebook size={12} />
+                                  </a>
+                                )}
+                                {socials.linkedin && (
+                                  <a
+                                    href={socials.linkedin.startsWith('http') ? socials.linkedin : `https://linkedin.com/${socials.linkedin}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 rounded bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition"
+                                    title={`LinkedIn: ${socials.linkedin}`}
+                                  >
+                                    <Linkedin size={12} />
+                                  </a>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
 

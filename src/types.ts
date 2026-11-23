@@ -69,6 +69,7 @@ export interface Lead {
   detectedChannels?: string[];
   googleProfile?: GoogleBusinessProfile;
   discoveredEmails?: string[];
+  discoveredSocials?: ScrapedLeadSocials;
   inboundIntent?: string;
   inboundIntentConfidence?: number;
   aiSuggestedReply?: string;
@@ -535,6 +536,14 @@ export interface AutopilotSettingsUpdate {
   };
 }
 
+export interface ScrapedLeadSocials {
+  facebook?: string;
+  instagram?: string;
+  linkedin?: string;
+  twitter?: string;
+  youtube?: string;
+}
+
 export interface ScrapedLead {
   businessName: string;
   category: string;
@@ -551,6 +560,7 @@ export interface ScrapedLead {
   placeId?: string;
   emailDiscovered: boolean;
   emailSource?: string;
+  socials?: ScrapedLeadSocials;
 }
 
 export interface GmbLocationTarget {

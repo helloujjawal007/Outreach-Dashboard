@@ -24,6 +24,11 @@ import {
   Plus,
   Trash2,
   ShieldCheck,
+  Instagram,
+  Facebook,
+  Linkedin,
+  Twitter,
+  Youtube,
 } from 'lucide-react';
 import { PageHeader, type PageId } from '@/components/Sidebar';
 import { api } from '@/services/api';
@@ -112,7 +117,9 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const [excludedDbDuplicates, setExcludedDbDuplicates] = useState<number>(0);
 
   // Filter & Import State
-  const [filterType, setFilterType] = useState<'all' | 'with_email' | 'with_phone' | 'with_website' | 'without_website'>('all');
+  const [filterType, setFilterType] = useState<
+    'all' | 'with_email' | 'with_socials' | 'with_phone' | 'with_website' | 'without_website'
+  >('all');
   const [targetListId, setTargetListId] = useState<string>('none');
   const [batchName, setBatchName] = useState<string>('');
   const [isImporting, setIsImporting] = useState(false);
@@ -618,6 +625,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const filteredLeads = useMemo(() => {
     return scrapedLeads.filter((l) => {
       if (filterType === 'with_email') return Boolean(l.email && l.email.includes('@'));
+      if (filterType === 'with_socials') return Boolean(l.socials && Object.values(l.socials).some(Boolean));
       if (filterType === 'with_phone') return Boolean(l.phone && l.phone.trim());
       if (filterType === 'with_website') return Boolean(l.website && l.website.trim());
       if (filterType === 'without_website') return !l.website || l.website.trim() === '';
@@ -710,13 +718,33 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
     const leadsToExport = toExport.length > 0 ? toExport : scrapedLeads;
     if (leadsToExport.length === 0) return;
 
-    const headers = ['Business Name', 'Category', 'Phone', 'Email', 'Website', 'Address', 'Rating', 'Reviews Count', 'Google Maps URL'];
+    const headers = [
+      'Business Name',
+      'Category',
+      'Phone',
+      'Email',
+      'Website',
+      'Instagram',
+      'Facebook',
+      'LinkedIn',
+      'Twitter/X',
+      'YouTube',
+      'Address',
+      'Rating',
+      'Reviews Count',
+      'Google Maps URL',
+    ];
     const rows = leadsToExport.map((l) => [
       `"${(l.businessName || '').replace(/"/g, '""')}"`,
       `"${(l.category || '').replace(/"/g, '""')}"`,
       `"${(l.phone || '').replace(/"/g, '""')}"`,
       `"${(l.email || '').replace(/"/g, '""')}"`,
       `"${(l.website || '').replace(/"/g, '""')}"`,
+      `"${(l.socials?.instagram || '').replace(/"/g, '""')}"`,
+      `"${(l.socials?.facebook || '').replace(/"/g, '""')}"`,
+      `"${(l.socials?.linkedin || '').replace(/"/g, '""')}"`,
+      `"${(l.socials?.twitter || '').replace(/"/g, '""')}"`,
+      `"${(l.socials?.youtube || '').replace(/"/g, '""')}"`,
       `"${(l.address || '').replace(/"/g, '""')}"`,
       l.rating || '',
       l.reviewsCount || 0,
@@ -751,6 +779,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
   const stats = useMemo(() => {
     const total = scrapedLeads.length;
     const withEmail = scrapedLeads.filter((l) => l.email && l.email.includes('@')).length;
+    const withSocials = scrapedLeads.filter((l) => l.socials && Object.values(l.socials).some(Boolean)).length;
     const withPhone = scrapedLeads.filter((l) => l.phone && l.phone.trim()).length;
     const withWebsite = scrapedLeads.filter((l) => l.website && l.website.trim()).length;
     const avgRating =
@@ -758,7 +787,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
         ? (scrapedLeads.reduce((acc, l) => acc + (l.rating || 0), 0) / total).toFixed(1)
         : '0.0';
 
-    return { total, withEmail, withPhone, withWebsite, avgRating };
+    return { total, withEmail, withSocials, withPhone, withWebsite, avgRating };
   }, [scrapedLeads]);
 
   // Target query display
@@ -1643,6 +1672,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                 [
                   { id: 'all', label: `All (${scrapedLeads.length})` },
                   { id: 'with_email', label: `With Email (${stats.withEmail})` },
+                  { id: 'with_socials', label: `With Socials (${stats.withSocials})` },
                   { id: 'with_phone', label: `With Phone (${stats.withPhone})` },
                   { id: 'with_website', label: `With Website (${stats.withWebsite})` },
                 ] as const
@@ -1812,6 +1842,7 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                     <th className="py-3 px-4">Direct Phone</th>
                     <th className="py-3 px-4">Verified Email</th>
                     <th className="py-3 px-4">Website</th>
+                    <th className="py-3 px-4">Social Profiles</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1927,6 +1958,76 @@ export function LeadScraperPage({ store, onNavigate }: Props) {
                             </div>
                           ) : (
                             <span className="text-slate-400 italic text-[11px]">No verified website</span>
+                          )}
+                        </td>
+
+                        {/* Social Profiles */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {lead.socials && Object.values(lead.socials).some(Boolean) ? (
+                            <div className="flex items-center gap-1 flex-wrap max-w-44">
+                              {lead.socials.instagram && (
+                                <a
+                                  href={lead.socials.instagram.startsWith('http') ? lead.socials.instagram : `https://instagram.com/${lead.socials.instagram.replace(/^@/, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 transition shadow-2xs"
+                                  title={`Instagram: ${lead.socials.instagram}`}
+                                >
+                                  <Instagram size={11} className="text-pink-600 shrink-0" />
+                                  <span>IG</span>
+                                </a>
+                              )}
+                              {lead.socials.facebook && (
+                                <a
+                                  href={lead.socials.facebook.startsWith('http') ? lead.socials.facebook : `https://facebook.com/${lead.socials.facebook}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition shadow-2xs"
+                                  title={`Facebook: ${lead.socials.facebook}`}
+                                >
+                                  <Facebook size={11} className="text-blue-600 shrink-0" />
+                                  <span>FB</span>
+                                </a>
+                              )}
+                              {lead.socials.linkedin && (
+                                <a
+                                  href={lead.socials.linkedin.startsWith('http') ? lead.socials.linkedin : `https://linkedin.com/${lead.socials.linkedin}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition shadow-2xs"
+                                  title={`LinkedIn: ${lead.socials.linkedin}`}
+                                >
+                                  <Linkedin size={11} className="text-sky-600 shrink-0" />
+                                  <span>LI</span>
+                                </a>
+                              )}
+                              {lead.socials.twitter && (
+                                <a
+                                  href={lead.socials.twitter.startsWith('http') ? lead.socials.twitter : `https://x.com/${lead.socials.twitter.replace(/^@/, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-300 hover:bg-slate-200 transition shadow-2xs"
+                                  title={`Twitter / X: ${lead.socials.twitter}`}
+                                >
+                                  <Twitter size={11} className="text-slate-700 shrink-0" />
+                                  <span>X</span>
+                                </a>
+                              )}
+                              {lead.socials.youtube && (
+                                <a
+                                  href={lead.socials.youtube.startsWith('http') ? lead.socials.youtube : `https://youtube.com/${lead.socials.youtube}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition shadow-2xs"
+                                  title={`YouTube: ${lead.socials.youtube}`}
+                                >
+                                  <Youtube size={11} className="text-rose-600 shrink-0" />
+                                  <span>YT</span>
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">—</span>
                           )}
                         </td>
 

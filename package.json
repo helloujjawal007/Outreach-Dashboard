@@ -9,7 +9,7 @@
     "dev:server": "tsx watch server/src/index.ts",
     "start": "tsx server/src/index.ts",
     "build": "vite build",
-    "render:build": "npm run build",
+    "render:build": "bash ./render-build.sh",
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p server/tsconfig.json",

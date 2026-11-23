@@ -16,10 +16,11 @@ import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import { LoginPage } from '@/pages/LoginPage';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SuppressionListModal } from '@/components/SuppressionListModal';
+import { WhatsAppConnectModal } from '@/components/WhatsAppConnectModal';
 import { api } from '@/services/api';
-import type { CrmSubFilter } from '@/types';
+import type { CrmSubFilter, WhatsAppSessionStatus } from '@/types';
 import { getCountryFlag } from '@/utils/countryFlag';
-import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search } from 'lucide-react';
+import { MessageSquare, RefreshCw, Zap, AlertTriangle, Search, MessageCircle, QrCode } from 'lucide-react';
 
 const VALID_PAGES: PageId[] = ['crm', 'builder', 'copilot', 'import', 'scraper', 'health', 'failures', 'pipeline'];
 
@@ -42,8 +43,18 @@ function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
   const [isAutopilotModalOpen, setIsAutopilotModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSuppressionModalOpen, setIsSuppressionModalOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [waStatus, setWaStatus] = useState<WhatsAppSessionStatus | null>(null);
   const [autoOpenContact, setAutoOpenContact] = useState<{ id: string; entityType: 'lead' | 'client' } | null>(null);
   const store = useStore();
+
+  useEffect(() => {
+    api.getWhatsAppSessionStatus().then(setWaStatus).catch(() => {});
+    const interval = setInterval(() => {
+      api.getWhatsAppSessionStatus().then(setWaStatus).catch(() => {});
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -226,6 +237,7 @@ function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
         onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
         onOpenSuppression={() => setIsSuppressionModalOpen(true)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        onOpenWhatsAppConnect={() => setIsWhatsAppModalOpen(true)}
         onLogout={onLogout}
         counts={counts}
       />
@@ -239,7 +251,27 @@ function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
             <h2 className="text-sm font-bold text-slate-800">{pageTitleMap[page]}</h2>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            {/* WhatsApp Socket Connection / Scan QR Button */}
+            <button
+              onClick={() => setIsWhatsAppModalOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-emerald-200/90 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-950 shadow-2xs hover:bg-emerald-100 hover:border-emerald-300 transition-all cursor-pointer"
+              title="Scan WhatsApp QR Code or view connection status"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${waStatus?.isConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${waStatus?.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+              </span>
+              <MessageCircle size={14} className="text-emerald-600" />
+              <span className="hidden md:inline font-semibold">WhatsApp</span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold border ${
+                waStatus?.isConnected
+                  ? 'bg-emerald-200/80 text-emerald-900 border-emerald-300/60'
+                  : 'bg-amber-200/80 text-amber-900 border-amber-300/60'
+              }`}>
+                {waStatus?.isConnected ? 'Linked' : 'Scan QR'}
+              </span>
+            </button>
             {/* Quick Search Shortcut Button */}
             <button
               onClick={() => setIsCommandPaletteOpen(true)}
@@ -409,6 +441,13 @@ function AppShell({ onLogout }: { onLogout: () => Promise<void> }) {
       <SuppressionListModal
         isOpen={isSuppressionModalOpen}
         onClose={() => setIsSuppressionModalOpen(false)}
+      />
+
+      {/* Global WhatsApp QR Connection & Phone Pairing Modal */}
+      <WhatsAppConnectModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        onStatusChange={setWaStatus}
       />
     </div>
   );

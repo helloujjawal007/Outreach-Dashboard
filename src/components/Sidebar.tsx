@@ -24,6 +24,7 @@ import {
   ShieldAlert,
   Search,
   TrendingUp,
+  QrCode,
 } from 'lucide-react';
 import type { CrmSubFilter } from '@/types';
 import { APP_VERSION, APP_UPDATED_AT, APP_HINT } from '@/version';
@@ -55,6 +56,7 @@ interface SidebarProps {
   onOpenScheduleModal?: () => void;
   onOpenSuppression?: () => void;
   onOpenCommandPalette?: () => void;
+  onOpenWhatsAppConnect?: () => void;
   counts: {
     leads: number;
     addedLeads: number;
@@ -82,6 +84,7 @@ export function Sidebar({
   onOpenScheduleModal: _onOpenScheduleModal,
   onOpenSuppression,
   onOpenCommandPalette,
+  onOpenWhatsAppConnect,
   onLogout,
   counts,
 }: SidebarProps) {
@@ -624,6 +627,23 @@ export function Sidebar({
             Audit
           </span>
         </button>
+
+        {/* 7c. WhatsApp QR Scanner & Socket Link */}
+        {onOpenWhatsAppConnect && (
+          <button
+            onClick={onOpenWhatsAppConnect}
+            className="group flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-all text-emerald-800 bg-emerald-50/50 hover:bg-emerald-100/70 border border-emerald-200/60 shadow-3xs"
+            title="Scan WhatsApp QR Code to connect phone for automated dispatches"
+          >
+            <div className="flex items-center gap-3">
+              <QrCode size={18} className="text-emerald-600 group-hover:scale-110 transition-transform" />
+              <span className="font-semibold text-emerald-950">WhatsApp (QR)</span>
+            </div>
+            <span className="rounded-full bg-emerald-200/80 px-1.5 py-0.2 text-[9px] font-bold text-emerald-900">
+              Scan QR
+            </span>
+          </button>
+        )}
 
         {/* 8. AI Strategy Copilot */}
         <button

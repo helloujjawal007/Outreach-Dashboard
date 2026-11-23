@@ -64,6 +64,8 @@ import { AutopilotControlModal } from '@/components/AutopilotControlModal';
 import { ClientAuditModal } from '@/components/ClientAuditModal';
 import { LeadActivityDrawer } from '@/components/LeadActivityDrawer';
 import { SlotsPanel } from '@/components/SlotsPanel';
+import { WhatsAppConnectModal } from '@/components/WhatsAppConnectModal';
+import type { WhatsAppSessionStatus } from '@/types';
 
 function getCompanyInitials(name: string): string {
   if (!name) return 'CO';
@@ -491,6 +493,12 @@ export function CrmPage({
   const [isUnmarkingClient, setIsUnmarkingClient] = useState(false);
   const [bulkActionSuccess, setBulkActionSuccess] = useState<string | null>(null);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [waSessionStatus, setWaSessionStatus] = useState<WhatsAppSessionStatus | null>(null);
+
+  useEffect(() => {
+    api.getWhatsAppSessionStatus().then(setWaSessionStatus).catch(() => {});
+  }, []);
 
   const handleCloseAddToList = useCallback(() => {
     setIsAddToListOpen(false);
@@ -2420,6 +2428,21 @@ export function CrmPage({
               </span>
               <Zap size={13} className="text-amber-500 fill-amber-500" />
               <span>Autopilot</span>
+            </button>
+
+            {/* WhatsApp QR Connect Pill */}
+            <button
+              type="button"
+              onClick={() => setIsWhatsAppModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50/70 text-emerald-950 text-xs font-semibold hover:bg-emerald-100/70 transition-colors cursor-pointer"
+              title="Scan WhatsApp QR or check connection status"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${waSessionStatus?.isConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${waSessionStatus?.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+              </span>
+              <MessageCircle size={13} className="text-emerald-600" />
+              <span>WhatsApp {waSessionStatus?.isConnected ? 'Linked' : 'Scan QR'}</span>
             </button>
           </div>
         }
@@ -6122,6 +6145,13 @@ export function CrmPage({
         isOpen={Boolean(timelineLead)}
         lead={timelineLead}
         onClose={() => setTimelineLead(null)}
+      />
+
+      {/* WhatsApp QR Connection Modal */}
+      <WhatsAppConnectModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        onStatusChange={setWaSessionStatus}
       />
 
       {/* Quick Add Contact Modal */}

@@ -14,8 +14,10 @@ import {
   Smartphone,
   Search,
   Trash2,
+  QrCode,
 } from 'lucide-react';
 import { Modal } from './Modal';
+import { WhatsAppConnectModal } from './WhatsAppConnectModal';
 import { api } from '@/services/api';
 import type { Lead, ScheduledDispatch, WhatsAppSessionStatus, Channel } from '@/types';
 import { channelLabels } from '@/types';
@@ -72,6 +74,7 @@ export function ScheduleOutreachModal({
 
   // WhatsApp connection state
   const [waStatus, setWaStatus] = useState<WhatsAppSessionStatus | null>(null);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -506,26 +509,39 @@ export function ScheduleOutreachModal({
 
               {/* Channel specific notice */}
               {channel === 'whatsapp' && (
-                <div className="mt-2 flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-900">
-                  <div className="flex items-center gap-2">
-                    <Smartphone size={15} className="text-emerald-600" />
-                    <span>
+                <div className="mt-2 flex items-center justify-between gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-2.5 text-xs text-emerald-900">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Smartphone size={15} className="text-emerald-600 shrink-0" />
+                    <span className="truncate">
                       {waStatus?.isConnected ? (
                         <>
                           Automated WhatsApp dispatch active via{' '}
-                          <strong className="font-bold">{waStatus.phoneNumber}</strong> ({waStatus.name || 'Ujjawal'})
+                          <strong className="font-bold">{waStatus.phoneNumber}</strong> ({waStatus.name || 'Account'})
                         </>
                       ) : (
-                        <span className="text-amber-800">
-                          ⚠️ WhatsApp not connected. Scan QR in the dashboard to enable automated delivery.
+                        <span className="text-amber-800 font-medium">
+                          ⚠️ WhatsApp not connected. Scan QR to link phone for automated delivery.
                         </span>
                       )}
                     </span>
                   </div>
-                  {waStatus?.isConnected && (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-800 font-bold text-[10px]">
-                      Live Socket
-                    </span>
+                  {waStatus?.isConnected ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsWhatsAppModalOpen(true)}
+                      className="px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-800 font-bold text-[10px] hover:bg-emerald-300 transition shrink-0 cursor-pointer"
+                    >
+                      Live Socket (Manage)
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsWhatsAppModalOpen(true)}
+                      className="btn-primary py-1 px-2.5 text-[11px] font-bold flex items-center gap-1 shrink-0 shadow-2xs"
+                    >
+                      <QrCode size={12} />
+                      <span>Scan QR</span>
+                    </button>
                   )}
                 </div>
               )}
@@ -1089,6 +1105,13 @@ export function ScheduleOutreachModal({
           </div>
         )}
       </div>
+
+      {/* WhatsApp QR Connect Modal */}
+      <WhatsAppConnectModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        onStatusChange={setWaStatus}
+      />
     </Modal>
   );
 }

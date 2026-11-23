@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '@/services/api';
-import type { SlotStatus, SlotSenderSettings, SlotId, SlotHistoryResponse } from '@/types';
+import type { SlotStatus, SlotSenderSettings, SlotId, SlotHistoryResponse, WhatsAppSessionStatus } from '@/types';
+import { WhatsAppConnectModal } from './WhatsAppConnectModal';
 import {
   Clock,
   Mail,
@@ -21,6 +22,8 @@ import {
   Send,
   CheckCircle2,
   History,
+  MessageCircle,
+  QrCode,
 } from 'lucide-react';
 
 export function SlotsPanel() {
@@ -46,6 +49,8 @@ export function SlotsPanel() {
   const [historyListFilter, setHistoryListFilter] = useState<string>('all');
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [waStatus, setWaStatus] = useState<WhatsAppSessionStatus | null>(null);
   
   // Settings Form State
   const [cycleMinInput, setCycleMinInput] = useState('10');
@@ -130,6 +135,7 @@ export function SlotsPanel() {
           setSendWindowTzInput(res.settings.send_window_timezone || 'UTC');
         }
       }
+      api.getWhatsAppSessionStatus().then(setWaStatus).catch(() => {});
     } catch (err: any) {
       console.warn('[SlotsPanel] fetchStatus error:', err?.message);
     } finally {
@@ -590,6 +596,18 @@ export function SlotsPanel() {
           >
             <Play size={13} className={isTickRunning ? 'animate-spin' : ''} />
             <span>Trigger Tick</span>
+          </button>
+
+          {/* WhatsApp QR Scan / Link Phone */}
+          <button
+            type="button"
+            onClick={() => setIsWhatsAppModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
+            title="Scan WhatsApp QR Code or manage WhatsApp connection"
+          >
+            <QrCode size={13} className="text-emerald-600" />
+            <span>WhatsApp {waStatus?.isConnected ? 'Linked' : 'Scan QR'}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${waStatus?.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           </button>
 
           {/* Settings Drawer Toggle */}
@@ -1456,6 +1474,13 @@ export function SlotsPanel() {
           </div>
         </div>
       )}
+
+      {/* WhatsApp QR Connection Modal */}
+      <WhatsAppConnectModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        onStatusChange={setWaStatus}
+      />
     </div>
   );
 }

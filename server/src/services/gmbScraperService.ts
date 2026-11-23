@@ -437,8 +437,8 @@ export class GmbScraperService {
     let lastError = 'Connection failed';
 
     for (const attempt of [
-      { url: targetUrl, method: 'GET' as const, timeoutMs: 8500 },
-      { url: parsed.origin, method: 'HEAD' as const, timeoutMs: 5000 },
+      { url: targetUrl, method: 'GET' as const, timeoutMs: 3500 },
+      { url: parsed.origin, method: 'HEAD' as const, timeoutMs: 2500 },
     ]) {
       try {
         const res = await fetch(attempt.url, {
@@ -468,6 +468,11 @@ export class GmbScraperService {
    * Searches Google Maps & Google Business Profiles for matching businesses
    */
   public async searchGmb(params: GmbSearchParams): Promise<ScrapedLeadItem[]> {
+    const START_TIME = Date.now();
+    // Render proxy timeout is strictly 100 seconds. We enforce a hard server-side deadline
+    // of 48 seconds from request start to guarantee a fast, complete HTTP 200 response with zero 504s/aborts.
+    const HARD_DEADLINE = START_TIME + 48000;
+
     const { category, categories, country, state, city = '', limit = 10, leadsPerLocation } = params;
     const cleanCity = (city || '').trim();
     const cleanState = (state || '').trim();
@@ -557,66 +562,113 @@ export class GmbScraperService {
       }
     }
 
-    // Attempt Chrome CDP search across all selected locations, categories and query variations
+    // Build batch tasks for a single persistent headless Chrome session
+    const primaryTasks: Array<{ queryStr: string; category: string; locationKey: string; targetCountry?: string; limit: number }> = [];
     for (const locQuery of locationQueries) {
-      if (rawList.length >= effectiveLimit) break;
-      let leadsInCurrentLocation = 0;
-
       for (const cat of targetCategories) {
-        if (rawList.length >= effectiveLimit || leadsInCurrentLocation >= perLocationQuota) break;
         const cleanCat = cat.trim();
+        primaryTasks.push({
+          queryStr: `${cleanCat} in ${locQuery}`,
+          category: cleanCat,
+          locationKey: locQuery,
+          targetCountry: cleanCountry,
+          limit: Math.min(perLocationQuota, effectiveLimit),
+        });
+      }
+    }
 
-        const queryVariations = [
-          `${cleanCat} in ${locQuery}`,
-          `${cleanCat} services in ${locQuery}`,
-          `best ${cleanCat} in ${locQuery}`,
-        ];
+    // Execute tasks over single persistent Chrome session
+    const locationCounts = new Map<string, number>();
+    const addResults = (batchResults: ScrapedLeadItem[], locationKey: string) => {
+      const currentLocCount = locationCounts.get(locationKey) || 0;
+      for (const r of batchResults) {
+        if (rawList.length >= effectiveLimit) break;
+        if (currentLocCount >= perLocationQuota) break;
 
-        for (const q of queryVariations) {
-          if (rawList.length >= effectiveLimit || leadsInCurrentLocation >= perLocationQuota) break;
+        const normName = this.cleanBizName(r.businessName);
+        const pDigits = (r.phone || '').replace(/\D/g, '');
+        const pLast10 = pDigits.length >= 7 ? pDigits.slice(-10) : '';
+
+        // Check if lead already exists in CRM database
+        let isDbMatch = false;
+        if (normName && dbNames.has(normName)) isDbMatch = true;
+        else if (pLast10 && dbPhones.has(pLast10)) isDbMatch = true;
+        else if (r.website) {
           try {
-            const neededForThisLocation = perLocationQuota - leadsInCurrentLocation;
-            const neededTotal = effectiveLimit - rawList.length;
-            const batchSize = Math.min(neededForThisLocation, neededTotal);
-
-            const batchResults = await this.scrapeWithCdp(q, batchSize, cleanCountry);
-            for (const r of batchResults) {
-              const normName = this.cleanBizName(r.businessName);
-              const pDigits = (r.phone || '').replace(/\D/g, '');
-              const pLast10 = pDigits.length >= 7 ? pDigits.slice(-10) : '';
-
-              // Check if lead already exists in CRM database
-              let isDbMatch = false;
-              if (normName && dbNames.has(normName)) isDbMatch = true;
-              else if (pLast10 && dbPhones.has(pLast10)) isDbMatch = true;
-              else if (r.website) {
-                try {
-                  const u = new URL(r.website.startsWith('http') ? r.website : `https://${r.website}`);
-                  const host = u.hostname.replace(/^www\./, '').toLowerCase();
-                  if (host.length > 3 && dbDomains.has(host)) isDbMatch = true;
-                } catch {}
-              }
-
-              if (isDbMatch) {
-                excludedDbDuplicatesCount++;
-                this.lastExcludedDuplicatesCount = excludedDbDuplicatesCount;
-                console.log(`[GmbScraperService] Auto-excluded lead already in CRM database: "${r.businessName}" (${r.phone || r.website || 'in database'})`);
-                continue;
-              }
-
-              if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
-                existingNames.add(normName);
-                if (pDigits) existingPhones.add(pDigits);
-                rawList.push(r);
-                leadsInCurrentLocation++;
-                if (rawList.length >= effectiveLimit || leadsInCurrentLocation >= perLocationQuota) break;
-              }
-            }
-          } catch (err: any) {
-            lastCdpError = err?.message || 'CDP query error';
-            console.warn(`[GmbScraperService] CDP query variation "${q}" error:`, err?.message);
-          }
+            const u = new URL(r.website.startsWith('http') ? r.website : `https://${r.website}`);
+            const host = u.hostname.replace(/^www\./, '').toLowerCase();
+            if (host.length > 3 && dbDomains.has(host)) isDbMatch = true;
+          } catch {}
         }
+
+        if (isDbMatch) {
+          excludedDbDuplicatesCount++;
+          this.lastExcludedDuplicatesCount = excludedDbDuplicatesCount;
+          continue;
+        }
+
+        if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
+          existingNames.add(normName);
+          if (pDigits) existingPhones.add(pDigits);
+          rawList.push(r);
+          locationCounts.set(locationKey, (locationCounts.get(locationKey) || 0) + 1);
+        }
+      }
+    };
+
+    try {
+      const batchOutputs = await this.scrapeBatchWithCdp(
+        primaryTasks.map((t) => ({
+          queryStr: t.queryStr,
+          category: t.category,
+          targetCountry: t.targetCountry,
+          limit: t.limit,
+          locationKey: t.locationKey,
+        })),
+        HARD_DEADLINE,
+        effectiveLimit
+      );
+
+      for (const item of batchOutputs) {
+        addResults([item], item.address || locationQueries[0] || '');
+      }
+    } catch (err: any) {
+      lastCdpError = err?.message || 'CDP batch error';
+      console.warn(`[GmbScraperService] Batch CDP scraping error:`, err?.message);
+    }
+
+    // If primary queries returned 0 and we still have >= 20s before deadline, try fallback variations
+    if (rawList.length === 0 && Date.now() < HARD_DEADLINE - 20000) {
+      console.log(`[GmbScraperService] Primary queries returned 0 results. Running fallback variations...`);
+      const fallbackTasks: Array<{ queryStr: string; category: string; locationKey: string; targetCountry?: string; limit: number }> = [];
+      for (const locQuery of locationQueries) {
+        for (const cat of targetCategories) {
+          fallbackTasks.push({
+            queryStr: `${cat.trim()} services in ${locQuery}`,
+            category: cat.trim(),
+            locationKey: locQuery,
+            targetCountry: cleanCountry,
+            limit: Math.min(perLocationQuota, effectiveLimit),
+          });
+        }
+      }
+      try {
+        const fallbackOutputs = await this.scrapeBatchWithCdp(
+          fallbackTasks.map((t) => ({
+            queryStr: t.queryStr,
+            category: t.category,
+            targetCountry: t.targetCountry,
+            limit: t.limit,
+            locationKey: t.locationKey,
+          })),
+          HARD_DEADLINE,
+          effectiveLimit
+        );
+        for (const item of fallbackOutputs) {
+          addResults([item], item.address || locationQueries[0] || '');
+        }
+      } catch (err: any) {
+        lastCdpError = err?.message || 'CDP fallback error';
       }
     }
 
@@ -625,14 +677,29 @@ export class GmbScraperService {
     }
 
     // Limit to requested count (strictly authentic leads from Google Maps)
-    const selected = rawList.slice(0, limit);
+    const selected = rawList.slice(0, effectiveLimit);
 
     // High-speed parallel verification of websites & genuine contact discovery
-    console.log(`[GmbScraperService] ⚡ High-speed parallel verification & contact discovery for ${selected.length} listings...`);
+    console.log(`[GmbScraperService] ⚡ High-speed parallel verification & contact discovery for ${selected.length} listings (Elapsed: ${Date.now() - START_TIME}ms)...`);
     const enriched: ScrapedLeadItem[] = [];
-    const chunkSize = 8; // Balanced concurrency prevents outbound TLS/socket timeout storms
+    const chunkSize = 10; // Balanced concurrency prevents outbound TLS/socket timeout storms
 
     for (let i = 0; i < selected.length; i += chunkSize) {
+      // Check if approaching 48s deadline: preserve remaining leads immediately without further deep crawl
+      if (Date.now() >= HARD_DEADLINE - 4000) {
+        console.log(`[GmbScraperService] Approaching 48s deadline (${Date.now() - START_TIME}ms elapsed). Preserving remaining ${selected.length - i} leads without deep crawl.`);
+        for (let j = i; j < selected.length; j++) {
+          const item = selected[j];
+          enriched.push({
+            ...item,
+            website: this.normalizeGmbWebsiteUrl(item.website),
+            email: item.email && this.isValidBusinessEmail(item.email) ? item.email : '',
+            emailDiscovered: false,
+          });
+        }
+        break;
+      }
+
       const chunk = selected.slice(i, i + chunkSize);
       const processedChunk = await Promise.all(
         chunk.map(async (item) => {
@@ -647,18 +714,13 @@ export class GmbScraperService {
               if (liveCheck.isLive && liveCheck.verifiedUrl) {
                 verifiedWebsite = liveCheck.verifiedUrl;
                 crawlTargetUrl = liveCheck.verifiedUrl;
-                console.log(`[GmbScraperService] Verified live website for "${item.businessName}": ${verifiedWebsite} (Status: ${liveCheck.status || 'OK'})`);
               } else if (liveCheck.dnsResolved !== false) {
                 // Keep valid GMB website link when HTTP check fails due to slow TTFB, timeout, or WAF/bot check
                 verifiedWebsite = normalizedGmbUrl;
                 crawlTargetUrl = normalizedGmbUrl;
-                console.log(`[GmbScraperService] Kept GMB website link for "${item.businessName}" despite HTTP probe notice (${liveCheck.error || 'unverified'}): ${verifiedWebsite}`);
-              } else {
-                console.log(`[GmbScraperService] Website DNS missing for "${item.businessName}": ${normalizedGmbUrl} (${liveCheck.error || 'NXDOMAIN'}). Setting website to empty.`);
               }
             } catch (err: any) {
               verifiedWebsite = normalizedGmbUrl;
-              console.warn(`[GmbScraperService] Website check exception for ${normalizedGmbUrl}, keeping GMB link:`, err.message);
             }
           }
 
@@ -666,23 +728,19 @@ export class GmbScraperService {
           let emailDiscovered = false;
           let emailSource: string | undefined = undefined;
 
-          if (crawlTargetUrl) {
+          // Only crawl website if we still have >= 6 seconds before deadline
+          if (crawlTargetUrl && Date.now() < HARD_DEADLINE - 6000) {
             try {
               const { email } = await this.crawlWebsiteForContact(crawlTargetUrl);
               if (email) {
-                // Check email format & MX record
                 const emailValidation = await emailValidatorService.validateEmail(email);
                 if (emailValidation.isValid) {
                   discoveredEmail = email;
                   emailDiscovered = true;
                   emailSource = 'website_crawl';
-                } else {
-                  console.log(`[GmbScraperService] Email ${email} from ${crawlTargetUrl} failed validation (${emailValidation.reason}). Discarded.`);
                 }
               }
-            } catch (err: any) {
-              console.warn(`[GmbScraperService] Error crawling website ${crawlTargetUrl}:`, err.message);
-            }
+            } catch (_) {}
           }
 
           return {
@@ -697,7 +755,7 @@ export class GmbScraperService {
       enriched.push(...processedChunk);
     }
 
-    console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} genuine businesses ready.`);
+    console.log(`[GmbScraperService] Completed GMB scrape: ${enriched.length} genuine businesses ready in ${Date.now() - START_TIME}ms.`);
     const withEmailCount = enriched.filter((l) => Boolean(l.email)).length;
     const withSiteCount = enriched.filter((l) => Boolean(l.website)).length;
     logPipeline(
@@ -708,14 +766,187 @@ export class GmbScraperService {
   }
 
   /**
-   * Spawns headless Chrome and captures Google Maps tbm=map response
+   * Parses Google Maps internal tbm=map response into structured lead items
    */
-  private async scrapeWithCdp(queryStr: string, limit: number, targetCountry?: string): Promise<ScrapedLeadItem[]> {
-    const port = await this.getFreePort();
-    let chromeProc: ChildProcess | null = null;
-    let ws: WebSocket | null = null;
-    const tempProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-cdp-'));
-    const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(queryStr)}?hl=en`;
+  public parseTbmMapResponse(
+    raw: string,
+    fallbackCategory: string,
+    queryStr: string,
+    targetCountry?: string,
+    limit: number = 50
+  ): ScrapedLeadItem[] {
+    const results: ScrapedLeadItem[] = [];
+    const jsonStr = (raw || '').replace(/^[^{[]+/, '');
+    if (!jsonStr) return results;
+
+    let json: any;
+    try {
+      json = JSON.parse(jsonStr);
+    } catch {
+      return results;
+    }
+
+    const rawList = Array.isArray(json[64]) ? json[64] : [];
+
+    for (const entry of rawList) {
+      if (results.length >= limit) break;
+      const b = Array.isArray(entry?.[1]) ? entry[1] : (Array.isArray(entry) ? entry : null);
+      if (!b) continue;
+
+      let name = '';
+      if (typeof b[11] === 'string' && b[11].trim()) {
+        name = b[11].trim();
+      } else if (b[90]?.[0]?.[0]?.[1]?.[0]?.[0]) {
+        name = b[90][0][0][1][0][0];
+      }
+
+      if (!name || name === 'undefined' || name.toLowerCase() === 'results') continue;
+
+      // Address
+      let address = b[39] || '';
+      let cityVal = '';
+      let stateVal = '';
+      let countryVal = '';
+
+      if (!address && Array.isArray(b[2])) {
+        address = b[2].join(', ');
+      }
+      if (!address && b[90]?.[0]) {
+        const parts = b[90][0].map((p: any) => p?.[1]?.[0]?.[0]).filter(Boolean);
+        address = parts.slice(1).join(', ');
+      }
+
+      // Structured location tokens
+      if (Array.isArray(b[90]?.[1])) {
+        cityVal = b[90][1][3] || '';
+        stateVal = b[90][1][5] || '';
+        countryVal = b[90][1][6] || '';
+      }
+
+      // Phone
+      let phone = '';
+      const phoneRegex = /^(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/;
+      const findPhone = (node: any): string | null => {
+        if (!node) return null;
+        if (typeof node === 'string') {
+          const clean = node.replace('tel:', '').trim();
+          if (phoneRegex.test(clean)) return clean;
+        }
+        if (Array.isArray(node)) {
+          for (const c of node) {
+            const p = findPhone(c);
+            if (p) return p;
+          }
+        }
+        return null;
+      };
+
+      if (b[178]?.[0]?.[0] && typeof b[178][0][0] === 'string') {
+        phone = b[178][0][0];
+      } else if (b[178]?.[0]?.[1]?.[0]?.[0] && typeof b[178][0][1][0][0] === 'string') {
+        phone = b[178][0][1][0][0];
+      } else {
+        phone = findPhone(b[87]) || findPhone(b) || '';
+      }
+
+      // Website
+      let website = '';
+      const findWebsite = (node: any): string | null => {
+        if (!node) return null;
+        if (typeof node === 'string' && (node.startsWith('http://') || node.startsWith('https://'))) {
+          if (workflowRoutingService.hasValidWebsite(node)) {
+            return node;
+          }
+        }
+        if (Array.isArray(node)) {
+          for (const c of node) {
+            const w = findWebsite(c);
+            if (w) return w;
+          }
+        }
+        return null;
+      };
+
+      if (b[7]?.[0] && typeof b[7][0] === 'string') {
+        website = b[7][0];
+      } else if (b[7]?.[1] && typeof b[7][1] === 'string') {
+        website = `https://${b[7][1]}`;
+      } else {
+        website = findWebsite(b[8]) || findWebsite(b) || '';
+      }
+
+      const cleanWeb = this.normalizeGmbWebsiteUrl(website);
+
+      // Rating & Reviews
+      let rating = 4.8;
+      let reviewsCount = 0;
+      if (typeof b[4]?.[7] === 'number') rating = b[4][7];
+      if (typeof b[4]?.[8] === 'number') reviewsCount = b[4][8];
+
+      const findReviewCount = (node: any): number | null => {
+        if (!node) return null;
+        if (Array.isArray(node)) {
+          for (let idx = 0; idx < node.length; idx++) {
+            const item = node[idx];
+            if (typeof item === 'number' && item >= 1 && item <= 5 && typeof node[idx + 1] === 'number' && node[idx + 1] > 5) {
+              return node[idx + 1];
+            }
+            if (typeof item === 'number' && item >= 1 && item <= 5 && Array.isArray(node[idx + 1])) {
+              const innerNum = node[idx + 1].find((x: any) => typeof x === 'number');
+              if (innerNum) return innerNum;
+            }
+            const found = findReviewCount(item);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      if (!reviewsCount && b[4]) {
+        const foundRev = findReviewCount(b[4]);
+        if (foundRev) reviewsCount = foundRev;
+      }
+
+      const placeId = typeof b[78] === 'string' ? b[78] : '';
+      const mapsUrl = placeId
+        ? `https://www.google.com/maps/place/?q=place_id:${placeId}`
+        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
+
+      const itemCategory = Array.isArray(b[13]) && typeof b[13][0] === 'string'
+        ? b[13][0]
+        : (fallbackCategory || queryStr.split(' in ')[0] || 'Local Services');
+
+      results.push({
+        businessName: name,
+        category: itemCategory,
+        phone,
+        email: '',
+        website: cleanWeb,
+        address: address || queryStr.split(' in ')[1] || '',
+        city: cityVal || undefined,
+        state: stateVal || undefined,
+        country: countryVal || targetCountry || 'USA',
+        rating: Number(rating.toFixed(1)),
+        reviewsCount,
+        googleMapsUrl: mapsUrl,
+        placeId: placeId || undefined,
+        emailDiscovered: false,
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Scrapes Google Maps across multiple queries within a single persistent Chrome CDP session.
+   * Eliminates the heavy process-spawn overhead across batch categories and locations.
+   */
+  public async scrapeBatchWithCdp(
+    tasks: Array<{ queryStr: string; category: string; targetCountry?: string; limit: number; locationKey?: string }>,
+    deadlineMs: number,
+    maxTotalResults: number = 240
+  ): Promise<ScrapedLeadItem[]> {
+    if (!tasks || tasks.length === 0) return [];
 
     const executable = this.getChromeExecutable();
     if (!executable) {
@@ -724,7 +955,12 @@ export class GmbScraperService {
       );
     }
 
+    const port = await this.getFreePort();
+    let chromeProc: ChildProcess | null = null;
+    let ws: WebSocket | null = null;
+    const tempProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-batch-cdp-'));
     let stderrOutput = '';
+    const allResults: ScrapedLeadItem[] = [];
 
     try {
       const isHeadlessShell = executable.includes('chrome-headless-shell');
@@ -735,9 +971,9 @@ export class GmbScraperService {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-software-rasterizer',
-        '--disable-dbus',                    // Suppresses the /run/dbus/system_bus_socket failure
+        '--disable-dbus',
         '--no-zygote',
-        '--single-process',                  // Prevents multiple memory-heavy sub-processes
+        '--single-process',
         `--remote-debugging-port=${port}`,
         '--remote-debugging-address=127.0.0.1',
         `--user-data-dir=${tempProfileDir}`,
@@ -776,12 +1012,10 @@ export class GmbScraperService {
       });
 
       chromeProc.on('error', (err) => {
-        console.error(`[GmbScraperService] Chrome process spawn error:`, err);
+        console.error(`[GmbScraperService] Chrome batch process spawn error:`, err);
       });
 
-      // Poll until remote debugging endpoint is responsive (up to 30s for slow cloud containers)
-      const page = await this.waitForCdpReady(port, 30000, chromeProc);
-
+      const page = await this.waitForCdpReady(port, 25000, chromeProc);
       if (!page || !page.webSocketDebuggerUrl) {
         const exitMsg =
           chromeProc.exitCode !== null
@@ -802,7 +1036,7 @@ export class GmbScraperService {
       const send = (method: string, p = {}) =>
         new Promise<any>((resolve, reject) => {
           const curId = msgId++;
-          const timer = setTimeout(() => reject(new Error(`Timeout ${method}`)), 15000);
+          const timer = setTimeout(() => reject(new Error(`Timeout ${method}`)), 12000);
           const handler = (e: any) => {
             try {
               const data = JSON.parse(e.data.toString());
@@ -817,14 +1051,14 @@ export class GmbScraperService {
           ws?.send(JSON.stringify({ id: curId, method, params: p }));
         });
 
-      let tbmReqId = '';
+      let activeTbmReqId = '';
       ws.addEventListener('message', (e: any) => {
         try {
           const data = JSON.parse(e.data.toString());
           if (data.method === 'Network.responseReceived') {
             const u = data.params?.response?.url || '';
             if (u.includes('tbm=map')) {
-              tbmReqId = data.params.requestId;
+              activeTbmReqId = data.params.requestId;
             }
           }
         } catch (_) {}
@@ -832,248 +1066,133 @@ export class GmbScraperService {
 
       await send('Network.enable');
       await send('Page.enable');
-      await send('Page.navigate', { url: targetUrl });
 
-      // Fast responsiveness: poll every 80ms (break instantly as soon as packet arrives)
-      for (let wait = 0; wait < 60; wait++) {
-        if (tbmReqId) break;
-        await new Promise((r) => setTimeout(r, 80));
-      }
-
-      if (!tbmReqId) {
-        await new Promise((r) => setTimeout(r, 600));
-      }
-
-      const results: ScrapedLeadItem[] = [];
-
-      if (tbmReqId) {
-        const res = await send('Network.getResponseBody', { requestId: tbmReqId });
-        const raw = (res?.body || '').replace(/^[^{[]+/, '');
-        if (raw) {
-          const json = JSON.parse(raw);
-          const rawList = Array.isArray(json[64]) ? json[64] : [];
-
-          for (const entry of rawList) {
-            if (results.length >= limit) break;
-            const b = Array.isArray(entry?.[1]) ? entry[1] : (Array.isArray(entry) ? entry : null);
-            if (!b) continue;
-
-            let name = '';
-            // Business name
-            if (typeof b[11] === 'string' && b[11].trim()) {
-              name = b[11].trim();
-            } else if (b[90]?.[0]?.[0]?.[1]?.[0]?.[0]) {
-              name = b[90][0][0][1][0][0];
-            }
-
-            if (!name || name === 'undefined' || name.toLowerCase() === 'results') continue;
-
-            // Address
-            let address = b[39] || '';
-            let cityVal = '';
-            let stateVal = '';
-            let countryVal = '';
-
-            if (!address && Array.isArray(b[2])) {
-              address = b[2].join(', ');
-            }
-            if (!address && b[90]?.[0]) {
-              const parts = b[90][0].map((p: any) => p?.[1]?.[0]?.[0]).filter(Boolean);
-              address = parts.slice(1).join(', ');
-            }
-
-            // Structured location tokens
-            if (Array.isArray(b[90]?.[1])) {
-              cityVal = b[90][1][3] || '';
-              stateVal = b[90][1][5] || '';
-              countryVal = b[90][1][6] || '';
-            }
-
-            // Phone
-            let phone = '';
-            const phoneRegex = /^(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/;
-            function findPhone(node: any): string | null {
-              if (!node) return null;
-              if (typeof node === 'string') {
-                const clean = node.replace('tel:', '').trim();
-                if (phoneRegex.test(clean)) return clean;
-              }
-              if (Array.isArray(node)) {
-                for (const c of node) {
-                  const p = findPhone(c);
-                  if (p) return p;
-                }
-              }
-              return null;
-            }
-
-            if (b[178]?.[0]?.[0] && typeof b[178][0][0] === 'string') {
-              phone = b[178][0][0];
-            } else if (b[178]?.[0]?.[1]?.[0]?.[0] && typeof b[178][0][1][0][0] === 'string') {
-              phone = b[178][0][1][0][0];
-            } else {
-              phone = findPhone(b[87]) || findPhone(b) || '';
-            }
-
-            // Website: directly from b[7][0] (actual URL) or b[7][1] (domain)
-            let website = '';
-            function findWebsite(node: any): string | null {
-              if (!node) return null;
-              if (typeof node === 'string' && (node.startsWith('http://') || node.startsWith('https://'))) {
-                if (workflowRoutingService.hasValidWebsite(node)) {
-                  return node;
-                }
-              }
-              if (Array.isArray(node)) {
-                for (const c of node) {
-                  const w = findWebsite(c);
-                  if (w) return w;
-                }
-              }
-              return null;
-            }
-
-            if (b[7]?.[0] && typeof b[7][0] === 'string') {
-              website = b[7][0];
-            } else if (b[7]?.[1] && typeof b[7][1] === 'string') {
-              website = `https://${b[7][1]}`;
-            } else {
-              website = findWebsite(b[8]) || findWebsite(b) || '';
-            }
-
-            // Clean & unwrap Google redirect website URLs (including bare domains / /url?q=...)
-            const cleanWeb = this.normalizeGmbWebsiteUrl(website);
-
-            // Rating & Reviews
-            let rating = 4.8;
-            let reviewsCount = 0;
-            if (typeof b[4]?.[7] === 'number') rating = b[4][7];
-            if (typeof b[4]?.[8] === 'number') reviewsCount = b[4][8];
-
-            function findReviewCount(node: any): number | null {
-              if (!node) return null;
-              if (Array.isArray(node)) {
-                for (let idx = 0; idx < node.length; idx++) {
-                  const item = node[idx];
-                  if (typeof item === 'number' && item >= 1 && item <= 5 && typeof node[idx + 1] === 'number' && node[idx + 1] > 5) {
-                    return node[idx + 1];
-                  }
-                  if (typeof item === 'number' && item >= 1 && item <= 5 && Array.isArray(node[idx + 1])) {
-                    const innerNum = node[idx + 1].find((x: any) => typeof x === 'number');
-                    if (innerNum) return innerNum;
-                  }
-                  const found = findReviewCount(item);
-                  if (found) return found;
-                }
-              }
-              return null;
-            }
-
-            if (!reviewsCount && b[4]) {
-              const foundRev = findReviewCount(b[4]);
-              if (foundRev) reviewsCount = foundRev;
-            }
-
-            const placeId = typeof b[78] === 'string' ? b[78] : '';
-            const mapsUrl = placeId
-              ? `https://www.google.com/maps/place/?q=place_id:${placeId}`
-              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
-
-            const category = Array.isArray(b[13]) && typeof b[13][0] === 'string'
-              ? b[13][0]
-              : (queryStr.split(' in ')[0] || 'Local Services');
-
-            results.push({
-              businessName: name,
-              category,
-              phone,
-              email: '',
-              website: cleanWeb,
-              address: address || queryStr.split(' in ')[1] || '',
-              city: cityVal || undefined,
-              state: stateVal || undefined,
-              country: countryVal || targetCountry || 'USA',
-              rating: Number(rating.toFixed(1)),
-              reviewsCount,
-              googleMapsUrl: mapsUrl,
-              placeId: placeId || undefined,
-              emailDiscovered: false,
-            });
-          }
+      for (let taskIdx = 0; taskIdx < tasks.length; taskIdx++) {
+        // Enforce hard deadline with 5-second buffer for teardown and response return
+        if (Date.now() >= deadlineMs - 5000) {
+          console.log(`[GmbScraperService] Reached deadline safety window (${tasks.length - taskIdx} tasks remaining). Wrapping up.`);
+          break;
         }
-      }
 
-      // Layer 2: DOM fallback if network listener didn't catch tbm=map
-      if (results.length === 0) {
+        if (allResults.length >= maxTotalResults) {
+          console.log(`[GmbScraperService] Reached maximum target results (${allResults.length}/${maxTotalResults}). Stopping query loop.`);
+          break;
+        }
+
+        const task = tasks[taskIdx];
+        activeTbmReqId = '';
+        const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(task.queryStr)}?hl=en`;
+
         try {
-          const domCards = await send('Runtime.evaluate', {
-            expression: `(() => {
-              const cards = document.querySelectorAll('div.Nv2PK, div[role="feed"] > div, div[role="article"]');
-              const items = [];
-              cards.forEach(card => {
-                const nameEl = card.querySelector('div.qBF1Pd, div.fontHeadlineSmall, [aria-label]');
-                const name = nameEl ? (nameEl.innerText || nameEl.getAttribute('aria-label') || '').trim() : '';
-                if (!name || name.toLowerCase() === 'results' || name === 'undefined' || name.length < 2) return;
-                
-                const webEl = card.querySelector('a[data-value="Website"], a[aria-label*="website" i], a.lcr4fd, a[data-item-id="authority"]');
-                const website = webEl ? webEl.href : '';
-                
-                const phoneEl = card.querySelector('button[data-item-id*="phone"], span.UsdlK');
-                const phone = phoneEl ? phoneEl.innerText.trim() : '';
-                
-                const addressEl = card.querySelector('button[data-item-id="address"], div.W4Efsb');
-                const address = addressEl ? addressEl.innerText.trim() : '';
+          await send('Page.navigate', { url: targetUrl });
 
-                const ratingEl = card.querySelector('span.MW4etd, span.ceNzKf');
-                const rating = ratingEl ? parseFloat(ratingEl.innerText.trim()) : 4.8;
+          // Fast poll for tbm=map response arrival (up to 2500ms max, polling every 50ms)
+          for (let wait = 0; wait < 50; wait++) {
+            if (activeTbmReqId) break;
+            await new Promise((r) => setTimeout(r, 50));
+          }
 
-                const reviewsEl = card.querySelector('span.UY7F9');
-                const reviewsCount = reviewsEl ? parseInt(reviewsEl.innerText.replace(/[^0-9]/g, ''), 10) : 0;
+          if (!activeTbmReqId) {
+            await new Promise((r) => setTimeout(r, 300));
+          }
 
-                const placeLink = card.querySelector('a.hfpxzc');
-                const mapsUrl = placeLink ? placeLink.href : '';
+          let taskResults: ScrapedLeadItem[] = [];
 
-                items.push({
-                  businessName: name,
-                  phone,
-                  website,
-                  address,
-                  rating: isNaN(rating) ? 4.8 : rating,
-                  reviewsCount: isNaN(reviewsCount) ? 0 : reviewsCount,
-                  googleMapsUrl: mapsUrl,
-                });
-              });
-              return items;
-            })()`,
-            returnByValue: true,
-          });
-
-          const extracted = domCards?.result?.value;
-          if (Array.isArray(extracted)) {
-            for (const item of extracted) {
-              if (results.length >= limit) break;
-              if (!item.businessName) continue;
-              results.push({
-                businessName: item.businessName,
-                category: queryStr.split(' in ')[0] || 'Local Services',
-                phone: item.phone || '',
-                email: '',
-                website: this.normalizeGmbWebsiteUrl(item.website),
-                address: item.address || queryStr.split(' in ')[1] || '',
-                country: targetCountry || 'USA',
-                rating: item.rating || 4.8,
-                reviewsCount: item.reviewsCount || 0,
-                googleMapsUrl: item.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.businessName)}`,
-                emailDiscovered: false,
-              });
+          if (activeTbmReqId) {
+            try {
+              const res = await send('Network.getResponseBody', { requestId: activeTbmReqId });
+              if (res?.body) {
+                taskResults = this.parseTbmMapResponse(
+                  res.body,
+                  task.category,
+                  task.queryStr,
+                  task.targetCountry,
+                  task.limit
+                );
+              }
+            } catch (bodyErr: any) {
+              console.warn(`[GmbScraperService] Failed to read tbm=map body for "${task.queryStr}":`, bodyErr.message);
             }
           }
-        } catch (domErr: any) {
-          console.warn(`[GmbScraperService] DOM extraction error:`, domErr?.message);
+
+          // Fallback to DOM extraction if network packet was not captured or empty
+          if (taskResults.length === 0) {
+            try {
+              const domCards = await send('Runtime.evaluate', {
+                expression: `(() => {
+                  const cards = document.querySelectorAll('div.Nv2PK, div[role="feed"] > div, div[role="article"]');
+                  const items = [];
+                  cards.forEach(card => {
+                    const nameEl = card.querySelector('div.qBF1Pd, div.fontHeadlineSmall, [aria-label]');
+                    const name = nameEl ? (nameEl.innerText || nameEl.getAttribute('aria-label') || '').trim() : '';
+                    if (!name || name.toLowerCase() === 'results' || name === 'undefined' || name.length < 2) return;
+                    
+                    const webEl = card.querySelector('a[data-value="Website"], a[aria-label*="website" i], a.lcr4fd, a[data-item-id="authority"]');
+                    const website = webEl ? webEl.href : '';
+                    
+                    const phoneEl = card.querySelector('button[data-item-id*="phone"], span.UsdlK');
+                    const phone = phoneEl ? phoneEl.innerText.trim() : '';
+                    
+                    const addressEl = card.querySelector('button[data-item-id="address"], div.W4Efsb');
+                    const address = addressEl ? addressEl.innerText.trim() : '';
+
+                    const ratingEl = card.querySelector('span.MW4etd, span.ceNzKf');
+                    const rating = ratingEl ? parseFloat(ratingEl.innerText.trim()) : 4.8;
+
+                    const reviewsEl = card.querySelector('span.UY7F9');
+                    const reviewsCount = reviewsEl ? parseInt(reviewsEl.innerText.replace(/[^0-9]/g, ''), 10) : 0;
+
+                    const placeLink = card.querySelector('a.hfpxzc');
+                    const mapsUrl = placeLink ? placeLink.href : '';
+
+                    items.push({
+                      businessName: name,
+                      phone,
+                      website,
+                      address,
+                      rating: isNaN(rating) ? 4.8 : rating,
+                      reviewsCount: isNaN(reviewsCount) ? 0 : reviewsCount,
+                      googleMapsUrl: mapsUrl,
+                    });
+                  });
+                  return items;
+                })()`,
+                returnByValue: true,
+              });
+
+              const extracted = domCards?.result?.value;
+              if (Array.isArray(extracted)) {
+                for (const item of extracted) {
+                  if (taskResults.length >= task.limit) break;
+                  if (!item.businessName) continue;
+                  taskResults.push({
+                    businessName: item.businessName,
+                    category: task.category || task.queryStr.split(' in ')[0] || 'Local Services',
+                    phone: item.phone || '',
+                    email: '',
+                    website: this.normalizeGmbWebsiteUrl(item.website),
+                    address: item.address || task.queryStr.split(' in ')[1] || '',
+                    country: task.targetCountry || 'USA',
+                    rating: item.rating || 4.8,
+                    reviewsCount: item.reviewsCount || 0,
+                    googleMapsUrl: item.googleMapsUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.businessName)}`,
+                    emailDiscovered: false,
+                  });
+                }
+              }
+            } catch (domErr: any) {
+              console.warn(`[GmbScraperService] DOM fallback evaluation error:`, domErr.message);
+            }
+          }
+
+          console.log(`[GmbScraperService] Query "${task.queryStr}" returned ${taskResults.length} listings`);
+          allResults.push(...taskResults);
+        } catch (taskErr: any) {
+          console.warn(`[GmbScraperService] Query "${task.queryStr}" error:`, taskErr.message);
         }
       }
 
-      return results;
+      return allResults;
     } finally {
       if (ws) {
         try {
@@ -1092,6 +1211,19 @@ export class GmbScraperService {
   }
 
   /**
+   * Spawns headless Chrome and captures Google Maps tbm=map response for a single query.
+   * Delegates to scrapeBatchWithCdp for unified session lifecycle.
+   */
+  public async scrapeWithCdp(queryStr: string, limit: number, targetCountry?: string): Promise<ScrapedLeadItem[]> {
+    const category = queryStr.split(' in ')[0] || 'Local Services';
+    return this.scrapeBatchWithCdp(
+      [{ queryStr, category, targetCountry, limit }],
+      Date.now() + 30000,
+      limit
+    );
+  }
+
+  /**
    * Crawls a business website and discovers contact email
    */
   public async crawlWebsiteForContact(siteUrl: string): Promise<{ email: string }> {
@@ -1103,15 +1235,10 @@ export class GmbScraperService {
     try {
       const parsed = new URL(siteUrl);
       const origin = parsed.origin;
-      pagesToTry.push(
-        `${origin}/contact`,
-        `${origin}/contact-us`,
-        `${origin}/about`,
-        `${origin}/about-us`
-      );
+      pagesToTry.push(`${origin}/contact`);
     } catch (_) {}
 
-    const targets = pagesToTry.slice(0, 3);
+    const targets = pagesToTry.slice(0, 2);
     const fetchPromises = targets.map(async (pageUrl) => {
       try {
         const res = await fetch(pageUrl, {
@@ -1120,7 +1247,7 @@ export class GmbScraperService {
               'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
             Accept: 'text/html,application/xhtml+xml',
           },
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(2500),
         });
 
         if (!res.ok) return '';

@@ -123,9 +123,9 @@ export class WorkflowRoutingService {
   /**
    * Checklist 2: Attachment Validation
    * - PDF exists on disk
-   * - Not empty (> 1024 bytes)
+   * - Not empty (>= 500 bytes, <= 15 MB)
    * - Valid magic header (%PDF / 0x25 0x50 0x44 0x46)
-   * - Domain check (matches recipient's domain)
+   * - Domain check (strips scheme/www before comparing to filename)
    */
   public validateAuditPdf(filePath?: string | null, expectedDomain?: string): PdfValidationResult {
     if (!filePath || typeof filePath !== 'string' || !filePath.trim()) {
@@ -139,8 +139,11 @@ export class WorkflowRoutingService {
 
     try {
       const stats = fs.statSync(resolved);
-      if (stats.size < 1024) {
+      if (stats.size < 500) {
         return { isValid: false, fileSize: stats.size, filename: path.basename(resolved), reason: `File is too small (${stats.size} bytes). Corrupt or empty PDF.` };
+      }
+      if (stats.size > 15 * 1024 * 1024) {
+        return { isValid: false, fileSize: stats.size, filename: path.basename(resolved), reason: `File is too large (${stats.size} bytes). Exceeds 15 MB PDF cap.` };
       }
 
       // Read first 5 bytes to verify standard %PDF header
@@ -150,18 +153,25 @@ export class WorkflowRoutingService {
       fs.closeSync(fd);
 
       const header = buffer.toString('utf8');
-      if (!header.startsWith('%PDF')) {
-        return { isValid: false, fileSize: stats.size, filename: path.basename(resolved), reason: `Invalid PDF format. Header is "${header}", expected "%PDF".` };
+      if (!header.startsWith('%PDF-')) {
+        return { isValid: false, fileSize: stats.size, filename: path.basename(resolved), reason: `Invalid PDF format. Header is "${header}", expected "%PDF-".` };
       }
 
-      // Check domain match if provided
+      // Check domain match if provided (strip scheme/www/path before alphanumeric comparison)
       const base = path.basename(resolved).toLowerCase();
       if (expectedDomain) {
-        const cleanDomain = expectedDomain.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const hostnameOnly = expectedDomain
+          .trim()
+          .toLowerCase()
+          .replace(/^https?:\/\//i, '')
+          .replace(/^www\./i, '')
+          .split(/[/?#]/)[0];
+        const cleanDomain = hostnameOnly.replace(/[^a-z0-9]/g, '');
         const cleanBase = base.replace(/[^a-z0-9]/g, '');
-        // Informational check
-        if (cleanDomain.length >= 4 && !cleanBase.includes(cleanDomain)) {
-          console.warn(`[WorkflowRoutingService] Warning: PDF filename "${base}" may not match target domain "${expectedDomain}"`);
+        // UUID-hashed callbacks (Technical_Audit_<uuid>_<hash>.pdf) legitimately use leadId hashes instead of domain slugs
+        const isUuidHashed = /^technical_audit_[0-9a-f]{8}-[0-9a-f]{4}-/i.test(base);
+        if (!isUuidHashed && cleanDomain.length >= 4 && !cleanBase.includes(cleanDomain)) {
+          console.warn(`[WorkflowRoutingService] Warning: PDF filename "${base}" may not match target domain "${hostnameOnly}"`);
         }
       }
 

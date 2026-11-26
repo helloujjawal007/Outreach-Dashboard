@@ -743,10 +743,12 @@ export class StageOutreachService {
     if (hasEmail) {
       try {
         let attachments: Array<{ filename: string; path?: string }> | undefined = undefined;
+        let skipAutoPdfAttach = false;
         if (lead.audit_pdf_path) {
           try {
             const stats = fs.statSync(lead.audit_pdf_path);
             if (stats.size > 2 * 1024 * 1024) {
+              skipAutoPdfAttach = true;
               console.warn(`[StageOutreachService] Attachment exceeds max allowed size (2 MB): ${stats.size} bytes`);
             } else {
               const pdfCheck = workflowRoutingService.validateAuditPdf(lead.audit_pdf_path, lead.website);
@@ -766,10 +768,12 @@ export class StageOutreachService {
                   path: lead.audit_pdf_path,
                 }];
               } else {
+                skipAutoPdfAttach = true;
                 console.warn(`[StageOutreachService] Attachment check failed for lead ${lead.id}: ${pdfCheck.reason}`);
               }
             }
           } catch (fileErr: any) {
+            skipAutoPdfAttach = true;
             console.warn(`[StageOutreachService] Attachment check error for lead ${lead.id}:`, fileErr?.message);
           }
         }
@@ -811,6 +815,7 @@ export class StageOutreachService {
               filename: pdfGen.pdfName,
               path: pdfGen.pdfPath,
             }];
+            skipAutoPdfAttach = false;
             lead.audit_pdf_path = pdfGen.pdfPath;
             lead.audit_pdf_name = pdfGen.pdfName;
             await query(`UPDATE leads SET audit_pdf_name = $1, audit_pdf_path = $2, updated_at = NOW() WHERE id = $3`, [pdfGen.pdfName, pdfGen.pdfPath, lead.id]);
@@ -866,6 +871,7 @@ export class StageOutreachService {
           businessName: lead.business_name,
           stage: stageInfo.stage,
           bypassGuards: options?.bypassGuards,
+          skipAutoPdfAttach,
         });
 
         if (sendRes.success) {

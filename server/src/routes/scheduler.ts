@@ -132,6 +132,26 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
     if (channel === 'email') {
       // Unified scheduling: route directly to the 5-Slot Sender Panel (replacing older list assignments)
       const { fiveSlotSenderService } = await import('../services/fiveSlotSenderService');
+      const resolvedStart =
+        scheduledFor && scheduledFor !== 'now' && !isNaN(new Date(scheduledFor).getTime())
+          ? new Date(scheduledFor)
+          : null;
+
+      if (scheduledFor === 'now') {
+        const currentSettings = await fiveSlotSenderService.getSettings();
+        if (new Date(currentSettings.anchor_timestamp).getTime() > Date.now() || !currentSettings.is_active) {
+          await fiveSlotSenderService.updateSettings({
+            anchor_timestamp: new Date().toISOString(),
+            is_active: true,
+          });
+        }
+      } else if (resolvedStart) {
+        await fiveSlotSenderService.updateSettings({
+          anchor_timestamp: resolvedStart.toISOString(),
+          is_active: true,
+        });
+      }
+
       const assignRes = await fiveSlotSenderService.autoAssignUnassignedLeads({
         listId: listId !== 'all' && listId !== 'all-leads' ? listId : undefined,
         rebalanceAll: false,
@@ -168,7 +188,7 @@ schedulerRouter.post('/schedule-list', async (req: Request, res: Response) => {
         scheduledCount: assignRes.assignedCount,
         listName: listId === 'all' ? 'All Leads' : listId,
         channel: 'email',
-        scheduledFor: scheduledFor === 'now' ? new Date() : new Date(scheduledFor),
+        scheduledFor: scheduledFor === 'now' ? new Date() : (resolvedStart || new Date()),
         message: `Successfully allocated ${assignRes.assignedCount} leads across the 5-Slot Sender (Slots A-E).`,
         distribution: assignRes.distribution,
       });

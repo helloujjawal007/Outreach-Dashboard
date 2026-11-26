@@ -12,13 +12,14 @@ export interface AppendSentEmailParams {
   html?: string;
   inboxEmail?: string;
   inboxId?: string;
+  messageId?: string;
   attachments?: Array<{ filename: string; path?: string; content?: any }>;
 }
 
 export class EmailSentSyncService {
   /**
-   * Appends an outbound email directly into the IMAP 'Sent' / '[Gmail]/Sent Mail' folder
-   * so it is immediately visible in the user's Gmail web and mobile clients.
+   * Ensures an outbound email is present in the IMAP 'Sent' / '[Gmail]/Sent Mail' folder
+   * without duplicating messages already auto-saved by Gmail SMTP.
    */
   async appendSentEmail(params: AppendSentEmailParams): Promise<boolean> {
     try {
@@ -86,13 +87,31 @@ export class EmailSentSyncService {
 
             const targetPath = sentMailbox ? sentMailbox.path : '[Gmail]/Sent Mail';
 
-            // Compile RFC 822 MIME message buffer using MailComposer
+            // Avoid duplicate copies in Gmail Sent Mail (Gmail SMTP auto-saves outbound messages)
+            const cleanMsgId = (params.messageId || '').trim();
+            if (cleanMsgId && (host.includes('gmail') || user.toLowerCase().endsWith('@gmail.com'))) {
+              await new Promise((r) => setTimeout(r, 1200));
+              const lock = await client.getMailboxLock(targetPath);
+              try {
+                const found = await client.search({ header: { 'message-id': cleanMsgId } });
+                if (Array.isArray(found) && found.length > 0) {
+                  console.log(`[EmailSentSyncService] ✅ Confirmed sent email already synced by Gmail in "${targetPath}" (${cleanMsgId})`);
+                  await client.logout();
+                  return;
+                }
+              } finally {
+                lock.release();
+              }
+            }
+
+            // Compile RFC 822 MIME message buffer using MailComposer (preserving exact Message-ID)
             const composer = new MailComposer({
               from: params.from,
               to: params.to,
               subject: params.subject,
               text: params.text || '',
               html: params.html || undefined,
+              messageId: cleanMsgId || undefined,
               attachments: params.attachments,
             });
 

@@ -668,6 +668,47 @@ export class FiveSlotSenderService {
   }
 
   /**
+   * Resolves the effective TD endpoint URL without allowing default localhost env vars
+   * to override an explicit custom/webhook URL persisted in slot_sender_settings.
+   */
+  resolveEffectiveTdUrl(settings: Pick<SlotSenderSettings, 'td_endpoint_url'>): string {
+    const dbUrl = (settings.td_endpoint_url || '').trim();
+    const isDefaultOrLegacy =
+      !dbUrl ||
+      dbUrl === 'http://127.0.0.1:5055' ||
+      dbUrl === 'http://127.0.0.1:5055/api/od/audit-request' ||
+      dbUrl === 'http://127.0.0.1:5055/api/audit/request' ||
+      dbUrl.includes(':5174') ||
+      dbUrl.includes('technical-audit-dashboard.vercel.app');
+
+    if (!isDefaultOrLegacy) {
+      return dbUrl;
+    }
+
+    return (
+      process.env.TECHNICAL_AUDIT_DASHBOARD_URL ||
+      env.TECHNICAL_AUDIT_DASHBOARD_URL ||
+      env.TD_ENDPOINT_URL ||
+      dbUrl ||
+      'http://127.0.0.1:5055'
+    ).trim();
+  }
+
+  /**
+   * Normalizes any TD base URL or webhook path into the request endpoint without double-appending.
+   */
+  buildTdAuditRequestUrl(rawUrl: string): string {
+    const clean = (rawUrl || '').trim().replace(/\/+$/, '');
+    if (!clean) {
+      return 'http://127.0.0.1:5055/api/od/audit-request';
+    }
+    if (/\/api\/(od\/audit-request|audit\/request)$/i.test(clean)) {
+      return clean;
+    }
+    return `${clean}/api/od/audit-request`;
+  }
+
+  /**
    * Probes TD connection endpoint with header and secret
    */
   async testTdConnection(targetUrl?: string, targetSecret?: string): Promise<{
@@ -679,40 +720,24 @@ export class FiveSlotSenderService {
     details?: any;
   }> {
     const settings = await this.getSettings();
-    const url = (targetUrl || settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/').trim();
+    const rawUrl = (targetUrl || this.resolveEffectiveTdUrl(settings) || 'http://127.0.0.1:5055').trim();
     const secret = (targetSecret || settings.td_shared_secret || 'td-secret-key-2026').trim();
+    const apiKey = process.env.OD_INTERNAL_API_KEY || env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
 
-    if (!url) {
+    if (!rawUrl) {
       return {
         ok: false,
         latencyMs: 0,
-        url,
+        url: rawUrl,
         message: 'TD endpoint URL is empty or unconfigured',
       };
     }
 
+    const url = this.buildTdAuditRequestUrl(rawUrl);
     const start = Date.now();
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-      // Check live connection to official Technical Audit Dashboard on Vercel
-      if (url.includes('technical-audit-dashboard.vercel.app')) {
-        const pingRes = await fetch('https://technical-audit-dashboard.vercel.app/', {
-          method: 'HEAD',
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        const latencyMs = Date.now() - start;
-        return {
-          ok: true,
-          status: pingRes.status || 200,
-          latencyMs,
-          url,
-          message: `Connected successfully to Technical Audit Dashboard (${pingRes.status} OK in ${latencyMs}ms)`,
-          details: 'Official Cloud Engine active via https://technical-audit-dashboard.vercel.app/',
-        };
-      }
 
       // Send lightweight ping probe without job fields so TD authenticates without queuing a real audit
       const probePayload = {
@@ -724,6 +749,7 @@ export class FiveSlotSenderService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
           'x-audit-secret': secret,
           'x-td-secret': secret,
           'x-od-secret': secret,
@@ -1181,6 +1207,7 @@ export class FiveSlotSenderService {
     }
 
     // 1. Replace older list assignments when switching to a specific list (or clearing scope to "all")
+    const currentSettings = await this.getSettings();
     let resolvedActiveListId: string | null = null;
     if (replaceExisting) {
       resolvedActiveListId = listId || null;
@@ -1199,7 +1226,6 @@ export class FiveSlotSenderService {
         );
       }
     } else {
-      const currentSettings = await this.getSettings();
       resolvedActiveListId = listId || currentSettings.active_list_id || null;
     }
 
@@ -1234,12 +1260,16 @@ export class FiveSlotSenderService {
     }
 
     // 3. Fetch contactable, non-completed active leads to assign
+    // Only assign phone-only (email-less) leads to 5-Slot outreach when WhatsApp cold outreach is enabled.
+    const channelEligibilityClause = currentSettings.whatsapp_cold_outreach_enabled
+      ? `((email IS NOT NULL AND TRIM(email) LIKE '%@%.%') OR LENGTH(REGEXP_REPLACE(COALESCE(whatsapp, phone, ''), '[^0-9]', '', 'g')) >= 8)`
+      : `(email IS NOT NULL AND TRIM(email) LIKE '%@%.%' AND TRIM(email) !~ '\\s')`;
     const whereConditions = [
       `deleted_at IS NULL`,
       `(status = 'active' OR status = 'queued' OR status IS NULL)`,
       `(consent_status = 'none' OR consent_status IS NULL)`,
       `(outreach_stage IS NULL OR outreach_stage NOT IN ('completed', 'followup_3', 'skipped_no_opportunity'))`,
-      `((email IS NOT NULL AND TRIM(email) LIKE '%@%.%') OR LENGTH(REGEXP_REPLACE(COALESCE(whatsapp, phone, ''), '[^0-9]', '', 'g')) >= 8)`,
+      channelEligibilityClause,
     ];
 
     const params: any[] = [];
@@ -1381,6 +1411,102 @@ export class FiveSlotSenderService {
   }
 
   /**
+   * Normalizes a synchronous TD JSON response payload into ClientAuditReport.
+   */
+  private normalizeTdSyncPayload(
+    data: any,
+    cleanWebsite: string,
+    businessName: string,
+    tdBaseUrl: string
+  ): { report: ClientAuditReport; auditId: string; score: number; isCached: boolean } {
+    const auditId = data.auditId || `td_${Date.now()}`;
+    const isCached = Boolean(data.cached);
+    const auditScore = data.score !== undefined ? Number(data.score) : (data.overallScore !== undefined ? Number(data.overallScore) : 50);
+
+    const urlObj = new URL(cleanWebsite.startsWith('http') ? cleanWebsite : `https://${cleanWebsite}`);
+    const domain = urlObj.hostname.replace(/^www\./, '');
+
+    const rawIssues = Array.isArray(data.criticalIssues) && data.criticalIssues.length > 0
+      ? data.criticalIssues
+      : Array.isArray(data.findings) && data.findings.length > 0
+      ? data.findings
+      : [
+          `Desktop Performance Score: ${auditScore}/100`,
+          `Core Web Vitals & speed optimizations identified`,
+        ];
+
+    const report: ClientAuditReport = {
+      targetUrl: cleanWebsite,
+      domain,
+      hasWebsite: true,
+      auditToolUrl: tdBaseUrl,
+      overallScore: auditScore,
+      grade: auditScore >= 80 ? 'Good' : auditScore >= 55 ? 'Needs Work' : 'Poor',
+      responseTimeMs: data.metrics?.responseTimeMs || 210,
+      mobileFriendly: data.metrics?.hasViewport !== false,
+      auditId,
+      source: 'technical-audit-dashboard',
+      metrics: data.metrics,
+      criticalIssues: rawIssues,
+      checks: Array.isArray(data.checks) ? data.checks : [],
+      recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
+      auditKeyTakeaways: data.keyTakeaways || rawIssues.slice(0, 3).join('; '),
+      summary: data.summary || `Technical audit for ${businessName} (${cleanWebsite})`,
+      auditedAt: data.auditedAt || new Date().toISOString(),
+    };
+
+    return { report, auditId, score: auditScore, isCached };
+  }
+
+  /**
+   * Persists completed audit findings and generates the client-friendly Chrome PDF on disk.
+   */
+  private async persistCompletedAuditResult(
+    leadId: string,
+    businessName: string,
+    report: ClientAuditReport
+  ): Promise<{ pdfPath: string; pdfName: string; fileSize: number; findings: string[]; takeaways: string; score: number }> {
+    const pdf = await technicalAuditPdfService.generateAuditPdf(report, businessName);
+    let fileSize = 0;
+    try {
+      if (fs.existsSync(pdf.pdfPath)) fileSize = fs.statSync(pdf.pdfPath).size;
+    } catch {}
+
+    const score = report.overallScore || 50;
+    const findings = report.criticalIssues && report.criticalIssues.length > 0
+      ? report.criticalIssues.slice(0, 5)
+      : [
+          `Desktop Speed Performance Score: ${score}/100`,
+          `Mobile Optimization & Core Web Vitals need remediation`,
+          `On-Page SEO Meta Tags missing or duplicate across crawled routes`,
+        ];
+    const takeaways = report.auditKeyTakeaways || findings.slice(0, 3).join('; ');
+
+    await query(
+      `UPDATE leads SET
+        audit_status = 'ready',
+        audit_score = $1,
+        audit_findings = $2,
+        audit_key_takeaways = $3,
+        audit_pdf_name = $4,
+        audit_pdf_path = $5,
+        audit_ready_at = NOW(),
+        updated_at = NOW()
+       WHERE id = $6`,
+      [score, JSON.stringify(findings), takeaways, pdf.pdfName, pdf.pdfPath, leadId]
+    );
+
+    return {
+      pdfPath: pdf.pdfPath,
+      pdfName: pdf.pdfName,
+      fileSize,
+      findings,
+      takeaways,
+      score,
+    };
+  }
+
+  /**
    * Ensures an audit report JSON and PDF are generated and ready for a candidate lead.
    * Checks and logs Steps 1, 2, 3, 4 with the slot label:
    *   Step 1: Scraped Site URL
@@ -1425,7 +1551,7 @@ export class FiveSlotSenderService {
     // If PDF already exists and is valid on disk with ready status:
     if (!options?.forceRefresh && lead.audit_status === 'ready' && isValidPdfFile(lead.audit_pdf_path)) {
       const settings = await this.getSettings();
-      const tdBaseUrl = (process.env.TECHNICAL_AUDIT_DASHBOARD_URL || settings.td_endpoint_url || 'https://technical-audit-dashboard.vercel.app/').replace(/\/+$/, '');
+      const tdBaseUrl = this.resolveEffectiveTdUrl(settings).replace(/\/+$/, '');
       const existingScore = lead.audit_score || 50;
       const existingAuditId = `cached_audit_${lead.id.slice(0, 8)}`;
       logSlotStep(slotLabel, 2, `Verified "${cleanWebsite}" with Technical Audit Dashboard (${tdBaseUrl})`, {
@@ -1462,9 +1588,10 @@ export class FiveSlotSenderService {
 
     // Step 2: Sent Site URL to Technical Audit dashboard
     const settings = await this.getSettings();
-    const tdBaseUrl = (process.env.TECHNICAL_AUDIT_DASHBOARD_URL || settings.td_endpoint_url || 'http://127.0.0.1:5055').replace(/\/+$/, '');
-    const tdEndpoint = tdBaseUrl.endsWith('/api/od/audit-request') ? tdBaseUrl : `${tdBaseUrl}/api/od/audit-request`;
-    const apiKey = process.env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
+    const tdBaseUrl = this.resolveEffectiveTdUrl(settings).replace(/\/+$/, '');
+    const tdEndpoint = this.buildTdAuditRequestUrl(tdBaseUrl);
+    const apiKey = process.env.OD_INTERNAL_API_KEY || env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
+    const sharedSecret = (settings.td_shared_secret || 'td-secret-key-2026').trim();
     const allowFallback = process.env.ALLOW_LOCAL_AUDIT_FALLBACK !== 'false';
 
     logSlotStep(slotLabel, 2, `Dispatching "${cleanWebsite}" to Technical Audit Dashboard (${tdEndpoint})`, {
@@ -1480,82 +1607,72 @@ export class FiveSlotSenderService {
     let remoteSuccess = false;
     let remoteErrorMsg = '';
 
-    try {
-      const response = await fetch(tdEndpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          websiteUrl: cleanWebsite,
-          companyName: lead.business_name,
-          leadId: lead.id,
-          forceRefresh: Boolean(options?.forceRefresh),
-        }),
-        signal: AbortSignal.timeout(45000),
-      });
+    // Avoid sending guaranteed 500 request to static Vercel frontend when fallback is permitted
+    const isBrokenCloudTd = tdBaseUrl.includes('technical-audit-dashboard.vercel.app');
+    if (isBrokenCloudTd && allowFallback) {
+      auditHttpStatus = 500;
+      remoteErrorMsg = 'Cloud Vercel SPA endpoint bypassed (returns HTTP 500 on /api/od/audit-request); delegating to live TD engine';
+    } else {
+      try {
+        const response = await fetch(tdEndpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'x-audit-secret': sharedSecret,
+            'x-td-secret': sharedSecret,
+            'x-od-secret': sharedSecret,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            websiteUrl: cleanWebsite,
+            website: cleanWebsite,
+            companyName: lead.business_name,
+            company: lead.business_name,
+            leadId: lead.id,
+            forceRefresh: Boolean(options?.forceRefresh),
+          }),
+          signal: AbortSignal.timeout(45000),
+        });
 
-      auditHttpStatus = response.status;
+        auditHttpStatus = response.status;
 
-      if (response.ok) {
-        const data: any = await response.json().catch(() => null);
-        if (data && data.source === 'technical-audit-dashboard' && data.status === 'completed') {
-          remoteSuccess = true;
-          auditId = data.auditId || `td_${Date.now()}`;
-          isCached = Boolean(data.cached);
-          auditScore = data.score !== undefined ? data.score : (data.overallScore ?? 50);
-          auditSource = 'technical-audit-dashboard';
+        if (response.ok) {
+          const data: any = await response.json().catch(() => null);
+          if (
+            data &&
+            (data.status === 'completed' || data.status === 'ready') &&
+            (Array.isArray(data.criticalIssues) || Array.isArray(data.findings) || typeof data.score === 'number' || typeof data.overallScore === 'number')
+          ) {
+            remoteSuccess = true;
+            const normalized = this.normalizeTdSyncPayload(data, cleanWebsite, lead.business_name, tdBaseUrl);
+            report = normalized.report;
+            auditId = normalized.auditId;
+            auditScore = normalized.score;
+            isCached = normalized.isCached;
+            auditSource = data.source === 'local-fallback' ? 'local-fallback' : 'technical-audit-dashboard';
 
-          const urlObj = new URL(cleanWebsite.startsWith('http') ? cleanWebsite : `https://${cleanWebsite}`);
-          const domain = urlObj.hostname.replace(/^www\./, '');
-
-          report = {
-            targetUrl: cleanWebsite,
-            domain,
-            hasWebsite: true,
-            auditToolUrl: tdBaseUrl,
-            overallScore: auditScore,
-            grade: auditScore >= 80 ? 'Good' : auditScore >= 55 ? 'Needs Work' : 'Poor',
-            responseTimeMs: data.metrics?.responseTimeMs || 210,
-            mobileFriendly: data.metrics?.hasViewport !== false,
-            auditId,
-            source: 'technical-audit-dashboard',
-            metrics: data.metrics,
-            criticalIssues: Array.isArray(data.criticalIssues) && data.criticalIssues.length > 0
-              ? data.criticalIssues
-              : [
-                  `Desktop Performance Score: ${auditScore}/100`,
-                  `Core Web Vitals & speed optimizations identified`,
-                ],
-            checks: Array.isArray(data.checks) ? data.checks : [],
-            recommendations: Array.isArray(data.recommendations) ? data.recommendations : [],
-            auditKeyTakeaways: data.keyTakeaways || (Array.isArray(data.criticalIssues) ? data.criticalIssues.slice(0, 3).join('; ') : undefined),
-            summary: data.summary || `Technical audit for ${lead.business_name} (${cleanWebsite})`,
-            auditedAt: data.auditedAt || new Date().toISOString(),
-          };
-
-          // Step 3: Received JSON from Technical Dashboard
-          logSlotStep(
-            slotLabel,
-            3,
-            `Received verified Audit JSON from Technical Dashboard for "${cleanWebsite}"`,
-            {
-              httpStatus: auditHttpStatus,
-              auditId,
-              score: auditScore,
-              cached: isCached,
-              source: 'technical-audit-dashboard',
-            }
-          );
+            // Step 3: Received JSON from Technical Dashboard
+            logSlotStep(
+              slotLabel,
+              3,
+              `Received verified Audit JSON from Technical Dashboard for "${cleanWebsite}"`,
+              {
+                httpStatus: auditHttpStatus,
+                auditId,
+                score: auditScore,
+                cached: isCached,
+                source: auditSource,
+              }
+            );
+          } else {
+            remoteErrorMsg = `Invalid remote payload (source="${data?.source}", status="${data?.status}")`;
+          }
         } else {
-          remoteErrorMsg = `Invalid remote payload (source="${data?.source}", status="${data?.status}")`;
+          remoteErrorMsg = `HTTP ${response.status} ${response.statusText}`;
         }
-      } else {
-        remoteErrorMsg = `HTTP ${response.status} ${response.statusText}`;
+      } catch (netErr: any) {
+        remoteErrorMsg = netErr?.name === 'TimeoutError' ? 'Request timed out after 45s' : (netErr?.message || 'Network error');
       }
-    } catch (netErr: any) {
-      remoteErrorMsg = netErr?.name === 'TimeoutError' ? 'Request timed out after 45s' : (netErr?.message || 'Network error');
     }
 
     if (!remoteSuccess) {
@@ -1571,93 +1688,65 @@ export class FiveSlotSenderService {
       }
 
       console.warn(
-        `[${slotLabel}] ⚠️ Remote Technical Audit Dashboard returned HTTP ${auditHttpStatus || remoteErrorMsg} — switching to local fallback engine`
+        `[${slotLabel}] ⚠️ Remote Technical Audit Dashboard unavailable (${auditHttpStatus || remoteErrorMsg}) — auditing via clientAuditService`
       );
 
       report = await clientAuditService.auditWebsite(cleanWebsite);
-      auditSource = 'local-fallback';
+      auditSource = report.source === 'technical-audit-dashboard' ? 'technical-audit-dashboard' : 'local-fallback';
       auditId = report.auditId || `local_audit_${Date.now()}`;
       report.auditId = auditId;
-      report.source = 'local-fallback';
+      report.source = auditSource;
       auditScore = report.overallScore || 50;
       isCached = false;
 
       logSlotStep(
         slotLabel,
         3,
-        `Local fallback engine completed audit for "${cleanWebsite}"`,
+        `${auditSource === 'technical-audit-dashboard' ? 'TD Supabase engine' : 'Local fallback engine'} completed audit for "${cleanWebsite}"`,
         {
-          httpStatus: auditHttpStatus || 200,
+          httpStatus: 200,
           auditId,
           score: auditScore,
           cached: false,
-          source: 'local-fallback',
+          source: auditSource,
         }
       );
     }
 
     // Step 4: Transformed in PDF
-    const pdf = await technicalAuditPdfService.generateAuditPdf(report, lead.business_name);
-    let fileSize = 0;
-    try {
-      if (fs.existsSync(pdf.pdfPath)) fileSize = fs.statSync(pdf.pdfPath).size;
-    } catch {}
+    const persisted = await this.persistCompletedAuditResult(lead.id, lead.business_name, report);
     logSlotStep(
       slotLabel,
       4,
-      `Generated Technical Audit PDF -> ${pdf.pdfName} (${fileSize.toLocaleString()} bytes) at ${pdf.pdfPath}`,
+      `Generated Technical Audit PDF -> ${persisted.pdfName} (${persisted.fileSize.toLocaleString()} bytes) at ${persisted.pdfPath}`,
       {
         auditId,
-        score: auditScore,
+        score: persisted.score,
         source: auditSource,
       }
     );
 
-    const findings = report.criticalIssues && report.criticalIssues.length > 0
-      ? report.criticalIssues.slice(0, 5)
-      : [
-          `Desktop Speed Performance Score: ${auditScore}/100`,
-          `Mobile Optimization & Core Web Vitals need remediation`,
-          `On-Page SEO Meta Tags missing or duplicate across crawled routes`,
-        ];
-    const takeaways = report.auditKeyTakeaways || findings.slice(0, 3).join('; ');
-
-    // Persist to database
-    await query(
-      `UPDATE leads SET
-        audit_status = 'ready',
-        audit_score = $1,
-        audit_findings = $2,
-        audit_key_takeaways = $3,
-        audit_pdf_name = $4,
-        audit_pdf_path = $5,
-        audit_ready_at = NOW(),
-        updated_at = NOW()
-       WHERE id = $6`,
-      [auditScore, JSON.stringify(findings), takeaways, pdf.pdfName, pdf.pdfPath, lead.id]
-    );
-
     lead.audit_status = 'ready';
-    lead.audit_score = auditScore;
-    lead.audit_findings = findings;
-    lead.audit_key_takeaways = takeaways;
-    lead.audit_pdf_name = pdf.pdfName;
-    lead.audit_pdf_path = pdf.pdfPath;
+    lead.audit_score = persisted.score;
+    lead.audit_findings = persisted.findings;
+    lead.audit_key_takeaways = persisted.takeaways;
+    lead.audit_pdf_name = persisted.pdfName;
+    lead.audit_pdf_path = persisted.pdfPath;
 
     return {
       ready: true,
-      pdfPath: pdf.pdfPath,
-      pdfName: pdf.pdfName,
-      httpStatus: auditHttpStatus || 200,
+      pdfPath: persisted.pdfPath,
+      pdfName: persisted.pdfName,
+      httpStatus: remoteSuccess ? (auditHttpStatus || 200) : 200,
       source: auditSource,
       auditId,
-      score: auditScore,
+      score: persisted.score,
     };
   }
 
   /**
    * Triggers audit request to Technical Dashboard (TD / SEO Audit Pro)
-   * Sends callbackUrl with ?secret= query param to guarantee authentication even if headers are dropped.
+   * Supports both synchronous TD responses (/api/od/audit-request) and async webhooks (/api/audit-callback).
    */
   async triggerAuditForLead(leadId: string): Promise<void> {
     const leadRes = await query<{
@@ -1700,58 +1789,81 @@ export class FiveSlotSenderService {
     // Secret is conveyed strictly via headers; never exposed in the URL query string
     const callbackUrl = `${appBaseUrl}/api/audit-callback`;
 
-    // If external TD webhook endpoint is configured (and not direct Vercel cloud dashboard), send HTTP dispatch
     const slotLabel = lead.slot_id ? `Slot ${lead.slot_id}` : 'Unassigned';
-    const isCloudTd = !settings.td_endpoint_url || settings.td_endpoint_url.includes('technical-audit-dashboard.vercel.app');
-    const isWebhookEndpoint =
-      (settings.td_endpoint_url.endsWith('/api/od/audit-request') || settings.td_endpoint_url.endsWith('/api/audit/request')) &&
-      !isCloudTd;
+    const rawTdUrl = this.resolveEffectiveTdUrl(settings);
+    const isCloudStaticTd = !rawTdUrl || rawTdUrl.includes('technical-audit-dashboard.vercel.app');
 
-    if (settings.td_endpoint_url && isWebhookEndpoint) {
+    if (!isCloudStaticTd) {
+      const webhookUrl = this.buildTdAuditRequestUrl(rawTdUrl);
+      const apiKey = process.env.OD_INTERNAL_API_KEY || env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
+      const sharedSecret = (settings.td_shared_secret || 'td-secret-key-2026').trim();
       try {
-        console.log(`[FiveSlotSenderService] 📡 Dispatching JIT audit to TD at ${settings.td_endpoint_url} for "${lead.business_name}" (${lead.website})...`);
+        console.log(`[FiveSlotSenderService] 📡 Dispatching JIT audit to TD at ${webhookUrl} for "${lead.business_name}" (${lead.website})...`);
         logPipeline(
           'SENT_TO_TD',
-          `Sent website details to Technical Dashboard for "${lead.business_name}" (${lead.website}) [${slotLabel}] -> ${settings.td_endpoint_url}`
+          `Sent website details to Technical Dashboard for "${lead.business_name}" (${lead.website}) [${slotLabel}] -> ${webhookUrl}`
         );
         const payload = {
           leadId: lead.id,
           website: lead.website,
+          websiteUrl: lead.website,
           email: lead.email,
           company: lead.business_name,
+          companyName: lead.business_name,
           contactName: lead.primary_contact_name,
           slotId: lead.slot_id || undefined,
           callbackUrl,
         };
 
-        const res = await fetch(settings.td_endpoint_url, {
+        const res = await fetch(webhookUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-audit-secret': settings.td_shared_secret,
-            'x-td-secret': settings.td_shared_secret,
-            'x-od-secret': settings.td_shared_secret,
+            'Authorization': `Bearer ${apiKey}`,
+            'x-audit-secret': sharedSecret,
+            'x-td-secret': sharedSecret,
+            'x-od-secret': sharedSecret,
           },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(30000),
         });
 
+        const bodyText = await res.text();
         if (!res.ok) {
-          throw new Error(`TD returned HTTP ${res.status}: ${await res.text()}`);
+          throw new Error(`TD returned HTTP ${res.status}: ${bodyText.slice(0, 200)}`);
+        }
+
+        let parsed: any = null;
+        try {
+          parsed = bodyText ? JSON.parse(bodyText) : null;
+        } catch {}
+
+        // Persist synchronous TD results immediately so leads never stay stuck in 'pending'
+        if (
+          parsed &&
+          (parsed.status === 'completed' || parsed.status === 'ready') &&
+          (Array.isArray(parsed.criticalIssues) || Array.isArray(parsed.findings) || typeof parsed.score === 'number' || typeof parsed.overallScore === 'number')
+        ) {
+          const normalized = this.normalizeTdSyncPayload(parsed, lead.website, lead.business_name, rawTdUrl);
+          const persisted = await this.persistCompletedAuditResult(lead.id, lead.business_name, normalized.report);
+          console.log(`[FiveSlotSenderService] ✅ Sync TD audit ready for "${lead.business_name}" with PDF: ${persisted.pdfName}`);
+          logPipeline('RECEIVED_JSON', `TD JSON & PDF ready for ${slotLabel}: "${lead.business_name}" (Score: ${persisted.score}/100)`);
+          return;
         }
 
         console.log(`[FiveSlotSenderService] ✅ Audit request accepted by TD for lead ${lead.id}`);
         logPipeline('SENT_TO_TD', `TD accepted audit request for "${lead.business_name}" [${slotLabel}] (waiting for JSON callback)`);
       } catch (tdErr: any) {
-        console.warn(`[FiveSlotSenderService] TD webhook dispatch failed, running live audit via https://technical-audit-dashboard.vercel.app/: ${tdErr.message}`);
+        console.warn(`[FiveSlotSenderService] TD webhook dispatch failed, running live audit via clientAuditService: ${tdErr.message}`);
         logPipelineError('TD Dispatch', `Failed sending "${lead.business_name}" [${slotLabel}] to TD; running live audit directly`, tdErr);
         await this.runLocalAudit(leadId, lead.website, lead.business_name, lead.slot_id);
       }
     } else {
-      // Execute live high-speed audit engine via https://technical-audit-dashboard.vercel.app/
-      console.log(`[FiveSlotSenderService] ⚡ Running live audit via Technical Audit Dashboard for "${lead.business_name}" (${lead.website}) [${slotLabel}]...`);
+      // Execute live audit engine directly via clientAuditService (TD Supabase seo-audit + local fallback)
+      console.log(`[FiveSlotSenderService] ⚡ Running live audit via Technical Audit engine for "${lead.business_name}" (${lead.website}) [${slotLabel}]...`);
       logPipeline(
         'SENT_TO_TD',
-        `Auditing "${lead.business_name}" (${lead.website}) [${slotLabel}] via Technical Audit Dashboard (https://technical-audit-dashboard.vercel.app/)`
+        `Auditing "${lead.business_name}" (${lead.website}) [${slotLabel}] via Technical Audit Dashboard`
       );
       await this.runLocalAudit(leadId, lead.website, lead.business_name, lead.slot_id);
     }
@@ -1765,41 +1877,10 @@ export class FiveSlotSenderService {
     try {
       console.log(`[FiveSlotSenderService] ⚡ Running local audit diagnostic for "${businessName}" (${website})...`);
       const report = await clientAuditService.auditWebsite(website);
-      const pdf = await technicalAuditPdfService.generateAuditPdf(report, businessName);
+      const persisted = await this.persistCompletedAuditResult(leadId, businessName, report);
 
-      const findings = report.criticalIssues && report.criticalIssues.length > 0
-        ? report.criticalIssues.slice(0, 5)
-        : [
-            `Desktop Speed Performance Score: ${report.overallScore || 45}/100`,
-            `Mobile Optimization & Core Web Vitals need remediation`,
-            `On-Page SEO Meta Tags missing or duplicate across crawled routes`,
-          ];
-
-      const takeaways = report.auditKeyTakeaways || findings.slice(0, 3).join('; ');
-
-      await query(
-        `UPDATE leads SET
-          audit_status = 'ready',
-          audit_score = $1,
-          audit_findings = $2,
-          audit_key_takeaways = $3,
-          audit_pdf_name = $4,
-          audit_pdf_path = $5,
-          audit_ready_at = NOW(),
-          updated_at = NOW()
-         WHERE id = $6`,
-        [
-          report.overallScore || 50,
-          JSON.stringify(findings),
-          takeaways,
-          pdf.pdfName,
-          pdf.pdfPath,
-          leadId,
-        ]
-      );
-
-      console.log(`[FiveSlotSenderService] ✅ Local audit ready for "${businessName}" with PDF: ${pdf.pdfName}`);
-      logPipeline('RECEIVED_JSON', `Local audit JSON ready for ${slotLabel}: "${businessName}" (Score: ${report.overallScore || 50}/100, Findings: ${findings.length})`);
+      console.log(`[FiveSlotSenderService] ✅ Audit ready for "${businessName}" with PDF: ${persisted.pdfName}`);
+      logPipeline('RECEIVED_JSON', `Audit JSON ready for ${slotLabel}: "${businessName}" (Score: ${persisted.score}/100, Findings: ${persisted.findings.length})`);
     } catch (err: any) {
       console.error(`[FiveSlotSenderService] Local audit failed for ${leadId}:`, err?.message);
       logPipelineError('Local Audit', `Audit failed for "${businessName}" [${slotLabel}] (${website})`, err);

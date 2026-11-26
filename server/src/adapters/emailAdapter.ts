@@ -314,6 +314,7 @@ export class EmailAdapter {
     businessName?: string;
     stage?: string;
     bypassGuards?: boolean;
+    skipAutoPdfAttach?: boolean;
   }): Promise<{
     success: boolean;
     throttled: boolean;
@@ -392,6 +393,7 @@ export class EmailAdapter {
     let liveError: string | undefined;
     let fromAddress = '';
     let cleanReplyTo = '';
+    let smtpMessageId: string | undefined;
 
     // Dynamic Token Replacement & Residual Placeholder Sweep (Checklist Item 2)
     let sanitizedSubject = params.subject || 'Outreach Follow-up';
@@ -439,17 +441,21 @@ export class EmailAdapter {
             gmb_notes: l.gmb_notes,
           });
 
-          // Auto-attach Audit PDF Report if not already attached
-          if (finalAttachments.length === 0) {
+          // Auto-attach Audit PDF Report if not already attached (strictly validating size <= 2 MB and %PDF- header)
+          if (finalAttachments.length === 0 && !params.skipAutoPdfAttach) {
             let pdfPath = (l.audit_pdf_path || '').trim();
             let pdfName = (l.audit_pdf_name || '').trim();
 
-            if (pdfPath && !fs.existsSync(pdfPath)) {
-              console.warn(`[EmailAdapter] Audit PDF path "${pdfPath}" not found on disk, re-compiling...`);
-              pdfPath = '';
+            if (pdfPath) {
+              const check = workflowRoutingService.validateAuditPdf(pdfPath, l.website);
+              const underLimit = check.isValid && check.fileSize <= 2 * 1024 * 1024;
+              if (!underLimit) {
+                console.warn(`[EmailAdapter] Skipping invalid or oversized Audit PDF "${pdfPath}" (${check.reason || `${check.fileSize} bytes > 2 MB`}), re-compiling...`);
+                pdfPath = '';
+              }
             }
 
-            // Auto-compile missing audit PDF on-the-fly if lead has a valid website
+            // Auto-compile missing/invalid audit PDF on-the-fly if lead has a valid website
             if (!pdfPath && l.website && workflowRoutingService.hasValidWebsite(l.website)) {
               try {
                 console.log(`[EmailAdapter] ⚡ Auto-compiling missing audit PDF report for ${l.business_name}...`);
@@ -457,12 +463,15 @@ export class EmailAdapter {
                 const { technicalAuditPdfService } = await import('../services/technicalAuditPdfService');
                 const auditReport = await clientAuditService.auditWebsite(l.website);
                 const pdfGen = await technicalAuditPdfService.generateAuditPdf(auditReport, l.business_name);
-                pdfPath = pdfGen.pdfPath;
-                pdfName = pdfGen.pdfName;
-                await query(
-                  `UPDATE leads SET audit_score = $1, audit_key_takeaways = $2, audit_pdf_name = $3, audit_pdf_path = $4 WHERE id = $5`,
-                  [auditReport.overallScore, auditReport.auditKeyTakeaways, pdfGen.pdfName, pdfGen.pdfPath, params.leadId]
-                );
+                const regenCheck = workflowRoutingService.validateAuditPdf(pdfGen.pdfPath, l.website);
+                if (regenCheck.isValid && regenCheck.fileSize <= 2 * 1024 * 1024) {
+                  pdfPath = pdfGen.pdfPath;
+                  pdfName = pdfGen.pdfName;
+                  await query(
+                    `UPDATE leads SET audit_score = $1, audit_key_takeaways = $2, audit_pdf_name = $3, audit_pdf_path = $4 WHERE id = $5`,
+                    [auditReport.overallScore, auditReport.auditKeyTakeaways, pdfGen.pdfName, pdfGen.pdfPath, params.leadId]
+                  );
+                }
               } catch (genErr: any) {
                 console.warn(`[EmailAdapter] Could not auto-compile audit PDF for ${l.business_name}:`, genErr?.message);
               }
@@ -553,7 +562,7 @@ export class EmailAdapter {
           stage: params.stage || 'initial',
           body: params.body,
           headers: customHeaders,
-          attachments: params.attachments,
+          attachments: finalAttachments.length > 0 ? finalAttachments : params.attachments,
         };
 
         this.mockSentLog.push(record);
@@ -589,6 +598,7 @@ export class EmailAdapter {
         });
 
         liveDelivery = 'sent_live';
+        smtpMessageId = info?.messageId || undefined;
         await inboxRotationService.recordDispatch(activeInbox.id, true);
         console.log(`[EmailAdapter] Dispatched via Rotating Inbox [${activeInbox.name} (${activeInbox.email})] to ${params.to} with ${finalAttachments.length} attachment(s)`);
         logPipeline(
@@ -596,7 +606,7 @@ export class EmailAdapter {
           `Sent via [${activeInbox.email}] -> ${params.to} | ${params.slotId ? `Slot ${params.slotId}` : 'Direct'} | Subject: "${finalSubject}" | Attachments: ${finalAttachments.length} | Message-ID: ${info?.messageId || 'n/a'}`
         );
 
-        // Sync sent message to IMAP Sent Mail so it appears in user's Gmail client
+        // Ensure sent message is synced in IMAP Sent Mail (deduplicated against Gmail SMTP's native copy)
         emailSentSyncService.appendSentEmail({
           from: fromAddress,
           to: params.to,
@@ -605,6 +615,7 @@ export class EmailAdapter {
           html: htmlBody,
           inboxEmail: activeInbox.email,
           inboxId: activeInbox.id,
+          messageId: smtpMessageId,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         }).catch((err) => console.warn('[EmailAdapter] Sent mail sync warning:', err?.message));
       } catch (smtpErr: unknown) {
@@ -669,12 +680,13 @@ export class EmailAdapter {
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         });
         liveDelivery = 'sent_live';
+        smtpMessageId = fallbackInfo?.messageId || undefined;
         logPipeline(
           'EMAIL_SENT',
           `Sent via [${env.SMTP_USER}] -> ${params.to} | ${params.slotId ? `Slot ${params.slotId}` : 'Direct'} | Subject: "${finalSubject}" | Attachments: ${finalAttachments.length} | Message-ID: ${fallbackInfo?.messageId || 'n/a'}`
         );
 
-        // Sync sent message to IMAP Sent Mail
+        // Sync sent message to IMAP Sent Mail (deduplicated against Gmail SMTP's native copy)
         emailSentSyncService.appendSentEmail({
           from: fromAddress,
           to: params.to,
@@ -682,6 +694,7 @@ export class EmailAdapter {
           text: plainText,
           html: htmlBody,
           inboxEmail: env.SMTP_USER,
+          messageId: smtpMessageId,
           attachments: finalAttachments.length > 0 ? finalAttachments : undefined,
         }).catch((err) => console.warn('[EmailAdapter] Sent mail sync warning:', err?.message));
       } catch (smtpErr: unknown) {
@@ -742,13 +755,14 @@ export class EmailAdapter {
       const isMockSend = this.isMock() || process.env.MOCK_SMTP === 'true';
       const msgMetadata = {
         ...(finalAttachments.length > 0 ? { attachments: finalAttachments.map((a) => ({ filename: a.filename, path: a.path })) } : {}),
+        ...(smtpMessageId ? { rfc_message_id: smtpMessageId } : {}),
         is_mock: isMockSend ? 'true' : 'false',
       };
       const msgRes = await query<{ id: string }>(
-        `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_id, inbox_email, metadata)
-         VALUES ($1, 'email', 'outbound', $2, $3, NOW(), $4, $5, $6)
+        `INSERT INTO messages (conversation_id, channel, direction, text, status, sent_at, inbox_id, inbox_email, external_id, metadata)
+         VALUES ($1, 'email', 'outbound', $2, $3, NOW(), $4, $5, $6, $7)
          RETURNING id`,
-        [convId, finalBodyText, messageStatus, activeInbox?.id || null, activeInbox?.email || env.SMTP_USER || '', JSON.stringify(msgMetadata)]
+        [convId, finalBodyText, messageStatus, activeInbox?.id || null, activeInbox?.email || env.SMTP_USER || '', smtpMessageId || null, JSON.stringify(msgMetadata)]
       );
 
       // Mark all preceding inbound messages in this thread as replied & seen

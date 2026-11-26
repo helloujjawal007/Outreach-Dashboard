@@ -61,6 +61,8 @@ auditRouter.get('/download/:filename', async (req: Request, res: Response) => {
     }
 
     const rawFilename = path.basename(decoded);
+    // Strict exact filename matching only; no fuzzy substring search (BUG-01 fix)
+    // path.basename() ensures we only match the exact filename, not substrings
     if (!rawFilename || rawFilename === '.' || rawFilename === '..' || !rawFilename.toLowerCase().endsWith('.pdf')) {
       return res.status(404).json({ success: false, error: 'Invalid audit PDF filename requested.' });
     }
@@ -69,7 +71,8 @@ auditRouter.get('/download/:filename', async (req: Request, res: Response) => {
     let pdfPath = path.resolve(auditsDir, rawFilename);
 
     // Hard boundary assertion: ensure resolved path is strictly within auditsDir
-    if (!pdfPath.startsWith(auditsDir + path.sep)) {
+    // This prevents path traversal attacks even if basename somehow fails
+    if (!pdfPath.startsWith(auditsDir + path.sep) && pdfPath !== auditsDir) {
       return res.status(403).json({ success: false, error: 'Forbidden path traversal attempted.' });
     }
 

@@ -37,14 +37,14 @@ export function startDevMockDaemons(): void {
       if (url === '/api/od/audit-request' || url === '/api/audit/request') {
         let bodyStr = '';
         req.on('data', (chunk) => { bodyStr += chunk; });
-        req.on('end', () => {
+        req.on('end', async () => {
           try {
             const body = bodyStr ? JSON.parse(bodyStr) : {};
             const authHeader = req.headers['authorization'] || '';
-            const secret = req.headers['x-audit-secret'] || req.headers['x-td-secret'] || '';
+            const secret = req.headers['x-audit-secret'] || req.headers['x-td-secret'] || req.headers['x-od-secret'] || '';
             const expectedKey = process.env.OD_INTERNAL_API_KEY || 'od-secret-key-2026';
 
-            // Verify bearer token or secret if provided
+            // Verify bearer token if provided
             if (authHeader && authHeader.startsWith('Bearer ')) {
               const token = authHeader.slice(7).trim();
               if (token !== expectedKey && token !== 'td-secret-key-2026') {
@@ -68,55 +68,72 @@ export function startDevMockDaemons(): void {
             }
 
             const targetUrl = body.websiteUrl || body.website || 'example.com';
-            const companyName = body.companyName || 'Your Business';
+            const companyName = body.companyName || body.company || 'Your Business';
             const cleanDomain = targetUrl.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
             const leadIdPart = body.leadId ? String(body.leadId).slice(0, 8) : Math.random().toString(36).substring(2, 8);
             const auditId = `td_audit_${leadIdPart}_${Date.now().toString(36)}`;
-            const score = 84;
 
-            const completedPayload = {
-              ok: true,
-              success: true,
-              status: 'completed',
-              source: 'technical-audit-dashboard',
-              auditId,
-              cached: false,
-              score,
-              metrics: {
-                lcpEstimateMs: 1850,
-                clsScore: 0.03,
-                inpEstimateMs: 110,
-                responseTimeMs: 160,
-                imagesTotal: 22,
-                imagesMissingAlt: 3,
-                hasLocalBusinessSchema: true,
-                hasViewport: true,
-                hasSsl: true,
-                pageWeightKb: 1140,
-              },
-              keyTakeaways: `Desktop Speed (LCP: 1.8s); Core Web Vitals Passing; 3 images missing alt tags; HTTPS enforced`,
-              criticalIssues: [
-                `Desktop Speed Performance Score: ${score}/100 (LCP 1.8s)`,
-                `3 images missing descriptive alt tags for accessibility and image search`,
-                `HSTS Security Header recommended to prevent protocol downgrade attacks`,
-              ],
-              recommendations: [
-                {
-                  priority: 'high',
-                  title: 'Add descriptive alt attributes to high-traffic images',
-                  detail: 'Adding keyword-relevant alt attributes improves image search discoverability.',
-                  odsSolution: 'Automatic image optimization & accessibility tagging',
+            let completedPayload: any;
+            if (process.env.MOCK_TD === 'true') {
+              const score = 84;
+              completedPayload = {
+                ok: true,
+                success: true,
+                status: 'completed',
+                source: 'technical-audit-dashboard',
+                auditId,
+                cached: false,
+                score,
+                metrics: {
+                  lcpEstimateMs: 1850,
+                  clsScore: 0.03,
+                  inpEstimateMs: 110,
+                  responseTimeMs: 160,
+                  imagesTotal: 22,
+                  imagesMissingAlt: 3,
+                  hasLocalBusinessSchema: true,
+                  hasViewport: true,
+                  hasSsl: true,
+                  pageWeightKb: 1140,
                 },
-                {
-                  priority: 'medium',
-                  title: 'Configure HTTP Strict Transport Security (HSTS)',
-                  detail: 'Enforce HTTPS with max-age=31536000 and includeSubDomains.',
-                  odsSolution: 'Edge security headers hardening',
-                },
-              ],
-              summary: `Technical SEO & Speed Audit for ${companyName} (${cleanDomain})`,
-              auditedAt: new Date().toISOString(),
-            };
+                keyTakeaways: `Desktop Speed (LCP: 1.8s); Core Web Vitals Passing; 3 images missing alt tags; HTTPS enforced`,
+                criticalIssues: [
+                  `Desktop Speed Performance Score: ${score}/100 (LCP 1.8s)`,
+                  `3 images missing descriptive alt tags for accessibility and image search`,
+                  `HSTS Security Header recommended to prevent protocol downgrade attacks`,
+                ],
+                recommendations: [
+                  {
+                    priority: 'high',
+                    title: 'Add descriptive alt attributes to high-traffic images',
+                    detail: 'Adding keyword-relevant alt attributes improves image search discoverability.',
+                    odsSolution: 'Automatic image optimization & accessibility tagging',
+                  },
+                ],
+                summary: `Technical SEO & Speed Audit for ${companyName} (${cleanDomain})`,
+                auditedAt: new Date().toISOString(),
+              };
+            } else {
+              // Run real audit engine (TD Supabase seo-audit + local fallback) instead of hardcoded fake score 84
+              const { clientAuditService } = await import('./clientAuditIntelligenceService');
+              const report = await clientAuditService.auditWebsite(targetUrl);
+              completedPayload = {
+                ok: true,
+                success: true,
+                status: 'completed',
+                source: report.source || 'technical-audit-dashboard',
+                auditId: report.auditId || auditId,
+                cached: false,
+                score: report.overallScore,
+                metrics: report.metrics,
+                checks: report.checks,
+                keyTakeaways: report.auditKeyTakeaways || (report.criticalIssues || []).slice(0, 3).join('; '),
+                criticalIssues: report.criticalIssues,
+                recommendations: report.recommendations,
+                summary: report.summary || `Technical SEO & Speed Audit for ${companyName} (${cleanDomain})`,
+                auditedAt: report.auditedAt || new Date().toISOString(),
+              };
+            }
 
             // Respond synchronously with completed payload
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -137,7 +154,7 @@ export function startDevMockDaemons(): void {
                       leadId: body.leadId,
                       website: targetUrl,
                       status: 'completed',
-                      source: 'technical-audit-dashboard',
+                      source: completedPayload.source || 'technical-audit-dashboard',
                       auditReport: completedPayload,
                     }),
                   });
@@ -148,7 +165,7 @@ export function startDevMockDaemons(): void {
             }
           } catch (err: any) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, error: err?.message || 'Invalid JSON' }));
+            res.end(JSON.stringify({ ok: false, error: err?.message || 'Audit request error' }));
           }
         });
         return;

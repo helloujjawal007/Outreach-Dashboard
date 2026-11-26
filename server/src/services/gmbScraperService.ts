@@ -11,6 +11,7 @@ import { automatedIntakeEngine } from './automatedIntakeEngine';
 import { emailValidatorService } from './emailValidatorService';
 import { workflowRoutingService } from './workflowRoutingService';
 import { logPipeline } from '../utils/pipelineLogger';
+import { ensurePhoneWithCountryCode } from '../utils/phoneCountryCode';
 
 export interface ScrapedLeadSocials {
   facebook?: string;
@@ -480,9 +481,12 @@ export class GmbScraperService {
    */
   public async searchGmb(params: GmbSearchParams): Promise<ScrapedLeadItem[]> {
     const START_TIME = Date.now();
-    // Render proxy timeout is strictly 100 seconds. We enforce a hard server-side deadline
-    // of 48 seconds from request start to guarantee a fast, complete HTTP 200 response with zero 504s/aborts.
-    const HARD_DEADLINE = START_TIME + 48000;
+    // Respect Render 100s gateway ceiling (~78s safe budget) while granting full ~115s budget on local/self-hosted hosts
+    const defaultBudgetMs = process.env.RENDER ? 78000 : 115000;
+    const configuredBudgetMs = parseInt(process.env.SCRAPER_TIMEOUT_MS || String(defaultBudgetMs), 10);
+    const totalBudgetMs = Math.max(48000, Number.isFinite(configuredBudgetMs) ? configuredBudgetMs : defaultBudgetMs);
+    const HARD_DEADLINE = START_TIME + totalBudgetMs;
+    const CDP_DEADLINE = START_TIME + Math.round(totalBudgetMs * 0.55);
 
     const { category, categories, country, state, city = '', limit = 10, leadsPerLocation } = params;
     const cleanCity = (city || '').trim();
@@ -577,6 +581,7 @@ export class GmbScraperService {
 
     // Build batch tasks for a single persistent headless Chrome session
     const primaryTasks: Array<{ queryStr: string; category: string; locationKey: string; targetCountry?: string; limit: number }> = [];
+    const cdpFetchLimit = Math.min(500, Math.max(perLocationQuota, effectiveLimit) + 20);
     for (const locQuery of locationQueries) {
       for (const cat of targetCategories) {
         const cleanCat = cat.trim();
@@ -585,17 +590,17 @@ export class GmbScraperService {
           category: cleanCat,
           locationKey: locQuery,
           targetCountry: cleanCountry,
-          limit: Math.min(perLocationQuota, effectiveLimit),
+          limit: cdpFetchLimit,
         });
       }
     }
 
-    // Execute tasks over single persistent Chrome session
+    // Execute tasks over single persistent Chrome session (passing DB exclude sets so dedup happens before cutoff)
     const locationCounts = new Map<string, number>();
     const addResults = (batchResults: ScrapedLeadItem[], locationKey: string) => {
-      const currentLocCount = locationCounts.get(locationKey) || 0;
       for (const r of batchResults) {
         if (rawList.length >= targetCandidateLimit) break;
+        const currentLocCount = locationCounts.get(locationKey) || 0;
         if (currentLocCount >= perLocationQuota) break;
 
         const cleanWeb = this.normalizeGmbWebsiteUrl(r.website);
@@ -603,8 +608,14 @@ export class GmbScraperService {
           continue; // Scraped leads MUST have a website
         }
 
+        const formattedPhone = ensurePhoneWithCountryCode(r.phone, {
+          country: r.country || cleanCountry,
+          state: r.state || cleanState,
+          address: r.address,
+        });
+
         const normName = this.cleanBizName(r.businessName);
-        const pDigits = (r.phone || '').replace(/\D/g, '');
+        const pDigits = formattedPhone.replace(/\D/g, '');
         const pLast10 = pDigits.length >= 7 ? pDigits.slice(-10) : '';
 
         // Check if lead already exists in CRM database
@@ -625,14 +636,15 @@ export class GmbScraperService {
           continue;
         }
 
-        if (!existingNames.has(normName) && (!pDigits || !existingPhones.has(pDigits))) {
+        if (!existingNames.has(normName) && (!pLast10 || !existingPhones.has(pLast10))) {
           existingNames.add(normName);
-          if (pDigits) existingPhones.add(pDigits);
+          if (pLast10) existingPhones.add(pLast10);
           rawList.push({
             ...r,
+            phone: formattedPhone,
             website: cleanWeb,
           });
-          locationCounts.set(locationKey, (locationCounts.get(locationKey) || 0) + 1);
+          locationCounts.set(locationKey, currentLocCount + 1);
         }
       }
     };
@@ -646,13 +658,14 @@ export class GmbScraperService {
           limit: t.limit,
           locationKey: t.locationKey,
         })),
-        HARD_DEADLINE,
+        CDP_DEADLINE,
         targetCandidateLimit,
-        params.requireWebsite !== false
+        params.requireWebsite !== false,
+        { dbNames, dbDomains, dbPhones }
       );
 
       for (const item of batchOutputs) {
-        addResults([item], item.address || locationQueries[0] || '');
+        addResults([item], locationQueries.length === 1 ? locationQueries[0] : (item.address || locationQueries[0] || ''));
       }
     } catch (err: any) {
       lastCdpError = err?.message || 'CDP batch error';
@@ -683,12 +696,13 @@ export class GmbScraperService {
             limit: t.limit,
             locationKey: t.locationKey,
           })),
-          HARD_DEADLINE,
+          HARD_DEADLINE - 10000,
           targetCandidateLimit,
-          params.requireWebsite !== false
+          params.requireWebsite !== false,
+          { dbNames, dbDomains, dbPhones }
         );
         for (const item of fallbackOutputs) {
-          addResults([item], item.address || locationQueries[0] || '');
+          addResults([item], locationQueries.length === 1 ? locationQueries[0] : (item.address || locationQueries[0] || ''));
         }
       } catch (err: any) {
         lastCdpError = err?.message || 'CDP fallback error';
@@ -705,14 +719,14 @@ export class GmbScraperService {
     // High-speed parallel verification of websites & genuine contact discovery
     console.log(`[GmbScraperService] ⚡ High-speed parallel verification & contact discovery for ${selected.length} listings (Elapsed: ${Date.now() - START_TIME}ms)...`);
     const enriched: ScrapedLeadItem[] = [];
-    const chunkSize = 12; // Balanced concurrency prevents outbound TLS/socket timeout storms
+    const chunkSize = 20; // High-throughput parallel crawl while bounding open TLS sockets
 
     for (let i = 0; i < selected.length; i += chunkSize) {
       if (enriched.length >= effectiveLimit) break;
 
-      // Check if approaching 48s deadline: preserve remaining leads immediately without further deep crawl
+      // Check if approaching deadline: preserve remaining leads immediately without further deep crawl
       if (Date.now() >= HARD_DEADLINE - 4000) {
-        console.log(`[GmbScraperService] Approaching 48s deadline (${Date.now() - START_TIME}ms elapsed). Preserving remaining ${selected.length - i} leads without deep crawl.`);
+        console.log(`[GmbScraperService] Approaching deadline (${Date.now() - START_TIME}ms elapsed). Preserving remaining ${selected.length - i} leads without deep crawl.`);
         for (let j = i; j < selected.length; j++) {
           if (enriched.length >= effectiveLimit) break;
           const item = selected[j];
@@ -972,10 +986,16 @@ export class GmbScraperService {
         ? b[13][0]
         : (fallbackCategory || queryStr.split(' in ')[0] || 'Local Services');
 
+      const formattedPhone = ensurePhoneWithCountryCode(phone, {
+        country: countryVal || targetCountry || 'USA',
+        state: stateVal,
+        address: address || queryStr.split(' in ')[1] || '',
+      });
+
       results.push({
         businessName: name,
         category: itemCategory,
-        phone,
+        phone: formattedPhone,
         email: '',
         website: cleanWeb,
         address: address || queryStr.split(' in ')[1] || '',
@@ -1001,7 +1021,8 @@ export class GmbScraperService {
     tasks: Array<{ queryStr: string; category: string; targetCountry?: string; limit: number; locationKey?: string }>,
     deadlineMs: number,
     maxTotalResults: number = 300,
-    requireWebsite: boolean = true
+    requireWebsite: boolean = true,
+    excludeKeys?: { dbNames: Set<string>; dbDomains: Set<string>; dbPhones: Set<string> }
   ): Promise<ScrapedLeadItem[]> {
     if (!tasks || tasks.length === 0) return [];
 
@@ -1109,13 +1130,34 @@ export class GmbScraperService {
         });
 
       let activeTbmReqId = '';
+      const orderedTbmReqIds: string[] = [];
+      const finishedTbmReqIds = new Set<string>();
+      const failedTbmReqIds = new Set<string>();
+      const candidateTbmReqIds = new Set<string>();
+      const seenCdpNames = new Set<string>();
+      const seenCdpPhones = new Set<string>();
+      const seenCdpDomains = new Set<string>();
+
       ws.addEventListener('message', (e: any) => {
         try {
           const data = JSON.parse(e.data.toString());
           if (data.method === 'Network.responseReceived') {
             const u = data.params?.response?.url || '';
             if (u.includes('tbm=map')) {
-              activeTbmReqId = data.params.requestId;
+              const reqId = data.params.requestId;
+              activeTbmReqId = reqId;
+              candidateTbmReqIds.add(reqId);
+              orderedTbmReqIds.push(reqId);
+            }
+          } else if (data.method === 'Network.loadingFinished') {
+            const reqId = data.params?.requestId;
+            if (reqId && candidateTbmReqIds.has(reqId)) {
+              finishedTbmReqIds.add(reqId);
+            }
+          } else if (data.method === 'Network.loadingFailed') {
+            const reqId = data.params?.requestId;
+            if (reqId && candidateTbmReqIds.has(reqId)) {
+              failedTbmReqIds.add(reqId);
             }
           }
         } catch (_) {}
@@ -1125,57 +1167,106 @@ export class GmbScraperService {
       await send('Page.enable');
 
       for (let taskIdx = 0; taskIdx < tasks.length; taskIdx++) {
-        // Enforce hard deadline with 5-second buffer for teardown and response return
-        if (Date.now() >= deadlineMs - 5000) {
-          console.log(`[GmbScraperService] Reached deadline safety window (${tasks.length - taskIdx} tasks remaining). Wrapping up.`);
+        // Enforce CDP phase deadline with buffer for teardown and HTTP contact crawl
+        if (Date.now() >= deadlineMs - 2500) {
+          console.log(`[GmbScraperService] Reached CDP phase deadline (${tasks.length - taskIdx} tasks remaining). Wrapping up.`);
           break;
         }
 
         if (allResults.length >= maxTotalResults) {
-          console.log(`[GmbScraperService] Reached maximum target results (${allResults.length}/${maxTotalResults}). Stopping query loop.`);
+          console.log(`[GmbScraperService] Reached maximum unique target results (${allResults.length}/${maxTotalResults}). Stopping query loop.`);
           break;
         }
 
         const task = tasks[taskIdx];
-        activeTbmReqId = '';
         const targetUrl = `https://www.google.com/maps/search/${encodeURIComponent(task.queryStr)}?hl=en`;
 
         try {
+          // Reset state cleanly before navigating so fast back-to-back searches never pick up stale packets
+          activeTbmReqId = '';
+          orderedTbmReqIds.length = 0;
+          candidateTbmReqIds.clear();
+          finishedTbmReqIds.clear();
+          failedTbmReqIds.clear();
+
           await send('Page.navigate', { url: targetUrl });
 
-          // Fast poll for tbm=map response arrival (up to 2500ms max, polling every 50ms)
-          for (let wait = 0; wait < 50; wait++) {
-            if (activeTbmReqId) break;
-            await new Promise((r) => setTimeout(r, 50));
-          }
-
-          if (!activeTbmReqId) {
-            await new Promise((r) => setTimeout(r, 300));
+          // Wait for BOTH tbm=map responseReceived AND loadingFinished (up to 6500ms)
+          const navWaitDeadline = Math.min(deadlineMs - 2000, Date.now() + 6500);
+          while (Date.now() < navWaitDeadline) {
+            if (activeTbmReqId && (finishedTbmReqIds.has(activeTbmReqId) || failedTbmReqIds.has(activeTbmReqId))) {
+              break;
+            }
+            await new Promise((r) => setTimeout(r, 60));
           }
 
           let taskResults: ScrapedLeadItem[] = [];
+          const readFinishedTbmPackets = async (): Promise<ScrapedLeadItem[]> => {
+            const collected: ScrapedLeadItem[] = [];
+            for (const reqId of orderedTbmReqIds) {
+              if (!finishedTbmReqIds.has(reqId) || failedTbmReqIds.has(reqId)) continue;
+              try {
+                const res = await send('Network.getResponseBody', { requestId: reqId });
+                if (res?.body) {
+                  collected.push(
+                    ...this.parseTbmMapResponse(
+                      res.body,
+                      task.category,
+                      task.queryStr,
+                      task.targetCountry,
+                      task.limit,
+                      requireWebsite
+                    )
+                  );
+                }
+              } catch {}
+            }
+            return collected;
+          };
 
-          if (activeTbmReqId) {
-            try {
-              const res = await send('Network.getResponseBody', { requestId: activeTbmReqId });
-              if (res?.body) {
-                taskResults = this.parseTbmMapResponse(
-                  res.body,
-                  task.category,
-                  task.queryStr,
-                  task.targetCountry,
-                  task.limit,
-                  requireWebsite
-                );
+          taskResults = await readFinishedTbmPackets();
+
+          // Optional Maps feed scroll pagination when fewer tasks remain and we still need > 20 leads
+          if (taskResults.length > 0 && taskResults.length < task.limit && tasks.length <= 4 && Date.now() < deadlineMs - 5000) {
+            for (let scrollTry = 0; scrollTry < 2; scrollTry++) {
+              if (taskResults.length >= task.limit || Date.now() >= deadlineMs - 3000) break;
+              const prevPacketCount = orderedTbmReqIds.length;
+              await send('Runtime.evaluate', {
+                expression: `(() => {
+                  const feed = document.querySelector('div[role="feed"]');
+                  if (feed) { feed.scrollTop = feed.scrollHeight; return true; }
+                  return false;
+                })()`,
+                returnByValue: true,
+              }).catch(() => {});
+              const scrollWaitEnd = Math.min(deadlineMs - 2000, Date.now() + 2000);
+              while (Date.now() < scrollWaitEnd) {
+                if (orderedTbmReqIds.length > prevPacketCount && finishedTbmReqIds.has(orderedTbmReqIds[orderedTbmReqIds.length - 1])) {
+                  break;
+                }
+                await new Promise((r) => setTimeout(r, 100));
               }
-            } catch (bodyErr: any) {
-              console.warn(`[GmbScraperService] Failed to read tbm=map body for "${task.queryStr}":`, bodyErr.message);
+              if (orderedTbmReqIds.length > prevPacketCount) {
+                const more = await readFinishedTbmPackets();
+                if (more.length > taskResults.length) taskResults = more;
+              } else {
+                break;
+              }
             }
           }
 
-          // Fallback to DOM extraction if network packet was not captured or empty
+          // Fallback to DOM extraction if network packet was not captured or empty (allow up to 2500ms for feed cards to mount)
           if (taskResults.length === 0) {
             try {
+              const domWaitDeadline = Math.min(deadlineMs - 2000, Date.now() + 2500);
+              while (Date.now() < domWaitDeadline) {
+                const probe = await send('Runtime.evaluate', {
+                  expression: `document.querySelectorAll('div.Nv2PK, div[role="feed"] > div, div[role="article"]').length`,
+                  returnByValue: true,
+                });
+                if ((probe?.result?.value || 0) > 0) break;
+                await new Promise((r) => setTimeout(r, 200));
+              }
               const domCards = await send('Runtime.evaluate', {
                 expression: `(() => {
                   const cards = document.querySelectorAll('div.Nv2PK, div[role="feed"] > div, div[role="article"]');
@@ -1225,10 +1316,14 @@ export class GmbScraperService {
                   if (!item.businessName) continue;
                   const cleanWeb = this.normalizeGmbWebsiteUrl(item.website);
                   if (requireWebsite && !cleanWeb) continue;
+                  const formattedPhone = ensurePhoneWithCountryCode(item.phone, {
+                    country: task.targetCountry || 'USA',
+                    address: item.address || task.queryStr.split(' in ')[1] || '',
+                  });
                   taskResults.push({
                     businessName: item.businessName,
                     category: task.category || task.queryStr.split(' in ')[0] || 'Local Services',
-                    phone: item.phone || '',
+                    phone: formattedPhone,
                     email: '',
                     website: cleanWeb,
                     address: item.address || task.queryStr.split(' in ')[1] || '',
@@ -1245,8 +1340,37 @@ export class GmbScraperService {
             }
           }
 
-          console.log(`[GmbScraperService] Query "${task.queryStr}" returned ${taskResults.length} listings`);
-          allResults.push(...taskResults);
+          // Deduplicate net-new leads inside CDP so maxTotalResults reflects unique non-DB-duplicate leads
+          let netNewCount = 0;
+          for (const item of taskResults) {
+            const normName = this.cleanBizName(item.businessName);
+            const pDigits = (item.phone || '').replace(/\D/g, '');
+            const pLast10 = pDigits.length >= 7 ? pDigits.slice(-10) : '';
+            let host = '';
+            try {
+              if (item.website) host = new URL(item.website).hostname.replace(/^www\./, '').toLowerCase();
+            } catch {}
+
+            const inDb =
+              Boolean(normName && excludeKeys?.dbNames.has(normName)) ||
+              Boolean(pLast10 && excludeKeys?.dbPhones.has(pLast10)) ||
+              Boolean(host && host.length > 3 && excludeKeys?.dbDomains.has(host));
+            if (inDb) continue;
+
+            const alreadySeen =
+              Boolean(normName && seenCdpNames.has(normName)) ||
+              Boolean(pLast10 && seenCdpPhones.has(pLast10)) ||
+              Boolean(host && host.length > 3 && seenCdpDomains.has(host));
+            if (alreadySeen) continue;
+
+            if (normName) seenCdpNames.add(normName);
+            if (pLast10) seenCdpPhones.add(pLast10);
+            if (host && host.length > 3) seenCdpDomains.add(host);
+            allResults.push(item);
+            netNewCount++;
+          }
+
+          console.log(`[GmbScraperService] Query "${task.queryStr}" returned ${taskResults.length} listings (${netNewCount} net-new unique; total unique=${allResults.length}/${maxTotalResults})`);
         } catch (taskErr: any) {
           console.warn(`[GmbScraperService] Query "${task.queryStr}" error:`, taskErr.message);
         }
@@ -1669,7 +1793,11 @@ export class GmbScraperService {
 
     for (const item of rawLeads) {
       const email = (item.email || '').trim().toLowerCase();
-      const phone = (item.phone || '').trim();
+      const phone = ensurePhoneWithCountryCode(item.phone, {
+        country: item.country || 'USA',
+        state: item.state,
+        address: item.address,
+      });
       const phoneDigits = phone.replace(/\D/g, '');
       const phoneLast10 = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : '';
       const bName = (item.businessName || '').trim();

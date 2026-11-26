@@ -824,6 +824,9 @@ export class TechnicalAuditPdfService {
     const issuesText = (report.criticalIssues || []).slice(0, 4).join('; ');
     const recsText = (report.recommendations || []).slice(0, 3).map((r) => r.title).join('; ');
 
+    const escapePdfLiteral = (text: string) =>
+      String(text || '').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+
     const streamContent = [
       'BT',
       '/F1 18 Tf',
@@ -831,9 +834,9 @@ export class TechnicalAuditPdfService {
       '(Cloud Consultancy - Technical Review & Audit Memo) Tj',
       '/F1 11 Tf',
       '0 -28 Td',
-      `(${cleanBiz} - Target Domain: ${report.domain}) Tj`,
+      `(${escapePdfLiteral(cleanBiz)} - Target Domain: ${escapePdfLiteral(report.domain)}) Tj`,
       '0 -18 Td',
-      `(Audit Date: ${dateStr} | Diagnostic Health Rating: ${report.overallScore}/100 [${report.grade}]) Tj`,
+      `(Audit Date: ${escapePdfLiteral(dateStr)} | Diagnostic Health Rating: ${report.overallScore}/100 [${escapePdfLiteral(report.grade)}]) Tj`,
       '0 -24 Td',
       '/F1 13 Tf',
       '(Measured Infrastructure & Delivery Signals:) Tj',
@@ -847,56 +850,47 @@ export class TechnicalAuditPdfService {
       '(Primary Technical Observations:) Tj',
       '/F1 10 Tf',
       '0 -18 Td',
-      `(${issuesText.replace(/[()]/g, '')}) Tj`,
+      `(${escapePdfLiteral(issuesText)}) Tj`,
       '0 -22 Td',
       '/F1 13 Tf',
       '(Engineering Remediation Plan:) Tj',
       '/F1 10 Tf',
       '0 -18 Td',
-      `(${recsText.replace(/[()]/g, '')}) Tj`,
+      `(${escapePdfLiteral(recsText)}) Tj`,
       '0 -26 Td',
       '/F1 10 Tf',
       '(Architecture: Modern edge caching, asset compression, schema.org JSON-LD integration) Tj',
       '0 -28 Td',
       '/F1 9 Tf',
-      `(${SENDER_CONFIG.pdfFooterText.replace(/[()]/g, '')}) Tj`,
+      `(${escapePdfLiteral(SENDER_CONFIG.pdfFooterText)}) Tj`,
       'ET',
     ].join('\n');
 
-    const streamLength = Buffer.byteLength(streamContent);
+    const streamLength = Buffer.byteLength(streamContent, 'utf8');
 
-    const pdfData = `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length ${streamLength} >>
-stream
-${streamContent}
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000244 00000 n 
-0000000${(300 + streamLength).toString().padStart(3, '0')} 00000 n 
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-${400 + streamLength}
-%%EOF`;
+    const pdfHeader = '%PDF-1.4\n';
+    const objects = [
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n',
+      `4 0 obj\n<< /Length ${streamLength} >>\nstream\n${streamContent}\nendstream\nendobj\n`,
+      '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n',
+    ];
+
+    let cursor = Buffer.byteLength(pdfHeader, 'utf8');
+    const xrefLines = ['0000000000 65535 f \n'];
+    for (const obj of objects) {
+      xrefLines.push(`${String(cursor).padStart(10, '0')} 00000 n \n`);
+      cursor += Buffer.byteLength(obj, 'utf8');
+    }
+
+    const startXref = cursor;
+    const pdfData =
+      pdfHeader +
+      objects.join('') +
+      `xref\n0 ${objects.length + 1}\n` +
+      xrefLines.join('') +
+      `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${startXref}\n%%EOF\n`;
 
     fs.writeFileSync(targetPath, pdfData, 'utf8');
   }

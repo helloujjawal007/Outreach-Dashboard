@@ -229,6 +229,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       : reqPath.substring('/audit/download/'.length);
     try {
       const filename = path.basename(decodeURIComponent(rawParam));
+      // Check for query token first (explicit ?token= in URL)
       const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
       if (
         queryToken &&
@@ -236,6 +237,20 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       ) {
         next();
         return;
+      }
+      // Fall through: check for Bearer token in Authorization header
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const bearerToken = authHeader.substring(7).trim();
+        if (verifySessionToken(bearerToken)) {
+          next();
+          return;
+        }
+        // Also check if Bearer token is a valid scoped PDF token
+        if (filename && verifyScopedPdfToken(filename, bearerToken)) {
+          next();
+          return;
+        }
       }
     } catch {
       // Fall through to standard session auth

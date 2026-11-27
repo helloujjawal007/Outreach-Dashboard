@@ -113,9 +113,9 @@ flowchart TD
   * Direct profile deep-links and comment queue workflow.
 
 ### 2.3 Lead Scraper & Data Ingestion
-* **Google Business Profile Scraper (GMB 100)**: Scrapes up to 100 local businesses per query with star rating, review volume, address, website, and phone numbers using headless Chrome.
+* **Google Business Profile Scraper (GMB up to 300)**: Scrapes up to 300 local businesses per query with star rating, review volume, mandatory website URL extraction, deep Home/About/Contact email crawling (Cloudflare/JSON-LD decoding), social account discovery (Instagram, Facebook, LinkedIn, X, YouTube), and automatic international phone country-code enforcement (`+1`, `+44`, `+91`, `+61`, `+49`, `+33`, IDD `00`) using headless Chrome.
 * **Dual Ingestion Modes**: Single lead manual entry or bulk CSV/paste import with dual-table deduplication against active leads and paying clients.
-* **Automated Channel List Assignment**: PostgreSQL database triggers automatically sort leads into dedicated channel lists (`Email Leads`, `WhatsApp Leads`, `LinkedIn Leads`, `Website Leads`) based on verified contact channels.
+* **Automated Channel List Assignment**: PostgreSQL database triggers automatically sort leads into dedicated channel lists (`Email Leads`, `WhatsApp Leads`, `Website Leads`, `Invalid List`) based on verified contact channels.
 
 ### 2.4 Autonomous Drip & Cadence Engine
 * **Condition-Based Sequencing**:
@@ -447,8 +447,9 @@ Outreach-Dashboard/
 ## 7. 5-Slot Sender Engine & Deliverability Architecture
 
 ### 7.1 Deterministic 5-Virtual Slot Scheduler
-* **Anchor-Based Cyclic Grid**: 5 virtual slots (A, B, C, D, E) run on a continuous deterministic grid (default: 10-minute cycle, 2-minute slot offset).
-* **Zero Double-Sends**: Atomic claiming (`UPDATE ... RETURNING`) paired with slot-level and global minimum-gap guards prevent duplicate sends or burst firing upon server restart or configuration changes.
+* **Anchor-Based Cyclic Grid**: 5 virtual slots (A, B, C, D, E) run on a continuous deterministic grid (default: 10-minute cycle, 2-minute slot offset). List scheduling via `POST /api/scheduler/schedule-list` honors future `scheduledFor` timestamps via `anchor_timestamp`.
+* **Zero Double-Sends & Anti-Spam Guardrails**: Atomic claiming (`UPDATE ... RETURNING`) paired with slot-level and a strict **60-second minimum** global send gap (`global_min_gap_sec >= 60`) prevent duplicate sends or burst firing. Email-less leads are automatically filtered out of email slots unless WhatsApp cold outreach is enabled.
+* **Gmail Sent Mail Synchronization**: Outbound SMTP dispatches capture the RFC `Message-ID` in `messages.external_id` and check `[Gmail]/Sent Mail` via IMAP before appending, preventing duplicate Sent copies.
 * **Recipient Timezone Windows**: Dispatches are constrained to `09:00 - 17:00` in the prospect's local timezone (e.g. `America/New_York`, `America/Denver`, `Asia/Kolkata`), pausing automatically over weekends.
 * **Daily Send Caps**: Configurable hard caps with exact accounting that ignores mock/test dispatches.
 

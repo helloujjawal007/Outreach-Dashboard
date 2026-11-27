@@ -4,12 +4,12 @@
 
 ## Key Concepts
 
-- [Modal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx#L1) (5 connections)
-- [handleKeyDown()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx#L30) (1 connections)
-- [isVisible](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx#L23) (1 connections)
-- [modalContainerRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx#L24) (1 connections)
-- [timer](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx#L63) (1 connections)
-- [widthMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx#L16) (1 connections)
+- [LoginPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx#L1) (5 connections)
+- [[error, setError]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx#L13) (1 connections)
+- [handleSubmit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx#L16) (1 connections)
+- [[loading, setLoading]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx#L12) (1 connections)
+- [[password, setPassword]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx#L11) (1 connections)
+- [[showPassword, setShowPassword]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx#L14) (1 connections)
 
 ## Relationships
 
@@ -17,7 +17,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Modal.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LoginPage.tsx)
 
 ## Audit Trail
 

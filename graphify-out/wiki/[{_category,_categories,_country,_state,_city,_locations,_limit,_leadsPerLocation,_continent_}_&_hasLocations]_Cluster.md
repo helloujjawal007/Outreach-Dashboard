@@ -1,17 +1,19 @@
 # [{ category, categories, country, state, city, locations, limit, leadsPerLocation, continent } & hasLocations] Cluster
 
-> 8 nodes · cohesion 0.25
+> 10 nodes · cohesion 0.20
 
 ## Key Concepts
 
-- [failures.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L1) (7 connections)
-- [csvData](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L73) (1 connections)
-- [failuresRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L4) (1 connections)
-- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L38) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L14) (1 connections)
-- [success](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L39) (1 connections)
-- [{ type, slotId, resolved, startDate, endDate, search }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L71) (1 connections)
-- [{ type, slotId, resolved, startDate, endDate, search, limit, offset }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L12) (1 connections)
+- [auth.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L1) (9 connections)
+- [authRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L7) (1 connections)
+- [expectedBuf](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L37) (1 connections)
+- [isMatch](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L40) (1 connections)
+- [isValid](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L86) (1 connections)
+- [loginRateLimiter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L10) (1 connections)
+- [{ password }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L30) (1 connections)
+- [providedBuf](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L36) (1 connections)
+- [token](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L85) (1 connections)
+- [{ token, expiresAt }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L48) (1 connections)
 
 ## Relationships
 
@@ -19,11 +21,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 14 (100%)
+- EXTRACTED: 18 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

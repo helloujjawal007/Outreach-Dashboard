@@ -4,10 +4,10 @@
 
 ## Key Concepts
 
-- [triggerDocsCanvasAnnotationMode()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L5) (3 connections)
-- [gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L1) (1 connections)
-- [gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L1) (1 connections)
-- [gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L1) (1 connections)
+- [s](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L7) (3 connections)
+- [content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L1) (1 connections)
+- [content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L1) (1 connections)
+- [content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L1) (1 connections)
 
 ## Relationships
 
@@ -15,9 +15,9 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js)
 
 ## Audit Trail
 

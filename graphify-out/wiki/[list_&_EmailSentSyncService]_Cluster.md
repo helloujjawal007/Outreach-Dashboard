@@ -1,40 +1,81 @@
 # [list & EmailSentSyncService] Cluster
 
-> 115 nodes · cohesion 0.02
+> 103 nodes · cohesion 0.03
 
 ## Key Concepts
 
-- [LeadScraperPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx#L1) (72 connections)
-- [map](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L679) (47 connections)
-- [parseImport.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts#L1) (11 connections)
-- [.generateAuditPdf()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L392) (10 connections)
-- [parseImport()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts#L96) (8 connections)
-- [TechnicalAuditPdfService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L16) (8 connections)
-- [markDuplicates()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts#L237) (7 connections)
-- [mockData.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/mockData.ts#L1) (7 connections)
-- [.ensurePdfForLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L459) (6 connections)
-- [runCsvTests()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/csv-import.test.ts#L4) (5 connections)
-- [.analyzeAudit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/serviceRecommendationEngine.ts#L85) (4 connections)
-- [analyzeSoakLogFile()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/scripts/analyzeSoakLog.ts#L35) (3 connections)
-- [uid()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/mockData.ts#L10) (3 connections)
-- [sanitizeCsvFormula()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts#L47) (3 connections)
-- [.buildAuditHtml()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L75) (3 connections)
-- [.writeFallbackPdf()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L539) (3 connections)
-- [analyzeSoakLog.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/scripts/analyzeSoakLog.ts#L1) (3 connections)
-- [serviceRecommendationEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/serviceRecommendationEngine.ts#L1) (3 connections)
-- [loadExtraHistory()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L555) (2 connections)
-- [handleAddBulkLocations()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx#L418) (2 connections)
-- [handleExportCsv()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx#L674) (2 connections)
-- [handleSelectAll()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx#L612) (2 connections)
-- [handleStartScrape()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx#L497) (2 connections)
-- [extractPhoneKeys()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts#L30) (2 connections)
-- [markIncomplete()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts#L316) (2 connections)
-- *... and 90 more nodes in this community*
+- [test](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L60) (55 connections)
+- [.sendEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L305) (28 connections)
+- [.getEmailCopy()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L226) (19 connections)
+- [env.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/env.ts#L1) (17 connections)
+- [GmbScraperService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L83) (15 connections)
+- [.generateAuditPdf()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L668) (14 connections)
+- [.hasValidWebsite()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts#L23) (14 connections)
+- [HumanCopywriterService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L35) (12 connections)
+- [.importScrapedLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L1723) (11 connections)
+- [TechnicalAuditPdfService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L17) (11 connections)
+- [EmailAdapter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L188) (10 connections)
+- [.normalizeGmbWebsiteUrl()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L334) (10 connections)
+- [.scrapeBatchWithCdp()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L1020) (10 connections)
+- [.searchGmb()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L482) (8 connections)
+- [.processInboundMessage()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousInboundAgent.ts#L43) (7 connections)
+- [runQA()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scratch/run_full_qa.ts#L44) (7 connections)
+- [WorkflowRoutingService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts#L19) (7 connections)
+- [.verifyWebsiteLive()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L394) (6 connections)
+- [ensurePhoneWithCountryCode()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/phoneCountryCode.ts#L39) (6 connections)
+- [.analyzeAudit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/serviceRecommendationEngine.ts#L85) (6 connections)
+- [.buildAuditHtml()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts#L270) (6 connections)
+- [buildHumanoidHtml()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L57) (5 connections)
+- [.buildGreeting()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L95) (5 connections)
+- [.validateAuditPdf()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts#L130) (5 connections)
+- [.cleanBizName()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts#L1711) (4 connections)
+- *... and 78 more nodes in this community*
 
 ## Class Diagram
 
 ```mermaid
 classDiagram
+    class AutonomousInboundAgent {
+        +autonomousInboundAgent.ts()
+        +.getSettings()
+        +.processInboundMessage()
+    }
+    class EmailAdapter {
+        +emailAdapter.ts()
+        +.setMockMode()
+        +.isTestDatabase()
+        +.isMock()
+        +.getMockSentLog()
+        +.clearMockSentLog()
+        +.getWarmupStatus()
+        +.setSubdomain()
+        +.setWarmupStage()
+        +.sendEmail()
+    }
+    class GmbScraperService {
+        +gmbScraperService.ts()
+        +.getChromeExecutable()
+        +.ensureChromeInstalled()
+        +.getFreePort()
+        +.waitForCdpReady()
+        +.normalizeGmbWebsiteUrl()
+        +.verifyWebsiteLive()
+        +.searchGmb()
+        +.parseTbmMapResponse()
+        +.scrapeBatchWithCdp()
+    }
+    class HumanCopywriterService {
+        +humanCopywriterService.ts()
+        +.cleanBusinessName()
+        +.cleanLocation()
+        +.cleanCategory()
+        +.buildGreeting()
+        +.buildSalutation()
+        +.pick()
+        +.getPostalAddress()
+        +.buildFooter()
+        +.compose()
+    }
     class ServiceRecommendationEngine {
         +serviceRecommendationEngine.ts()
         +.analyzeAudit()
@@ -44,10 +85,21 @@ classDiagram
         +.constructor()
         +.getChromeExecutable()
         +.sanitizeFilename()
+        +.escapeHtml()
+        +.translateFindingForClient()
+        +.buildClientActionPlan()
         +.buildAuditHtml()
         +.generateAuditPdf()
         +.ensurePdfForLead()
-        +.writeFallbackPdf()
+    }
+    class WorkflowRoutingService {
+        +workflowRoutingService.ts()
+        +.hasValidWebsite()
+        +.cleanWebsiteUrl()
+        +.determineWorkflow()
+        +.validateAuditPdf()
+        +.sanitizeTokens()
+        +.verifyCompliance()
     }
 ```
 
@@ -57,21 +109,28 @@ classDiagram
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/scripts/analyzeSoakLog.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/scripts/analyzeSoakLog.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scratch/run_full_qa.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scratch/run_full_qa.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/env.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/env.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/db/add_website_and_country.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/db/add_website_and_country.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/leads.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/leads.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousInboundAgent.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousInboundAgent.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/dealCalculationService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/dealCalculationService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/gmbScraperService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts)
 - [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/serviceRecommendationEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/serviceRecommendationEngine.ts)
 - [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/technicalAuditPdfService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/mockData.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/mockData.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/phoneCountryCode.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/phoneCountryCode.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/smtpClassifier.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/smtpClassifier.ts)
 - [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadScraperPage.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/parseImport.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/csv-import.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/csv-import.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/htmlEscape.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/htmlEscape.test.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 236 (74%)
-- INFERRED: 83 (26%)
+- EXTRACTED: 267 (59%)
+- INFERRED: 189 (41%)
 - AMBIGUOUS: 0 (0%)
 
 ---

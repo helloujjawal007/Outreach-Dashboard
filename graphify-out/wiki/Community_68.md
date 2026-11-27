@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [testPdfAndTokenSecurity()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts#L3) (1 connections)
-- [auditPdfSecurity.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts#L1) (1 connections)
+- [runPdfCleanupTest()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts#L5) (1 connections)
+- [pdf-cleanup.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts)
 
 ## Audit Trail
 

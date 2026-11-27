@@ -1,23 +1,40 @@
 # [completedAt & countsRes] Cluster
 
-> 14 nodes · cohesion 0.14
+> 20 nodes · cohesion 0.10
 
 ## Key Concepts
 
-- [queue.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L1) (13 connections)
-- [convId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L122) (1 connections)
-- [convRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L117) (1 connections)
-- [{ fiveSlotSenderService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L54) (1 connections)
-- [{ id }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L71) (1 connections)
-- [item](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L82) (1 connections)
-- [itemCheck](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L73) (1 connections)
-- [leadEmail](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L90) (1 connections)
-- [{ leadId, clientId, campaignId, channel, messagePreview }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L44) (1 connections)
-- [leadRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L86) (1 connections)
-- [newConv](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L124) (1 connections)
-- [queueRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L5) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L10) (1 connections)
-- [validation](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts#L91) (1 connections)
+- [inboxes.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L1) (20 connections)
+- [cached](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L37) (1 connections)
+- [deleted](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L153) (1 connections)
+- [{ emailAdapter }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L179) (1 connections)
+- [{ fastCache }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L36) (1 connections)
+- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L127) (1 connections)
+- [inbox](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L174) (1 connections)
+- [inboxes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L17) (1 connections)
+- [inboxesRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L4) (1 connections)
+- [msg](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L27) (1 connections)
+- [{
+      name,
+      email,
+      sender_name,
+      provider = 'smtp',
+      smtp_host,
+      smtp_port = 587,
+      smtp_secure = false,
+      smtp_user,
+      smtp_pass,
+      daily_limit = 40,
+    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L79) (1 connections)
+- [{ name, sender_name, daily_limit, status, smtp_pass }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L128) (1 connections)
+- [payload](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L43) (1 connections)
+- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L99) (1 connections)
+- [sanitizedInboxes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L18) (1 connections)
+- [sanitizeInbox()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L6) (1 connections)
+- [{ smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, provider }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L55) (1 connections)
+- [summary](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L19) (1 connections)
+- [{ to }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L168) (1 connections)
+- [updated](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L130) (1 connections)
 
 ## Relationships
 
@@ -25,11 +42,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/queue.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 26 (100%)
+- EXTRACTED: 39 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

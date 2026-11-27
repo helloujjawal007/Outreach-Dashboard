@@ -1,11 +1,10 @@
 # Community 72
 
-> 2 nodes · cohesion 1.00
+> 1 nodes · cohesion 1.00
 
 ## Key Concepts
 
-- [EmptyState()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx#L10) (1 connections)
-- [EmptyState.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx#L1) (1 connections)
+- [tailwind.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tailwind.config.js#L1) (0 connections)
 
 ## Relationships
 
@@ -13,11 +12,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tailwind.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tailwind.config.js)
 
 ## Audit Trail
 
-- EXTRACTED: 2 (100%)
+- EXTRACTED: 0 (0%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

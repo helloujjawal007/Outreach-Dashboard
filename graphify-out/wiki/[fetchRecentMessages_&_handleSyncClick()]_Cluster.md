@@ -1,77 +1,35 @@
 # [fetchRecentMessages & handleSyncClick()] Cluster
 
-> 78 nodes · cohesion 0.04
+> 72 nodes · cohesion 0.03
 
 ## Key Concepts
 
-- [ClientAuditModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ClientAuditModal.tsx#L1) (34 connections)
-- [EmailSchedulerService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L72) (21 connections)
-- [.getEmailCopy()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L178) (18 connections)
-- [.executeEmailDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L1435) (14 connections)
-- [HumanCopywriterService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L36) (11 connections)
-- [.scheduleListDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L540) (10 connections)
-- [.executeWhatsAppDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L1261) (8 connections)
-- [.processPendingDispatches()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L1193) (7 connections)
-- [.getLeadMessageHistory()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/leadIsolationService.ts#L130) (7 connections)
-- [.scheduleBatchDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L292) (6 connections)
-- [.scheduleSingleDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L110) (6 connections)
-- [.executeFacebookDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L1916) (5 connections)
-- [.executeInstagramDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L1967) (5 connections)
-- [.buildGreeting()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L96) (5 connections)
-- [handleSchedule()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L204) (5 connections)
-- [.sleep()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L79) (4 connections)
-- [.getPostalAddress()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L144) (4 connections)
-- [LeadIsolationService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/leadIsolationService.ts#L14) (4 connections)
-- [.isLeadInManualReview()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/leadIsolationService.ts#L101) (4 connections)
-- [StageOutreachService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/stageOutreachService.ts#L55) (4 connections)
-- [.getLeadStage()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/stageOutreachService.ts#L61) (4 connections)
-- [handleSendBulkList()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ClientAuditModal.tsx#L124) (3 connections)
-- [.buildFooter()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L166) (3 connections)
-- [.buildSalutation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L128) (3 connections)
-- [.cleanBusinessName()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts#L44) (3 connections)
-- *... and 53 more nodes in this community*
-
-## Class Diagram
-
-```mermaid
-classDiagram
-    class EmailSchedulerService {
-        +emailSchedulerService.ts()
-        +.sleep()
-        +.calculateBusinessHoursDispatch()
-        +.scheduleSingleDispatch()
-        +.scheduleBatchDispatch()
-        +.scheduleListDispatch()
-        +.runBackgroundAuditsForList()
-        +.previewHumanizedEmail()
-        +.processPendingDispatches()
-        +.executeWhatsAppDispatch()
-    }
-    class HumanCopywriterService {
-        +humanCopywriterService.ts()
-        +.cleanBusinessName()
-        +.cleanLocation()
-        +.cleanCategory()
-        +.buildGreeting()
-        +.buildSalutation()
-        +.pick()
-        +.getPostalAddress()
-        +.buildFooter()
-        +.compose()
-    }
-    class LeadIsolationService {
-        +leadIsolationService.ts()
-        +.isolateFailedLead()
-        +.isLeadInManualReview()
-        +.getLeadMessageHistory()
-    }
-    class StageOutreachService {
-        +stageOutreachService.ts()
-        +.getLeadStage()
-        +.sendNextStageToLead()
-        +.sendBulkNextStage()
-    }
-```
+- [InboundRepliesModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L1) (73 connections)
+- [fetchRecentMessages](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L257) (4 connections)
+- [handleSyncClick()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L607) (4 connections)
+- [fetchInboundHistory](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L275) (3 connections)
+- [handleApproveAndSend()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L703) (3 connections)
+- [fetchUnmatched](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L285) (2 connections)
+- [handleSendComposerReply()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L732) (2 connections)
+- [loadExtraHistory()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L559) (2 connections)
+- [[actionFeedback, setActionFeedback]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L225) (1 connections)
+- [activeThread](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L520) (1 connections)
+- [activeThreadMessages](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L582) (1 connections)
+- [[allInboundHistory, setAllInboundHistory]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L209) (1 connections)
+- [[allRecentMessages, setAllRecentMessages]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L208) (1 connections)
+- [allThreads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L394) (1 connections)
+- [[approvingReplyId, setApprovingReplyId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L227) (1 connections)
+- [attachments](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L1404) (1 connections)
+- [baseDataset](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L316) (1 connections)
+- [ch](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L1068) (1 connections)
+- [channel](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L1875) (1 connections)
+- [[channelFilter, setChannelFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L204) (1 connections)
+- [chatScrollRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L238) (1 connections)
+- [cleanWaNumber](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L1878) (1 connections)
+- [[composerChannel, setComposerChannel]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L234) (1 connections)
+- [[composerText, setComposerText]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L233) (1 connections)
+- [[dateFilter, setDateFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx#L205) (1 connections)
+- *... and 47 more nodes in this community*
 
 ## Relationships
 
@@ -79,19 +37,12 @@ classDiagram
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanCopywriterService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/leadIsolationService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/leadIsolationService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/stageOutreachService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/stageOutreachService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/whatsappSessionService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/whatsappSessionService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ClientAuditModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ClientAuditModal.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/InboundRepliesModal.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 189 (70%)
-- INFERRED: 82 (30%)
+- EXTRACTED: 156 (99%)
+- INFERRED: 1 (1%)
 - AMBIGUOUS: 0 (0%)
 
 ---

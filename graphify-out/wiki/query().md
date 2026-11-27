@@ -1,190 +1,191 @@
 # query()
 
-> God node · 126 connections · [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/db.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/db.ts#L43)
+> God node · 114 connections · [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/db.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/db.ts#L43)
 
 ## Call Trace Diagram
 
 ```mermaid
 sequenceDiagram
     participant P0 as query()
-    participant P1 as .sendEmail()
-    participant P2 as map
-    participant P3 as .sendNextStageToLead()
+    participant P1 as .processGlobalTick()
+    participant P2 as test
+    participant P3 as .sendEmail()
     participant P4 as .getEmailCopy()
-    participant P5 as .processImportedLeads()
-    participant P6 as .executeCommand()
-    participant P7 as .checkHealth()
-    participant P8 as .autoAssignUnassignedLeads()
-    participant P9 as .handleDispatchFailure()
-    participant P10 as parseImport()
-    participant P11 as .scrapeWithCdp()
-    participant P12 as .improviseText()
-    participant P13 as markDuplicates()
-    participant P14 as .ensurePdfForLead()
-    participant P15 as applyStyleToSelection()
-    participant P16 as runCsvTests()
-    participant P17 as validateAuditAsset()
-    participant P18 as .searchGmb()
-    participant P19 as .generatePitchForLead()
-    participant P20 as .getAllAccounts()
-    participant P21 as .generatePost()
-    participant P22 as handleSchedule()
-    participant P23 as buildHumanoidHtml()
-    participant P24 as .analyzeAudit()
-    participant P25 as .extractBouncedRecipient()
-    participant P26 as .getPosts()
-    participant P27 as .getProspectCommentTasks()
-    participant P28 as analyzeSoakLogFile()
-    participant P29 as .buildAuditHtml()
-    participant P30 as .writeFallbackPdf()
-    participant P31 as .sendBulkNextStage()
-    participant P32 as .getModelsStatus()
-    participant P33 as .crawlWebsiteForContact()
-    participant P34 as .normalizeRemoteAuditData()
-    participant P35 as .exportCsv()
-    participant P36 as .bulkVerifyWithWaValidator()
-    participant P37 as handleSendBulkList()
-    participant P38 as .getUnmatchedInboundEmails()
-    participant P39 as .getCommandHistory()
-    participant P40 as markIncomplete()
-    participant P41 as loadExtraHistory()
-    participant P42 as handleExportCsv()
-    participant P43 as selectAllInboxes()
-    participant P44 as handleAddBulkLocations()
-    participant P45 as handleStartScrape()
-    participant P46 as handleSelectAll()
-    participant P47 as handleExportCsv()
-    participant P48 as test
-    participant P49 as .executeEmailDispatch()
-    participant P50 as .isolateFailedLead()
-    participant P51 as .generateAuditPdf()
-    participant P52 as .auditWebsite()
-    participant P53 as .verifyEmail()
-    participant P54 as .hasValidWebsite()
-    participant P55 as .routeOutreachMessage()
-    participant P56 as .processInboundMessage()
-    participant P57 as .getPoolSummary()
-    participant P58 as .getNextAvailableInbox()
-    participant P59 as .getTransporter()
-    participant P60 as .appendSentEmail()
-    participant P61 as classifySmtpError()
-    participant P62 as .isMock()
-    participant P63 as .isTestDatabase()
-    participant P64 as .getInboxById()
-    participant P65 as .sanitizeTokens()
-    participant P66 as .verifyCompliance()
-    participant P67 as .recordDispatch()
-    participant P68 as .processGlobalTick()
-    participant P69 as main()
-    participant P70 as main()
-    participant P71 as main()
-    participant P72 as .isSuppressed()
-    participant P73 as .triggerAuditForLead()
-    participant P74 as .scheduleListDispatch()
-    participant P75 as .runEnrichmentCycle()
-    participant P76 as .syncInboundEmails()
-    participant P77 as .submitContactForm()
-    participant P78 as .autoAssignLeads()
-    participant P79 as .importScrapedLeads()
-    participant P80 as .executeWhatsAppDispatch()
-    participant P81 as main()
-    participant P82 as main()
-    participant P83 as .detectAndSaveFormForLead()
-    participant P84 as .syncFromGoogleMaps()
-    participant P85 as .suppress()
-    participant P86 as .getAccountStatus()
-    participant P87 as .processPendingDispatches()
-    participant P88 as .enrichLead()
-    participant P89 as .flagAndMoveLeadToInvalidList()
-    participant P90 as .createPost()
-    participant P91 as .publishExistingPost()
-    participant P92 as .scheduleBatchDispatch()
-    participant P93 as .executeLinkedInDispatch()
-    participant P94 as .runLocalAudit()
-    participant P95 as runSuppressionTests()
-    participant P96 as .enqueueDraft()
-    participant P97 as .batchVerifyAndUpdateLeads()
-    participant P98 as .checkDailyReset()
-    participant P99 as usePostgresAuthState()
-    participant P100 as .checkAndResetQuotas()
-    participant P101 as .processScheduledPosts()
-    participant P102 as .executeFacebookDispatch()
-    participant P103 as .executeInstagramDispatch()
-    participant P104 as .updateSettings()
-    participant P105 as .reapStaleSendingClaims()
-    participant P106 as .checkReportDeliveryWatchdog()
-    participant P107 as .verifyAndSend()
-    participant P108 as .scrapeSingleLead()
-    participant P109 as .retryFailure()
-    participant P110 as .getAccountCredentials()
-    participant P111 as .approveAndPostComment()
-    participant P112 as .addProspectPostToMonitor()
-    participant P113 as .seedSampleProspectPosts()
-    participant P114 as .deleteFailedDispatches()
-    participant P115 as .acquireLeaderLock()
-    participant P116 as .assignLeadToSlot()
-    participant P117 as .convertLeadToClient()
-    participant P118 as runInboundIntentTests()
-    participant P119 as run28DayRetentionCleanup()
-    participant P120 as .enqueueDraft()
-    participant P121 as .handleInboundWebhook()
-    participant P122 as runMigrations()
-    participant P123 as migrateWebsiteAndCountry()
-    participant P124 as addSuppressionAndSequences()
-    participant P125 as handleUpdateClient()
-    participant P126 as .updateSettings()
-    participant P127 as .handleInboundLeadMessage()
-    participant P128 as .dismissUnmatchedEmail()
-    participant P129 as .clearAllUnmatchedEmails()
-    participant P130 as .resolveFailure()
-    participant P131 as .connectAccount()
-    participant P132 as .disconnectAccount()
-    participant P133 as .deleteAccount()
-    participant P134 as .confirmManualPost()
-    participant P135 as .updatePost()
-    participant P136 as .advanceStep()
-    participant P137 as .delayForOoo()
-    participant P138 as .updateStatusForLead()
-    participant P139 as .releaseLeaderLock()
-    participant P140 as .resumeCircuitBreaker()
-    participant P141 as .saveCommandHistory()
-    participant P142 as runSchedulerTests()
-    participant P143 as .markDraftSent()
-    participant P144 as .markDraftSent()
-    participant P145 as runMigration()
-    participant P146 as seedRealisticCrmData()
-    participant P147 as migrateListsAndEnforceSingleEntity()
-    participant P148 as addLinkedInPublishingColumns()
-    participant P149 as migrateLocationAndCleanWebsites()
-    participant P150 as addScheduledDispatchesTable()
-    participant P151 as addLinkedInTables()
-    participant P152 as migrateBatchesAndRetention()
-    participant P153 as addSeenRepliedToMessages()
-    participant P154 as addMultiChannelScheduling()
-    participant P155 as addManualReviewStatus()
-    participant P156 as migrate()
-    participant P157 as runSeed()
-    participant P158 as addInboundEmailSyncTable()
-    participant P159 as addWhatsAppPostgresSessionTable()
-    participant P160 as migrate()
-    participant P161 as addInboxRotationAndTrigramIndexes()
-    participant P162 as addExtremeAutomation()
-    participant P163 as addChannelAutoAssignmentTrigger()
-    participant P164 as addDealsTasksAndActivities()
-    participant P165 as addAutomatedCadenceAndChannelLists()
-    participant P166 as addAiCommandHistoryTable()
-    participant P167 as .unsuppress()
-    participant P168 as .deleteInbox()
-    participant P169 as .addAccount()
-    participant P170 as .deletePost()
-    participant P171 as .skipCommentTask()
-    participant P172 as .getDispatches()
-    participant P173 as .cancelDispatch()
-    participant P174 as .retryDispatch()
-    participant P175 as .deleteDispatches()
-    participant P176 as .enrollLead()
-    participant P177 as .clearCommandHistory()
-    participant P178 as .processClientFollowUps()
+    participant P5 as runSeniorQA()
+    participant P6 as .executeEmailDispatch()
+    participant P7 as .hasValidWebsite()
+    participant P8 as .isolateFailedLead()
+    participant P9 as .isSuppressed()
+    participant P10 as .handleDispatchFailure()
+    participant P11 as .generateEmail()
+    participant P12 as .executeFunctionality()
+    participant P13 as .normalizeGmbWebsiteUrl()
+    participant P14 as .evaluate()
+    participant P15 as .fetchGoogleProfile()
+    participant P16 as .testTdConnection()
+    participant P17 as .runEnrichmentCycle()
+    participant P18 as .processInboundMessage()
+    participant P19 as cleanSiteUrl()
+    participant P20 as ensurePhoneWithCountryCode()
+    participant P21 as .buildAuditHtml()
+    participant P22 as .analyzeAudit()
+    participant P23 as .normalizeAuditUrl()
+    participant P24 as .runLocalAudit()
+    participant P25 as .classifyInboundReply()
+    participant P26 as .verifyWebsiteLive()
+    participant P27 as .validateAuditPdf()
+    participant P28 as cleanSiteUrl()
+    participant P29 as .crawlSiteForAddress()
+    participant P30 as .scrapeLeadDetails()
+    participant P31 as .buildGreeting()
+    participant P32 as .buildTdAuditRequestUrl()
+    participant P33 as classifySmtpError()
+    participant P34 as .validateSyntax()
+    participant P35 as .isAutomatedOrMarketingEmail()
+    participant P36 as .getPostalAddress()
+    participant P37 as isMapsUrl()
+    participant P38 as resolveCountryCallingCode()
+    participant P39 as .check24HourWindow()
+    participant P40 as migrateWebsiteAndCountry()
+    participant P41 as .parseFormFromHtml()
+    participant P42 as .sanitizeTokens()
+    participant P43 as .verifyCompliance()
+    participant P44 as .inferCategory()
+    participant P45 as .dispatchFunctionality()
+    participant P46 as .isValidBusinessEmail()
+    participant P47 as .extractCleanReply()
+    participant P48 as .cleanLocation()
+    participant P49 as .cleanCategory()
+    participant P50 as sanitizeCsvFormula()
+    participant P51 as cleanHostValue()
+    participant P52 as cleanImapHostValue()
+    participant P53 as sanitizeCsvFormula()
+    participant P54 as calculateDealValue()
+    participant P55 as .humanizeFinding()
+    participant P56 as map
+    participant P57 as .get()
+    participant P58 as .sendNextStageToLead()
+    participant P59 as .set()
+    participant P60 as .triggerAuditForLead()
+    participant P61 as logPipeline()
+    participant P62 as .getSettings()
+    participant P63 as .updateSettings()
+    participant P64 as main()
+    participant P65 as logPipelineError()
+    participant P66 as main()
+    participant P67 as .ensureLeadAuditReady()
+    participant P68 as .autoAssignUnassignedLeads()
+    participant P69 as .logFailure()
+    participant P70 as run()
+    participant P71 as .computeGridState()
+    participant P72 as .isolateAuditFailure()
+    participant P73 as formatDuration()
+    participant P74 as logPipelineThrottled()
+    participant P75 as validateAuditAsset()
+    participant P76 as .ensurePdfForLead()
+    participant P77 as .acquireLeaderLock()
+    participant P78 as .dispatchRollingAudits()
+    participant P79 as .getMailboxForSlot()
+    participant P80 as isValidPdfFile()
+    participant P81 as .clearDeletedOrInvalidSlotAssignments()
+    participant P82 as .reapStaleSendingClaims()
+    participant P83 as .getTurnStatesMap()
+    participant P84 as .recordSlotSendHistory()
+    participant P85 as clearPipelineThrottle()
+    participant P86 as resolveRecipientTimezone()
+    participant P87 as isWithinRecipientWindow()
+    participant P88 as logSlotStep()
+    participant P89 as .claimSlotInFlight()
+    participant P90 as .releaseSlotInFlight()
+    participant P91 as .processImportedLeads()
+    participant P92 as main()
+    participant P93 as .scheduleListDispatch()
+    participant P94 as .getSlotsStatus()
+    participant P95 as .syncInboundEmails()
+    participant P96 as .importScrapedLeads()
+    participant P97 as .executeWhatsAppDispatch()
+    participant P98 as .runLocalAudit()
+    participant P99 as .autoAssignLeads()
+    participant P100 as .scheduleBatchDispatch()
+    participant P101 as run()
+    participant P102 as .submitContactForm()
+    participant P103 as main()
+    participant P104 as main()
+    participant P105 as .detectAndSaveFormForLead()
+    participant P106 as .syncFromGoogleMaps()
+    participant P107 as .suppress()
+    participant P108 as .enrichLead()
+    participant P109 as .flagAndMoveLeadToInvalidList()
+    participant P110 as .releaseDispatch()
+    participant P111 as .togglePause()
+    participant P112 as .persistCompletedAuditResult()
+    participant P113 as .processPendingDispatches()
+    participant P114 as runCsvTests()
+    participant P115 as runSuppressionTests()
+    participant P116 as .verifyAndSend()
+    participant P117 as .batchVerifyAndUpdateLeads()
+    participant P118 as .checkDailyReset()
+    participant P119 as usePostgresAuthState()
+    participant P120 as .retryFailure()
+    participant P121 as .resetLastSlotSent()
+    participant P122 as .checkReportDeliveryWatchdog()
+    participant P123 as .testFiveSlots()
+    participant P124 as performSoftDelete()
+    participant P125 as .scrapeSingleLead()
+    participant P126 as .deleteFailedDispatches()
+    participant P127 as .releaseLeaderLock()
+    participant P128 as .assignLeadToSlot()
+    participant P129 as .convertLeadToClient()
+    participant P130 as withTransaction()
+    participant P131 as runInboundIntentTests()
+    participant P132 as run28DayRetentionCleanup()
+    participant P133 as .handleInboundWebhook()
+    participant P134 as runMigrations()
+    participant P135 as addSuppressionAndSequences()
+    participant P136 as handleUpdateClient()
+    participant P137 as .updateSettings()
+    participant P138 as .handleInboundLeadMessage()
+    participant P139 as .recordDispatch()
+    participant P140 as .dismissUnmatchedEmail()
+    participant P141 as .clearAllUnmatchedEmails()
+    participant P142 as .resolveFailure()
+    participant P143 as .deleteFailedLead()
+    participant P144 as .cancelDispatch()
+    participant P145 as .retryDispatch()
+    participant P146 as .advanceStep()
+    participant P147 as .delayForOoo()
+    participant P148 as .updateStatusForLead()
+    participant P149 as .clearStaleInFlightLocks()
+    participant P150 as .resumeCircuitBreaker()
+    participant P151 as .terminateSlotSchedule()
+    participant P152 as .saveCommandHistory()
+    participant P153 as runSchedulerTests()
+    participant P154 as runMigration()
+    participant P155 as seedRealisticCrmData()
+    participant P156 as migrateListsAndEnforceSingleEntity()
+    participant P157 as migrateLocationAndCleanWebsites()
+    participant P158 as addScheduledDispatchesTable()
+    participant P159 as migrateBatchesAndRetention()
+    participant P160 as addSeenRepliedToMessages()
+    participant P161 as addMultiChannelScheduling()
+    participant P162 as addManualReviewStatus()
+    participant P163 as runSeed()
+    participant P164 as addInboundEmailSyncTable()
+    participant P165 as addWhatsAppPostgresSessionTable()
+    participant P166 as migrate()
+    participant P167 as addInboxRotationAndTrigramIndexes()
+    participant P168 as addExtremeAutomation()
+    participant P169 as addChannelAutoAssignmentTrigger()
+    participant P170 as addDealsTasksAndActivities()
+    participant P171 as addAutomatedCadenceAndChannelLists()
+    participant P172 as addAiCommandHistoryTable()
+    participant P173 as .unsuppress()
+    participant P174 as .deleteInbox()
+    participant P175 as .getDispatches()
+    participant P176 as .deleteDispatches()
+    participant P177 as .enrollLead()
+    participant P178 as .clearCommandHistory()
+    participant P179 as .processClientFollowUps()
     P0->>+ P1: calls
     P1-->>- P0: return
     P1->>+ P0: calls
@@ -283,30 +284,26 @@ sequenceDiagram
     P46-->>- P2: return
     P2->>+ P47: calls
     P47-->>- P2: return
-    P1->>+ P48: calls
-    P48-->>- P1: return
-    P1->>+ P3: calls
-    P3-->>- P1: return
-    P1->>+ P49: calls
-    P49-->>- P1: return
-    P1->>+ P50: calls
-    P50-->>- P1: return
-    P1->>+ P51: calls
-    P51-->>- P1: return
-    P1->>+ P52: calls
-    P52-->>- P1: return
-    P1->>+ P53: calls
-    P53-->>- P1: return
-    P1->>+ P54: calls
-    P54-->>- P1: return
-    P1->>+ P55: calls
-    P55-->>- P1: return
+    P2->>+ P48: calls
+    P48-->>- P2: return
+    P2->>+ P49: calls
+    P49-->>- P2: return
+    P2->>+ P50: calls
+    P50-->>- P2: return
+    P2->>+ P51: calls
+    P51-->>- P2: return
+    P2->>+ P52: calls
+    P52-->>- P2: return
+    P2->>+ P53: calls
+    P53-->>- P2: return
+    P2->>+ P54: calls
+    P54-->>- P2: return
+    P2->>+ P55: calls
+    P55-->>- P2: return
     P1->>+ P56: calls
     P56-->>- P1: return
     P1->>+ P57: calls
     P57-->>- P1: return
-    P1->>+ P23: calls
-    P23-->>- P1: return
     P1->>+ P58: calls
     P58-->>- P1: return
     P1->>+ P59: calls
@@ -317,6 +314,8 @@ sequenceDiagram
     P61-->>- P1: return
     P1->>+ P62: calls
     P62-->>- P1: return
+    P1->>+ P5: calls
+    P5-->>- P1: return
     P1->>+ P63: calls
     P63-->>- P1: return
     P1->>+ P64: calls
@@ -325,84 +324,98 @@ sequenceDiagram
     P65-->>- P1: return
     P1->>+ P66: calls
     P66-->>- P1: return
+    P1->>+ P7: calls
+    P7-->>- P1: return
     P1->>+ P67: calls
     P67-->>- P1: return
+    P1->>+ P8: calls
+    P8-->>- P1: return
+    P1->>+ P68: calls
+    P68-->>- P1: return
+    P1->>+ P10: calls
+    P10-->>- P1: return
+    P1->>+ P9: calls
+    P9-->>- P1: return
+    P1->>+ P69: calls
+    P69-->>- P1: return
+    P1->>+ P70: calls
+    P70-->>- P1: return
+    P1->>+ P71: calls
+    P71-->>- P1: return
+    P1->>+ P72: calls
+    P72-->>- P1: return
+    P1->>+ P73: calls
+    P73-->>- P1: return
+    P1->>+ P74: calls
+    P74-->>- P1: return
+    P1->>+ P75: calls
+    P75-->>- P1: return
+    P1->>+ P76: calls
+    P76-->>- P1: return
+    P1->>+ P77: calls
+    P77-->>- P1: return
+    P1->>+ P78: calls
+    P78-->>- P1: return
+    P1->>+ P79: calls
+    P79-->>- P1: return
+    P1->>+ P80: calls
+    P80-->>- P1: return
+    P1->>+ P81: calls
+    P81-->>- P1: return
+    P1->>+ P82: calls
+    P82-->>- P1: return
+    P1->>+ P83: calls
+    P83-->>- P1: return
+    P1->>+ P84: calls
+    P84-->>- P1: return
+    P1->>+ P85: calls
+    P85-->>- P1: return
+    P1->>+ P86: calls
+    P86-->>- P1: return
+    P1->>+ P87: calls
+    P87-->>- P1: return
+    P1->>+ P88: calls
+    P88-->>- P1: return
+    P1->>+ P89: calls
+    P89-->>- P1: return
+    P1->>+ P90: calls
+    P90-->>- P1: return
+    P0->>+ P58: calls
+    P58-->>- P0: return
     P0->>+ P3: calls
     P3-->>- P0: return
-    P0->>+ P68: calls
-    P68-->>- P0: return
-    P0->>+ P69: calls
-    P69-->>- P0: return
-    P0->>+ P70: calls
-    P70-->>- P0: return
-    P0->>+ P49: calls
-    P49-->>- P0: return
-    P0->>+ P71: calls
-    P71-->>- P0: return
-    P0->>+ P72: calls
-    P72-->>- P0: return
+    P0->>+ P60: calls
+    P60-->>- P0: return
     P0->>+ P5: calls
     P5-->>- P0: return
-    P0->>+ P73: calls
-    P73-->>- P0: return
-    P0->>+ P74: calls
-    P74-->>- P0: return
-    P0->>+ P50: calls
-    P50-->>- P0: return
-    P0->>+ P75: calls
-    P75-->>- P0: return
-    P0->>+ P76: calls
-    P76-->>- P0: return
-    P0->>+ P77: calls
-    P77-->>- P0: return
-    P0->>+ P78: calls
-    P78-->>- P0: return
-    P0->>+ P79: calls
-    P79-->>- P0: return
-    P0->>+ P80: calls
-    P80-->>- P0: return
-    P0->>+ P8: calls
-    P8-->>- P0: return
-    P0->>+ P9: calls
-    P9-->>- P0: return
-    P0->>+ P81: calls
-    P81-->>- P0: return
-    P0->>+ P82: calls
-    P82-->>- P0: return
-    P0->>+ P83: calls
-    P83-->>- P0: return
-    P0->>+ P84: calls
-    P84-->>- P0: return
-    P0->>+ P85: calls
-    P85-->>- P0: return
-    P0->>+ P56: calls
-    P56-->>- P0: return
-    P0->>+ P86: calls
-    P86-->>- P0: return
-    P0->>+ P87: calls
-    P87-->>- P0: return
-    P0->>+ P88: calls
-    P88-->>- P0: return
-    P0->>+ P14: calls
-    P14-->>- P0: return
-    P0->>+ P89: calls
-    P89-->>- P0: return
-    P0->>+ P90: calls
-    P90-->>- P0: return
+    P0->>+ P6: calls
+    P6-->>- P0: return
     P0->>+ P91: calls
     P91-->>- P0: return
+    P0->>+ P64: calls
+    P64-->>- P0: return
+    P0->>+ P63: calls
+    P63-->>- P0: return
+    P0->>+ P66: calls
+    P66-->>- P0: return
     P0->>+ P92: calls
     P92-->>- P0: return
     P0->>+ P93: calls
     P93-->>- P0: return
     P0->>+ P94: calls
     P94-->>- P0: return
-    P0->>+ P16: calls
-    P16-->>- P0: return
     P0->>+ P95: calls
     P95-->>- P0: return
+    P0->>+ P8: calls
+    P8-->>- P0: return
+    P0->>+ P9: calls
+    P9-->>- P0: return
     P0->>+ P96: calls
     P96-->>- P0: return
+    P0->>+ P68: calls
+    P68-->>- P0: return
+    P0->>+ P10: calls
+    P10-->>- P0: return
     P0->>+ P97: calls
     P97-->>- P0: return
     P0->>+ P98: calls
@@ -411,12 +424,14 @@ sequenceDiagram
     P99-->>- P0: return
     P0->>+ P100: calls
     P100-->>- P0: return
-    P0->>+ P20: calls
-    P20-->>- P0: return
     P0->>+ P101: calls
     P101-->>- P0: return
     P0->>+ P102: calls
     P102-->>- P0: return
+    P0->>+ P17: calls
+    P17-->>- P0: return
+    P0->>+ P70: calls
+    P70-->>- P0: return
     P0->>+ P103: calls
     P103-->>- P0: return
     P0->>+ P104: calls
@@ -427,16 +442,18 @@ sequenceDiagram
     P106-->>- P0: return
     P0->>+ P107: calls
     P107-->>- P0: return
+    P0->>+ P18: calls
+    P18-->>- P0: return
+    P0->>+ P72: calls
+    P72-->>- P0: return
     P0->>+ P108: calls
     P108-->>- P0: return
+    P0->>+ P76: calls
+    P76-->>- P0: return
     P0->>+ P109: calls
     P109-->>- P0: return
     P0->>+ P110: calls
     P110-->>- P0: return
-    P0->>+ P26: calls
-    P26-->>- P0: return
-    P0->>+ P27: calls
-    P27-->>- P0: return
     P0->>+ P111: calls
     P111-->>- P0: return
     P0->>+ P112: calls
@@ -457,6 +474,8 @@ sequenceDiagram
     P119-->>- P0: return
     P0->>+ P120: calls
     P120-->>- P0: return
+    P0->>+ P77: calls
+    P77-->>- P0: return
     P0->>+ P121: calls
     P121-->>- P0: return
     P0->>+ P122: calls
@@ -471,10 +490,12 @@ sequenceDiagram
     P126-->>- P0: return
     P0->>+ P127: calls
     P127-->>- P0: return
-    P0->>+ P67: calls
-    P67-->>- P0: return
     P0->>+ P128: calls
     P128-->>- P0: return
+    P0->>+ P82: calls
+    P82-->>- P0: return
+    P0->>+ P84: calls
+    P84-->>- P0: return
     P0->>+ P129: calls
     P129-->>- P0: return
     P0->>+ P130: calls
@@ -487,6 +508,8 @@ sequenceDiagram
     P133-->>- P0: return
     P0->>+ P134: calls
     P134-->>- P0: return
+    P0->>+ P40: calls
+    P40-->>- P0: return
     P0->>+ P135: calls
     P135-->>- P0: return
     P0->>+ P136: calls
@@ -517,6 +540,10 @@ sequenceDiagram
     P148-->>- P0: return
     P0->>+ P149: calls
     P149-->>- P0: return
+    P0->>+ P89: calls
+    P89-->>- P0: return
+    P0->>+ P90: calls
+    P90-->>- P0: return
     P0->>+ P150: calls
     P150-->>- P0: return
     P0->>+ P151: calls
@@ -575,31 +602,33 @@ sequenceDiagram
     P177-->>- P0: return
     P0->>+ P178: calls
     P178-->>- P0: return
+    P0->>+ P179: calls
+    P179-->>- P0: return
 ```
 
 ## Connections by Relation
 
 ### calls
-- [[.sendEmail()]] `INFERRED`
-- [[.sendNextStageToLead()]] `INFERRED`
 - [[.processGlobalTick()]] `INFERRED`
-- [[main()]] `INFERRED`
-- [[main()]] `INFERRED`
-- [[.executeEmailDispatch()]] `INFERRED`
-- [[main()]] `INFERRED`
-- [[.isSuppressed()]] `INFERRED`
-- [[.processImportedLeads()]] `INFERRED`
+- [[.sendNextStageToLead()]] `INFERRED`
+- [[.sendEmail()]] `INFERRED`
 - [[.triggerAuditForLead()]] `INFERRED`
+- [[runSeniorQA()]] `INFERRED`
+- [[.executeEmailDispatch()]] `INFERRED`
+- [[.processImportedLeads()]] `INFERRED`
+- [[main()]] `INFERRED`
+- [[.updateSettings()]] `INFERRED`
+- [[main()]] `INFERRED`
+- [[main()]] `INFERRED`
 - [[.scheduleListDispatch()]] `INFERRED`
-- [[.isolateFailedLead()]] `INFERRED`
-- [[.runEnrichmentCycle()]] `INFERRED`
+- [[.getSlotsStatus()]] `INFERRED`
 - [[.syncInboundEmails()]] `INFERRED`
-- [[.submitContactForm()]] `INFERRED`
-- [[.autoAssignLeads()]] `INFERRED`
+- [[.isolateFailedLead()]] `INFERRED`
+- [[.isSuppressed()]] `INFERRED`
 - [[.importScrapedLeads()]] `INFERRED`
-- [[.executeWhatsAppDispatch()]] `INFERRED`
 - [[.autoAssignUnassignedLeads()]] `INFERRED`
 - [[.handleDispatchFailure()]] `INFERRED`
+- [[.executeWhatsAppDispatch()]] `INFERRED`
 
 ### contains
 - [[db.ts]] `EXTRACTED`

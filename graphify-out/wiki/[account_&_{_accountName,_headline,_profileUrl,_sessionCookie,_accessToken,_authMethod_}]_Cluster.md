@@ -1,29 +1,33 @@
 # [account & { accountName, headline, profileUrl, sessionCookie, accessToken, authMethod }] Cluster
 
-> 20 nodes · cohesion 0.11
+> 24 nodes · cohesion 0.08
 
 ## Key Concepts
 
-- [SuppressionListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L1) (19 connections)
-- [fetchSuppressionData](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L49) (3 connections)
-- [handleAddSuppression()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L75) (2 connections)
-- [handleExportCsv()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L125) (2 connections)
-- [handleRemove()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L108) (2 connections)
-- [[addError, setAddError]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L45) (1 connections)
-- [getReasonBadge()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L150) (1 connections)
-- [[isSubmitting, setIsSubmitting]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L46) (1 connections)
-- [label](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L406) (1 connections)
-- [[loading, setLoading]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L35) (1 connections)
-- [[newDomain, setNewDomain]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L43) (1 connections)
-- [[newEmail, setNewEmail]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L41) (1 connections)
-- [[newPhone, setNewPhone]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L42) (1 connections)
-- [[newReason, setNewReason]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L44) (1 connections)
-- [[records, setRecords]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L26) (1 connections)
-- [[search, setSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L36) (1 connections)
-- [[selectedReason, setSelectedReason]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L37) (1 connections)
-- [[showAddForm, setShowAddForm]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L38) (1 connections)
-- [[stats, setStats]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L27) (1 connections)
-- [[statusMessage, setStatusMessage]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx#L47) (1 connections)
+- [WhatsAppConnectModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L1) (23 connections)
+- [[activeTab, setActiveTab]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L31) (1 connections)
+- [[copiedCode, setCopiedCode]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L34) (1 connections)
+- [[errorMessage, setErrorMessage]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L38) (1 connections)
+- [handleCopyPairingCode()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L164) (1 connections)
+- [handleDisconnect](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L144) (1 connections)
+- [handleRefreshSession](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L105) (1 connections)
+- [handleRequestPairing](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L120) (1 connections)
+- [handleSendTestMessage()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L172) (1 connections)
+- [init()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L55) (1 connections)
+- [[isDisconnecting, setIsDisconnecting]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L36) (1 connections)
+- [isMounted](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L53) (1 connections)
+- [[isRefreshing, setIsRefreshing]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L37) (1 connections)
+- [[isRequestingPairing, setIsRequestingPairing]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L35) (1 connections)
+- [[isSendingTest, setIsSendingTest]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L44) (1 connections)
+- [[pairingCode, setPairingCode]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L33) (1 connections)
+- [[phoneInput, setPhoneInput]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L32) (1 connections)
+- [pollInterval](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L77) (1 connections)
+- [prevConnectedRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L47) (1 connections)
+- [[showTestMessage, setShowTestMessage]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L41) (1 connections)
+- [[testPhone, setTestPhone]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L42) (1 connections)
+- [[testSuccess, setTestSuccess]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L45) (1 connections)
+- [[testText, setTestText]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L43) (1 connections)
+- [[waStatus, setWaStatus]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx#L30) (1 connections)
 
 ## Relationships
 
@@ -31,12 +35,12 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SuppressionListModal.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/WhatsAppConnectModal.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 42 (98%)
-- INFERRED: 1 (2%)
+- EXTRACTED: 46 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

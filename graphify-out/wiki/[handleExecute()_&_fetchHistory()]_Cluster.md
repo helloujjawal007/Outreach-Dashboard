@@ -1,30 +1,65 @@
 # [handleExecute() & fetchHistory()] Cluster
 
-> 21 nodes · cohesion 0.10
+> 25 nodes · cohesion 0.13
 
 ## Key Concepts
 
-- [linkedin.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L1) (20 connections)
-- [account](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L44) (1 connections)
-- [{ accountName, headline, profileUrl, sessionCookie, accessToken, authMethod }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L40) (1 connections)
-- [accounts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L26) (1 connections)
-- [{ customComment }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L279) (1 connections)
-- [draft](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L117) (1 connections)
-- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L65) (1 connections)
-- [linkedinRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L4) (1 connections)
-- [ok](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L66) (1 connections)
-- [post](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L154) (1 connections)
-- [posts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L136) (1 connections)
-- [{ prospectName, prospectHeadline, prospectProfileUrl, postUrl, postSnippet, leadId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L309) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L235) (1 connections)
-- [{ sessionCookie }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L234) (1 connections)
-- [status](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L12) (1 connections)
-- [task](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L313) (1 connections)
-- [tasks](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L264) (1 connections)
-- [{ title, content, status, scheduledFor }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L180) (1 connections)
-- [{ title, content, status, scheduledFor, tags, aiGenerated }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L150) (1 connections)
-- [{ topic, tone, targetAudience, callToAction }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L116) (1 connections)
-- [updated](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts#L280) (1 connections)
+- [.processImportedLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L35) (16 connections)
+- [.autoAssignLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L83) (9 connections)
+- [EmailValidatorService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L64) (8 connections)
+- [.verifyEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L186) (7 connections)
+- [AutomatedIntakeEngine](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L19) (6 connections)
+- [.flagAndMoveLeadToInvalidList()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L289) (6 connections)
+- [ChannelListAutoAssignmentService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L12) (5 connections)
+- [.batchVerifyAndUpdateLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L366) (5 connections)
+- [.ensureChannelLists()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L19) (4 connections)
+- [.validateSyntax()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L72) (4 connections)
+- [emailValidatorService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L1) (4 connections)
+- [.getInitialScheduledPointer()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L336) (3 connections)
+- [.getStartOfRolloverDay()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L367) (3 connections)
+- [.checkDomainMx()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L129) (3 connections)
+- [.getNextBusinessMorning()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L377) (2 connections)
+- [.syncAllExistingLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L220) (2 connections)
+- [.syncLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L201) (2 connections)
+- [.ensureInvalidList()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L252) (2 connections)
+- [.validateEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L179) (2 connections)
+- [.sleep()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L25) (1 connections)
+- [KNOWN_INVALID_USERNAMES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L47) (1 connections)
+- [KNOWN_PLACEHOLDER_DOMAINS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L15) (1 connections)
+- [RFC_EMAIL_REGEX](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L12) (1 connections)
+- [automatedIntakeEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L1) (1 connections)
+- [channelListAutoAssignmentService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L1) (1 connections)
+
+## Class Diagram
+
+```mermaid
+classDiagram
+    class AutomatedIntakeEngine {
+        +automatedIntakeEngine.ts()
+        +.sleep()
+        +.processImportedLeads()
+        +.getInitialScheduledPointer()
+        +.getStartOfRolloverDay()
+        +.getNextBusinessMorning()
+    }
+    class ChannelListAutoAssignmentService {
+        +channelListAutoAssignmentService.ts()
+        +.ensureChannelLists()
+        +.autoAssignLeads()
+        +.syncLead()
+        +.syncAllExistingLeads()
+    }
+    class EmailValidatorService {
+        +emailValidatorService.ts()
+        +.validateSyntax()
+        +.checkDomainMx()
+        +.validateEmail()
+        +.verifyEmail()
+        +.ensureInvalidList()
+        +.flagAndMoveLeadToInvalidList()
+        +.batchVerifyAndUpdateLeads()
+    }
+```
 
 ## Relationships
 
@@ -32,12 +67,14 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/linkedin.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 40 (100%)
-- INFERRED: 0 (0%)
+- EXTRACTED: 70 (71%)
+- INFERRED: 29 (29%)
 - AMBIGUOUS: 0 (0%)
 
 ---

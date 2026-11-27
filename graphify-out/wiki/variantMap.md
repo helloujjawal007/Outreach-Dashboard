@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [testHealthEndpoint()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts#L3) (1 connections)
-- [healthEndpoint.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts#L1) (1 connections)
+- [testRateLimit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts#L3) (1 connections)
+- [rateLimit.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts)
 
 ## Audit Trail
 

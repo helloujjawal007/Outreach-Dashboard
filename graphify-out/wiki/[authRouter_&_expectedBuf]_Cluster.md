@@ -1,17 +1,17 @@
 # [authRouter & expectedBuf] Cluster
 
-> 8 nodes · cohesion 0.32
+> 8 nodes · cohesion 0.25
 
 ## Key Concepts
 
-- [LeadActivityDrawer.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L1) (5 connections)
-- [LeadActivityDrawer()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L86) (4 connections)
-- [computeEstimatedDeal()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L66) (3 connections)
-- [getCountryFlag()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts#L1) (2 connections)
-- [getAvatarGradient()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L57) (2 connections)
-- [AVATAR_GRADIENTS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L47) (1 connections)
-- [getCompanyInitials()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L40) (1 connections)
-- [countryFlag.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts#L1) (1 connections)
+- [failures.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L1) (7 connections)
+- [csvData](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L91) (1 connections)
+- [failuresRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L4) (1 connections)
+- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L38) (1 connections)
+- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L14) (1 connections)
+- [success](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L39) (1 connections)
+- [{ type, slotId, resolved, startDate, endDate, search }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L89) (1 connections)
+- [{ type, slotId, resolved, startDate, endDate, search, limit, offset }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts#L12) (1 connections)
 
 ## Relationships
 
@@ -19,13 +19,12 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/failures.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 16 (84%)
-- INFERRED: 3 (16%)
+- EXTRACTED: 14 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

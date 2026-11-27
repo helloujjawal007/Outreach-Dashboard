@@ -1,35 +1,50 @@
 # [active & activeChannelMeta] Cluster
 
-> 31 nodes · cohesion 0.06
+> 35 nodes · cohesion 0.07
 
 ## Key Concepts
 
-- [LeadImportPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L1) (30 connections)
-- [[activeTab, setActiveTab]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L148) (1 connections)
-- [[batchName, setBatchName]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L161) (1 connections)
-- [bulkStats](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L343) (1 connections)
-- [categorySuggestions](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L46) (1 connections)
-- [displayedRows](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L355) (1 connections)
-- [duplicateWarning](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L190) (1 connections)
-- [emptySingleLead](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L76) (1 connections)
-- [handleFileUpload](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L285) (1 connections)
-- [handleFillSampleLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L261) (1 connections)
-- [handleImportBulk](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L306) (1 connections)
-- [handleLoadSampleBulk](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L335) (1 connections)
-- [handleParse](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L275) (1 connections)
-- [handleResetSingleForm()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L268) (1 connections)
-- [handleSingleSubmit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L207) (1 connections)
-- [[hasParsed, setHasParsed]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L163) (1 connections)
-- [[importError, setImportError]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L187) (1 connections)
-- [[importResult, setImportResult]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L165) (1 connections)
-- [[isImporting, setIsImporting]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L164) (1 connections)
-- [[isSubmittingSingle, setIsSubmittingSingle]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L152) (1 connections)
-- [leadStats](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L374) (1 connections)
-- [[previewFilter, setPreviewFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L352) (1 connections)
-- [[previewSearch, setPreviewSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L353) (1 connections)
-- [[rawText, setRawText]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L160) (1 connections)
-- [recentLeads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L388) (1 connections)
-- *... and 6 more nodes in this community*
+- [FailuresPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L1) (27 connections)
+- [FailureLogService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts#L38) (7 connections)
+- [.retryFailure()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts#L224) (5 connections)
+- [fetchFailures](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L48) (4 connections)
+- [.deleteFailedLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts#L306) (3 connections)
+- [.exportCsv()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts#L382) (3 connections)
+- [.resolveFailure()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts#L213) (3 connections)
+- [handleConfirmDeleteLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L120) (3 connections)
+- [handleResolve()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L78) (3 connections)
+- [handleRetry()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L98) (3 connections)
+- [.getFailures()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts#L121) (2 connections)
+- [handleExportCsv()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L145) (2 connections)
+- [[actionInProgress, setActionInProgress]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L44) (1 connections)
+- [[debouncedSearch, setDebouncedSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L31) (1 connections)
+- [[deleteConfirmRecord, setDeleteConfirmRecord]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L45) (1 connections)
+- [[endDate, setEndDate]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L43) (1 connections)
+- [[feedback, setFeedback]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L46) (1 connections)
+- [isDeleting](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L411) (1 connections)
+- [isResolving](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L409) (1 connections)
+- [isRetrying](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L410) (1 connections)
+- [[loading, setLoading]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L29) (1 connections)
+- [[records, setRecords]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L22) (1 connections)
+- [[resolvedFilter, setResolvedFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L41) (1 connections)
+- [[search, setSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L30) (1 connections)
+- [[selectedSlot, setSelectedSlot]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx#L40) (1 connections)
+- *... and 10 more nodes in this community*
+
+## Class Diagram
+
+```mermaid
+classDiagram
+    class FailureLogService {
+        +failureLogService.ts()
+        +.logFailure()
+        +.getFailures()
+        +.resolveFailure()
+        +.retryFailure()
+        +.deleteFailedLead()
+        +.exportCsv()
+    }
+```
 
 ## Relationships
 
@@ -37,12 +52,13 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/failureLogService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/FailuresPage.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 60 (100%)
-- INFERRED: 0 (0%)
+- EXTRACTED: 75 (85%)
+- INFERRED: 13 (15%)
 - AMBIGUOUS: 0 (0%)
 
 ---

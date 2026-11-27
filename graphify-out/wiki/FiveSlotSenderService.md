@@ -1,6 +1,6 @@
 # FiveSlotSenderService
 
-> God node · 29 connections · [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts#L66)
+> God node · 50 connections · [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts#L155)
 
 ## Connections by Relation
 
@@ -11,23 +11,23 @@
 - [[.processGlobalTick()]] `EXTRACTED`
 - [[.triggerAuditForLead()]] `EXTRACTED`
 - [[.getSettings()]] `EXTRACTED`
+- [[.updateSettings()]] `EXTRACTED`
+- [[.ensureLeadAuditReady()]] `EXTRACTED`
+- [[.getSlotsStatus()]] `EXTRACTED`
 - [[.autoAssignUnassignedLeads()]] `EXTRACTED`
 - [[.handleDispatchFailure()]] `EXTRACTED`
 - [[.runLocalAudit()]] `EXTRACTED`
-- [[.getSlotsStatus()]] `EXTRACTED`
-- [[.updateSettings()]] `EXTRACTED`
-- [[.dispatchRollingAudits()]] `EXTRACTED`
-- [[.reapStaleSendingClaims()]] `EXTRACTED`
-- [[.checkReportDeliveryWatchdog()]] `EXTRACTED`
-- [[.startScheduler()]] `EXTRACTED`
+- [[.testTdConnection()]] `EXTRACTED`
+- [[.isolateAuditFailure()]] `EXTRACTED`
+- [[.computeGridState()]] `EXTRACTED`
+- [[.togglePause()]] `EXTRACTED`
+- [[.persistCompletedAuditResult()]] `EXTRACTED`
 - [[.acquireLeaderLock()]] `EXTRACTED`
 - [[.resetLastSlotSent()]] `EXTRACTED`
-- [[.testTdConnection()]] `EXTRACTED`
-- [[.checkTdStartupConnection()]] `EXTRACTED`
+- [[.syncLastSentFromDb()]] `EXTRACTED`
+- [[.buildTdAuditRequestUrl()]] `EXTRACTED`
 - [[.getMailboxForSlot()]] `EXTRACTED`
-- [[.assignLeadToSlot()]] `EXTRACTED`
-- [[.computeGridState()]] `EXTRACTED`
-- [[.releaseLeaderLock()]] `EXTRACTED`
+- [[.dispatchRollingAudits()]] `EXTRACTED`
 
 ---
 

@@ -1,35 +1,40 @@
 # [test & HumanCopywriterService] Cluster
 
-> 99 nodes · cohesion 0.02
+> 87 nodes · cohesion 0.02
 
 ## Key Concepts
 
-- [CrmPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1) (103 connections)
-- [active](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L614) (1 connections)
-- [activeForm](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L4478) (1 connections)
-- [activeLeads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L631) (1 connections)
-- [activeLeadsCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L515) (1 connections)
-- [attachments](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L5042) (1 connections)
-- [AVATAR_GRADIENTS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L78) (1 connections)
-- [c](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L575) (1 connections)
-- [cat](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L560) (1 connections)
-- [catMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L556) (1 connections)
-- [channel](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L2004) (1 connections)
-- [channelNames](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L761) (1 connections)
-- [cityMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L594) (1 connections)
-- [clients](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1207) (1 connections)
-- [clientsCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L516) (1 connections)
-- [cold](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L644) (1 connections)
-- [confirmRevert](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1486) (1 connections)
-- [conversationsCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L517) (1 connections)
-- [count](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L755) (1 connections)
-- [countryMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L572) (1 connections)
-- [created](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1414) (1 connections)
-- [createdName](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1415) (1 connections)
-- [[crmViewMode, setCrmViewMode]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L126) (1 connections)
-- [currentInStore](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1869) (1 connections)
-- [defs](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L694) (1 connections)
-- *... and 74 more nodes in this community*
+- [conversations.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1) (87 connections)
+- [agentResult](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L419) (1 connections)
+- [{ autonomousInboundAgent }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L421) (1 connections)
+- [bodyText](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1003) (1 connections)
+- [cached](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L110) (1 connections)
+- [channel](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L567) (1 connections)
+- [{
+      channel,
+      leadIds,
+      messages = {},
+      intervalSeconds = 0,
+    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L888) (1 connections)
+- [claimRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L152) (1 connections)
+- [client](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L257) (1 connections)
+- [{ clientId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L67) (1 connections)
+- [clientRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L248) (1 connections)
+- [conversationsRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L5) (1 connections)
+- [convId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L287) (1 connections)
+- [convIds](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L47) (1 connections)
+- [convRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L33) (1 connections)
+- [deletedCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1404) (1 connections)
+- [detection](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1367) (1 connections)
+- [direction](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L568) (1 connections)
+- [directMessageId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1184) (1 connections)
+- [{ emailAdapter }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L264) (1 connections)
+- [emailErrorReason](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L261) (1 connections)
+- [{ emailInboundService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L543) (1 connections)
+- [emailSend](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1050) (1 connections)
+- [{ emailValidatorService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L1035) (1 connections)
+- [{ entityType, id }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts#L859) (1 connections)
+- *... and 62 more nodes in this community*
 
 ## Relationships
 
@@ -37,11 +42,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/conversations.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 201 (100%)
+- EXTRACTED: 173 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

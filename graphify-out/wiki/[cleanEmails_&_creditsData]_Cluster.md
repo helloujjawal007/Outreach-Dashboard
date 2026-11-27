@@ -1,19 +1,20 @@
 # [cleanEmails & creditsData] Cluster
 
-> 10 nodes · cohesion 0.20
+> 11 nodes · cohesion 0.18
 
 ## Key Concepts
 
-- [auth.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L1) (9 connections)
-- [authRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L7) (1 connections)
-- [expectedBuf](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L37) (1 connections)
-- [isMatch](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L40) (1 connections)
-- [isValid](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L77) (1 connections)
-- [loginRateLimiter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L10) (1 connections)
-- [{ password }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L30) (1 connections)
-- [providedBuf](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L36) (1 connections)
-- [token](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L76) (1 connections)
-- [{ token, expiresAt }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts#L48) (1 connections)
+- [activities.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L1) (10 connections)
+- [activitiesRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L37) (1 connections)
+- [activitiesRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L4) (1 connections)
+- [existingActivityTitles](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L63) (1 connections)
+- [insertRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L120) (1 connections)
+- [isOutbound](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L67) (1 connections)
+- [leadId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L35) (1 connections)
+- [{ leadId, dealId, activityType = 'note_added', title, description, metadata = {} }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L111) (1 connections)
+- [mergedActivities](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L64) (1 connections)
+- [messagesRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L46) (1 connections)
+- [syntheticTitle](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts#L68) (1 connections)
 
 ## Relationships
 
@@ -21,11 +22,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auth.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/activities.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 18 (100%)
+- EXTRACTED: 20 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

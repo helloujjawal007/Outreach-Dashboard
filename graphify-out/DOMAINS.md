@@ -79,4 +79,3 @@
 | 74 | Community 74 |  |
 | 75 | Community 75 |  |
 | 76 | Community 76 |  |
-| 77 | Community 77 |  |

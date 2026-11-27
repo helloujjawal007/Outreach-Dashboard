@@ -4,10 +4,10 @@
 
 ## Key Concepts
 
-- [ChannelOutreachHub.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L1) (3 connections)
-- [ChannelOutreachHub()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L70) (1 connections)
-- [isEligible](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L1846) (1 connections)
-- [isSelected](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L1848) (1 connections)
+- [ChannelIcon.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L1) (3 connections)
+- [ChannelIcon()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L22) (1 connections)
+- [colorMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L16) (1 connections)
+- [iconMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L10) (1 connections)
 
 ## Relationships
 
@@ -15,7 +15,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx)
 
 ## Audit Trail
 

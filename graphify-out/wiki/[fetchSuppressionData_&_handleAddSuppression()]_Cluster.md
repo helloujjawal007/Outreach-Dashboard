@@ -1,46 +1,32 @@
 # [fetchSuppressionData & handleAddSuppression()] Cluster
 
-> 17 nodes · cohesion 0.12
+> 23 nodes · cohesion 0.09
 
 ## Key Concepts
 
-- [scheduler.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L1) (16 connections)
-- [assignRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L134) (1 connections)
-- [deletedCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L230) (1 connections)
-- [dispatches](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L182) (1 connections)
-- [{ fiveSlotSenderService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L133) (1 connections)
-- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L199) (1 connections)
-- [ids](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L229) (1 connections)
-- [isClientError](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L59) (1 connections)
-- [{ leadId, channel = 'email', scheduledFor, subject, body, style, stage, customInstructions }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L30) (1 connections)
-- [{
-      leadIds,
-      channel = 'email',
-      inboxIds,
-      linkedinAccountId,
-      scheduledFor,
-      intervalSeconds,
-      style,
-      stage,
-      customInstructions,
-    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L70) (1 connections)
-- [{
-      listId,
-      channel = 'email',
-      inboxIds,
-      linkedinAccountId,
-      scheduledFor,
-      intervalSeconds,
-      style,
-      stage,
-      customInstructions,
-    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L115) (1 connections)
-- [{ listId, leadId, style, stage, customInstructions }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L9) (1 connections)
-- [msg](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L58) (1 connections)
-- [ok](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L200) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L10) (1 connections)
-- [schedulerRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L4) (1 connections)
-- [{ status, channel, listId, limit }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L181) (1 connections)
+- [lists.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L1) (22 connections)
+- [addedCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L183) (1 connections)
+- [allIds](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L120) (1 connections)
+- [cleanLeadIds](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L166) (1 connections)
+- [cleanName](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L53) (1 connections)
+- [countRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L71) (1 connections)
+- [existing](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L56) (1 connections)
+- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L101) (1 connections)
+- [leadId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L229) (1 connections)
+- [{ leadIds }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L159) (1 connections)
+- [listId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L158) (1 connections)
+- [listInfo](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L186) (1 connections)
+- [listName](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L113) (1 connections)
+- [listsRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L7) (1 connections)
+- [matchingLists](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L116) (1 connections)
+- [{ name, description }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L48) (1 connections)
+- [resDelete](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L209) (1 connections)
+- [resInsert](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L174) (1 connections)
+- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L23) (1 connections)
+- [row](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L70) (1 connections)
+- [summary](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L12) (1 connections)
+- [targetList](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L104) (1 connections)
+- [uuidRegex](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts#L165) (1 connections)
 
 ## Relationships
 
@@ -48,11 +34,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/lists.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 32 (100%)
+- EXTRACTED: 44 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

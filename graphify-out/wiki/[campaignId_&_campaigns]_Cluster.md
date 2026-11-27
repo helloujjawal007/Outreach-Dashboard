@@ -1,25 +1,29 @@
 # [campaignId & campaigns] Cluster
 
-> 16 nodes · cohesion 0.14
+> 20 nodes · cohesion 0.10
 
 ## Key Concepts
 
-- [keep-alive.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L1) (15 connections)
-- [sendPing()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L47) (3 connections)
-- [formatUptime()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L35) (2 connections)
-- [getTimestamp()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L43) (2 connections)
-- [shutdown()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L122) (2 connections)
-- [defaultUrl](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L23) (1 connections)
-- [failureCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L32) (1 connections)
-- [handleRetry()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L93) (1 connections)
-- [intervalMinutes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L27) (1 connections)
-- [intervalMs](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L28) (1 connections)
-- [intervalTimer](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L117) (1 connections)
-- [parsedInterval](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L26) (1 connections)
-- [pingCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L30) (1 connections)
-- [startTime](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L33) (1 connections)
-- [successCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L31) (1 connections)
-- [targetUrl](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js#L24) (1 connections)
+- [adapters.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L1) (19 connections)
+- [adaptersRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L5) (1 connections)
+- [convId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L191) (1 connections)
+- [convRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L187) (1 connections)
+- [{ fromPhone, text, messageId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L55) (1 connections)
+- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L42) (1 connections)
+- [{ isClient }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L43) (1 connections)
+- [{ leadIsolationService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L163) (1 connections)
+- [newConv](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L193) (1 connections)
+- [{ phoneNumber }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L117) (1 connections)
+- [{ query }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L186) (1 connections)
+- [{ recipientPhone, text, leadId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L155) (1 connections)
+- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L60) (1 connections)
+- [reviewCheck](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L164) (1 connections)
+- [{ stage }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L30) (1 connections)
+- [state](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L77) (1 connections)
+- [status](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L10) (1 connections)
+- [{ subdomain }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L20) (1 connections)
+- [updatedState](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L101) (1 connections)
+- [{ whatsappSessionService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L76) (1 connections)
 
 ## Relationships
 
@@ -27,12 +31,12 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/keep-alive.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 34 (97%)
-- INFERRED: 1 (3%)
+- EXTRACTED: 38 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

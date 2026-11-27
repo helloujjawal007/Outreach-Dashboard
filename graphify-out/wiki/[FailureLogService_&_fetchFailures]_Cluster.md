@@ -1,35 +1,35 @@
 # [FailureLogService & fetchFailures] Cluster
 
-> 26 nodes · cohesion 0.08
+> 31 nodes · cohesion 0.06
 
 ## Key Concepts
 
-- [App.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L1) (25 connections)
-- [[autoOpenContact, setAutoOpenContact]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L47) (1 connections)
-- [channelCounts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L156) (1 connections)
-- [countryCounts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L133) (1 connections)
-- [counts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L103) (1 connections)
-- [[crmChannelFilter, setCrmChannelFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L41) (1 connections)
-- [[crmCountryFilter, setCrmCountryFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L40) (1 connections)
-- [[crmSubFilter, setCrmSubFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L39) (1 connections)
-- [getInitialPage()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L25) (1 connections)
-- [handleKeyDown()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L60) (1 connections)
-- [handleLogout()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L75) (1 connections)
-- [handleNavigate()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L171) (1 connections)
-- [handleOpenConversation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L192) (1 connections)
-- [handlePopState()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L81) (1 connections)
-- [handleUnauthorized()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L56) (1 connections)
-- [[isAuthenticated, setIsAuthenticated]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L37) (1 connections)
-- [[isAutopilotModalOpen, setIsAutopilotModalOpen]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L44) (1 connections)
-- [[isCommandPaletteOpen, setIsCommandPaletteOpen]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L45) (1 connections)
-- [[isMessagesModalOpen, setIsMessagesModalOpen]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L42) (1 connections)
-- [[isScheduleModalOpen, setIsScheduleModalOpen]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L43) (1 connections)
-- [[isSuppressionModalOpen, setIsSuppressionModalOpen]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L46) (1 connections)
-- [[page, setPage]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L38) (1 connections)
-- [pageTitleMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L201) (1 connections)
-- [store](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L48) (1 connections)
-- [VALID_PAGES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx#L23) (1 connections)
-- *... and 1 more nodes in this community*
+- [CampaignBuilderPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L1) (30 connections)
+- [active](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L511) (1 connections)
+- [activeChannelMeta](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L419) (1 connections)
+- [addStep](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L106) (1 connections)
+- [[aiGeneratingId, setAiGeneratingId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L87) (1 connections)
+- [[campaignCategoryFilter, setCampaignCategoryFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L92) (1 connections)
+- [[campaignChannelFilter, setCampaignChannelFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L91) (1 connections)
+- [[campaignName, setCampaignName]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L78) (1 connections)
+- [[campaignSearch, setCampaignSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L90) (1 connections)
+- [categoryOptions](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L52) (1 connections)
+- [channelOptions](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L26) (1 connections)
+- [filteredCampaigns](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L94) (1 connections)
+- [handleDeleteCampaign](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L218) (1 connections)
+- [handleGenerateAi](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L234) (1 connections)
+- [handleLoadCampaign](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L196) (1 connections)
+- [handleSave](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L170) (1 connections)
+- [Icon](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L510) (1 connections)
+- [insertVariableIntoStep](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L143) (1 connections)
+- [isFirstStep](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L420) (1 connections)
+- [[isSaving, setIsSaving]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L84) (1 connections)
+- [[loadedNotification, setLoadedNotification]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L86) (1 connections)
+- [matchedLeads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L157) (1 connections)
+- [mergeVariables](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L65) (1 connections)
+- [moveStep](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L130) (1 connections)
+- [removeStep](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx#L125) (1 connections)
+- *... and 6 more nodes in this community*
 
 ## Relationships
 
@@ -37,12 +37,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/App.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/main.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/main.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CampaignBuilderPage.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 50 (100%)
+- EXTRACTED: 60 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

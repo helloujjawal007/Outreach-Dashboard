@@ -1,23 +1,26 @@
 # [convId & convRes] Cluster
 
-> 14 nodes · cohesion 0.14
+> 17 nodes · cohesion 0.12
 
 ## Key Concepts
 
-- [SendingHealthPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1) (13 connections)
-- [bounceH](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1548) (1 connections)
-- [bRate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1607) (1 connections)
-- [channelIcon()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1696) (1 connections)
-- [chartMax](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1545) (1 connections)
-- [delivRate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1609) (1 connections)
-- [isCritical](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1611) (1 connections)
-- [isExhausted](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L847) (1 connections)
-- [isWarning](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1610) (1 connections)
-- [recvH](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1547) (1 connections)
-- [rRate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1608) (1 connections)
-- [SendingHealthPage()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L48) (1 connections)
-- [sentH](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L1546) (1 connections)
-- [usagePercent](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx#L846) (1 connections)
+- [slots.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L1) (16 connections)
+- [force](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L48) (1 connections)
+- [history](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L199) (1 connections)
+- [{ leadId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L139) (1 connections)
+- [{ leadIds }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L179) (1 connections)
+- [limit](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L197) (1 connections)
+- [listId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L195) (1 connections)
+- [{ pause }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L108) (1 connections)
+- [{ rebalanceAll, listId, replaceExisting }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L75) (1 connections)
+- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L49) (1 connections)
+- [safeSettings](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L27) (1 connections)
+- [slotId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L143) (1 connections)
+- [{ slotId, pauseSender }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L124) (1 connections)
+- [slotsRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L4) (1 connections)
+- [status](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L12) (1 connections)
+- [updated](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L26) (1 connections)
+- [{ url, secret }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts#L157) (1 connections)
 
 ## Relationships
 
@@ -25,11 +28,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/SendingHealthPage.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/slots.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 26 (100%)
+- EXTRACTED: 32 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

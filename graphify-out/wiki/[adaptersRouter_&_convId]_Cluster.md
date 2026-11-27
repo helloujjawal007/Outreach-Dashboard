@@ -1,39 +1,33 @@
 # [adaptersRouter & convId] Cluster
 
-> 19 nodes · cohesion 0.11
+> 24 nodes · cohesion 0.09
 
 ## Key Concepts
 
-- [inboxes.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L1) (19 connections)
-- [cached](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L33) (1 connections)
-- [deleted](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L149) (1 connections)
-- [{ emailAdapter }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L175) (1 connections)
-- [{ fastCache }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L32) (1 connections)
-- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L123) (1 connections)
-- [inbox](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L170) (1 connections)
-- [inboxes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L9) (1 connections)
-- [inboxesRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L4) (1 connections)
-- [msg](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L23) (1 connections)
-- [{
-      name,
-      email,
-      sender_name,
-      provider = 'smtp',
-      smtp_host,
-      smtp_port = 587,
-      smtp_secure = false,
-      smtp_user,
-      smtp_pass,
-      daily_limit = 40,
-    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L75) (1 connections)
-- [{ name, sender_name, daily_limit, status, smtp_pass }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L124) (1 connections)
-- [payload](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L39) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L95) (1 connections)
-- [sanitizedInboxes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L10) (1 connections)
-- [{ smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, provider }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L51) (1 connections)
-- [summary](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L15) (1 connections)
-- [{ to }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L164) (1 connections)
-- [updated](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts#L126) (1 connections)
+- [AiCopilotPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L1) (23 connections)
+- [handleExecute()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L144) (4 connections)
+- [fetchHistory()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L108) (2 connections)
+- [fetchSuggestions()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L96) (2 connections)
+- [handleFormSubmit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L194) (2 connections)
+- [badgeColors](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L638) (1 connections)
+- [[executing, setExecuting]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L54) (1 connections)
+- [[expandedDetailsId, setExpandedDetailsId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L55) (1 connections)
+- [handleClearChat()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L131) (1 connections)
+- [handleClearHistory()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L121) (1 connections)
+- [handleKeyDown()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L79) (1 connections)
+- [[history, setHistory]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L58) (1 connections)
+- [inputRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L65) (1 connections)
+- [[inputText, setInputText]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L53) (1 connections)
+- [[lastCommand, setLastCommand]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L59) (1 connections)
+- [[loadingHistory, setLoadingHistory]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L62) (1 connections)
+- [[loadingSuggestions, setLoadingSuggestions]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L42) (1 connections)
+- [[messages, setMessages]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L45) (1 connections)
+- [messagesEndRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L64) (1 connections)
+- [quickChips](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L200) (1 connections)
+- [[showHistoryModal, setShowHistoryModal]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L60) (1 connections)
+- [[showRateLimitModal, setShowRateLimitModal]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L61) (1 connections)
+- [[suggestions, setSuggestions]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L41) (1 connections)
+- [topUrgentSuggestion](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx#L257) (1 connections)
 
 ## Relationships
 
@@ -41,11 +35,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/inboxes.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/AiCopilotPage.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 37 (100%)
+- EXTRACTED: 52 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

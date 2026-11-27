@@ -1,14 +1,13 @@
 # [APP_HINT & APP_RELEASE_NAME] Cluster
 
-> 5 nodes · cohesion 0.40
+> 4 nodes · cohesion 0.50
 
 ## Key Concepts
 
-- [version.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts#L1) (4 connections)
-- [APP_HINT](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts#L4) (1 connections)
-- [APP_RELEASE_NAME](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts#L3) (1 connections)
-- [APP_UPDATED_AT](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts#L2) (1 connections)
-- [APP_VERSION](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts#L1) (1 connections)
+- [triggerDocsCanvasAnnotationMode()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L5) (3 connections)
+- [gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L1) (1 connections)
+- [gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L1) (1 connections)
+- [gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js#L1) (1 connections)
 
 ## Relationships
 
@@ -16,11 +15,13 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/version.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js)
 
 ## Audit Trail
 
-- EXTRACTED: 8 (100%)
+- EXTRACTED: 6 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

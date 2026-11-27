@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [testRateLimit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts#L3) (1 connections)
-- [rateLimit.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts#L1) (1 connections)
+- [runAuthTests()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auth-session.test.ts#L1) (1 connections)
+- [auth-session.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auth-session.test.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/rateLimit.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auth-session.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auth-session.test.ts)
 
 ## Audit Trail
 

@@ -1,35 +1,35 @@
 # [auditCallbackAuthMiddleware() & requireAuth()] Cluster
 
-> 89 nodes · cohesion 0.02
+> 77 nodes · cohesion 0.03
 
 ## Key Concepts
 
-- [auditCallback.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L1) (35 connections)
-- [AutopilotControlModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/AutopilotControlModal.tsx#L1) (22 connections)
-- [clients.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/clients.ts#L1) (17 connections)
-- [auth.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts#L1) (10 connections)
-- [auditCallbackAuthMiddleware()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L77) (6 connections)
-- [requireAuth()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts#L158) (6 connections)
-- [checkRateLimit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L16) (4 connections)
-- [status](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/AutopilotControlModal.tsx#L38) (4 connections)
-- [handleUpdateClient()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/clients.ts#L186) (3 connections)
-- [next](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx#L1346) (3 connections)
-- [timingSafeEqualStr()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L33) (2 connections)
-- [extractToken()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts#L130) (2 connections)
-- [verifyScopedPdfToken()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts#L108) (2 connections)
-- [verifySessionToken()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts#L58) (2 connections)
-- [auditCallbackRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L11) (1 connections)
-- [auditsDir](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L238) (1 connections)
-- [base64Data](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L248) (1 connections)
-- [cleanBase64](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L250) (1 connections)
-- [cleanupOldAuditPdfs()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L49) (1 connections)
-- [estimatedBytes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L173) (1 connections)
-- [existingReadyMs](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L157) (1 connections)
-- [extractedFindings](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L205) (1 connections)
-- [{ failureLogService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L190) (1 connections)
-- [filename](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L263) (1 connections)
-- [finalPdfName](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L246) (1 connections)
-- *... and 64 more nodes in this community*
+- [SlotsPanel.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L1) (75 connections)
+- [fetchStatus](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L98) (9 connections)
+- [.terminateSlotSchedule()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts#L457) (3 connections)
+- [handleSaveSettings()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L322) (3 connections)
+- [handleTerminateSchedule()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L206) (3 connections)
+- [handleTestTdConnection()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L76) (3 connections)
+- [isCustomSecretInput()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L71) (3 connections)
+- [onSlotsUpdated()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L176) (3 connections)
+- [fetchHistory](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L146) (2 connections)
+- [handleClearListScope()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L283) (2 connections)
+- [handleDistributeLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L299) (2 connections)
+- [handleQuickCyclePreset()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L250) (2 connections)
+- [handleTogglePause()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L188) (2 connections)
+- [handleTriggerTick()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L229) (2 connections)
+- [active](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L1231) (1 connections)
+- [[activeList, setActiveList]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L35) (1 connections)
+- [[activeSlotNow, setActiveSlotNow]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L32) (1 connections)
+- [agg](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L1225) (1 connections)
+- [clockInterval](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L173) (1 connections)
+- [colors](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L823) (1 connections)
+- [countdown](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L826) (1 connections)
+- [[cycleMinInput, setCycleMinInput]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L56) (1 connections)
+- [diff](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L429) (1 connections)
+- [[expandedHistoryId, setExpandedHistoryId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L50) (1 connections)
+- [[expandedSlot, setExpandedSlot]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L46) (1 connections)
+- *... and 52 more nodes in this community*
 
 ## Relationships
 
@@ -37,16 +37,13 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/middleware/auth.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/clients.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/clients.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/AutopilotControlModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/AutopilotControlModal.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/fiveSlotSenderService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 179 (93%)
-- INFERRED: 14 (7%)
+- EXTRACTED: 173 (98%)
+- INFERRED: 4 (2%)
 - AMBIGUOUS: 0 (0%)
 
 ---

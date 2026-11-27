@@ -4,7 +4,7 @@
 
 ## Key Concepts
 
-- [tailwind.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tailwind.config.js#L1) (0 connections)
+- [eslint.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/eslint.config.js#L1) (0 connections)
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tailwind.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tailwind.config.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/eslint.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/eslint.config.js)
 
 ## Audit Trail
 

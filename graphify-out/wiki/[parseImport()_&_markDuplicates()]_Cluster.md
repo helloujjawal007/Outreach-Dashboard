@@ -1,29 +1,52 @@
 # [parseImport() & markDuplicates()] Cluster
 
-> 20 nodes · cohesion 0.10
+> 25 nodes · cohesion 0.08
 
 ## Key Concepts
 
-- [adapters.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L1) (19 connections)
-- [adaptersRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L5) (1 connections)
-- [convId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L191) (1 connections)
-- [convRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L187) (1 connections)
-- [{ fromPhone, text, messageId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L55) (1 connections)
-- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L42) (1 connections)
-- [{ isClient }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L43) (1 connections)
-- [{ leadIsolationService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L163) (1 connections)
-- [newConv](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L193) (1 connections)
-- [{ phoneNumber }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L117) (1 connections)
-- [{ query }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L186) (1 connections)
-- [{ recipientPhone, text, leadId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L155) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L60) (1 connections)
-- [reviewCheck](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L164) (1 connections)
-- [{ stage }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L30) (1 connections)
-- [state](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L77) (1 connections)
-- [status](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L10) (1 connections)
-- [{ subdomain }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L20) (1 connections)
-- [updatedState](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L101) (1 connections)
-- [{ whatsappSessionService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts#L76) (1 connections)
+- [scheduler.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L1) (25 connections)
+- [assignRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L155) (1 connections)
+- [currentSettings](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L141) (1 connections)
+- [deletedCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L273) (1 connections)
+- [dispatches](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L225) (1 connections)
+- [earliestNextSec](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L178) (1 connections)
+- [{ fiveSlotSenderService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L134) (1 connections)
+- [grid](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L177) (1 connections)
+- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L242) (1 connections)
+- [ids](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L272) (1 connections)
+- [isClientError](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L61) (1 connections)
+- [{ leadId, channel = 'email', scheduledFor, subject, body, style, stage, customInstructions }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L31) (1 connections)
+- [{
+      leadIds,
+      channel = 'email',
+      inboxIds,
+      scheduledFor,
+      intervalSeconds,
+      style,
+      stage,
+      customInstructions,
+    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L72) (1 connections)
+- [{
+      listId,
+      channel = 'email',
+      inboxIds,
+      scheduledFor,
+      intervalSeconds,
+      style,
+      stage,
+      customInstructions,
+    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L117) (1 connections)
+- [{ listId, leadId, style, stage, customInstructions }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L10) (1 connections)
+- [msg](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L60) (1 connections)
+- [parsedInterval](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L91) (1 connections)
+- [parsedLimit](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L224) (1 connections)
+- [resolvedStart](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L135) (1 connections)
+- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L11) (1 connections)
+- [schedulerRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L5) (1 connections)
+- [settings](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L176) (1 connections)
+- [slotSummary](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L161) (1 connections)
+- [{ status, channel, listId, limit }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L223) (1 connections)
+- [waitSec](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts#L179) (1 connections)
 
 ## Relationships
 
@@ -31,11 +54,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/adapters.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scheduler.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 38 (100%)
+- EXTRACTED: 49 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

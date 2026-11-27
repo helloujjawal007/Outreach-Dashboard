@@ -1,6 +1,6 @@
 # EmailSchedulerService
 
-> God node · 21 connections · [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L72)
+> God node · 21 connections · [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L77)
 
 ## Connections by Relation
 
@@ -11,20 +11,20 @@
 - [[.executeEmailDispatch()]] `EXTRACTED`
 - [[.scheduleListDispatch()]] `EXTRACTED`
 - [[.executeWhatsAppDispatch()]] `EXTRACTED`
-- [[.processPendingDispatches()]] `EXTRACTED`
+- [[.logTransition()]] `EXTRACTED`
 - [[.scheduleSingleDispatch()]] `EXTRACTED`
 - [[.scheduleBatchDispatch()]] `EXTRACTED`
-- [[.executeLinkedInDispatch()]] `EXTRACTED`
-- [[.executeFacebookDispatch()]] `EXTRACTED`
-- [[.executeInstagramDispatch()]] `EXTRACTED`
-- [[.sleep()]] `EXTRACTED`
+- [[.releaseDispatch()]] `EXTRACTED`
+- [[.processPendingDispatches()]] `EXTRACTED`
 - [[.deleteFailedDispatches()]] `EXTRACTED`
+- [[.recoverStaleDispatches()]] `EXTRACTED`
+- [[.sleep()]] `EXTRACTED`
+- [[.cancelDispatch()]] `EXTRACTED`
+- [[.retryDispatch()]] `EXTRACTED`
 - [[.calculateBusinessHoursDispatch()]] `EXTRACTED`
 - [[.runBackgroundAuditsForList()]] `EXTRACTED`
 - [[.previewHumanizedEmail()]] `EXTRACTED`
 - [[.getDispatches()]] `EXTRACTED`
-- [[.cancelDispatch()]] `EXTRACTED`
-- [[.retryDispatch()]] `EXTRACTED`
 - [[.deleteDispatches()]] `EXTRACTED`
 - [[.startScheduler()]] `EXTRACTED`
 - [[.stopScheduler()]] `EXTRACTED`

@@ -4,7 +4,7 @@
 
 ## Key Concepts
 
-- [eslint.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/eslint.config.js#L1) (0 connections)
+- [vite.config.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/vite.config.ts#L1) (0 connections)
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/eslint.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/eslint.config.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/vite.config.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/vite.config.ts)
 
 ## Audit Trail
 

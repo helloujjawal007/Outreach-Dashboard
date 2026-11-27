@@ -1,20 +1,23 @@
 # [autopilotRouter & current] Cluster
 
-> 11 nodes · cohesion 0.18
+> 14 nodes · cohesion 0.14
 
 ## Key Concepts
 
-- [unsubscribe.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L1) (10 connections)
-- [confirmationHtml](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L152) (1 connections)
-- [emailParam](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L117) (1 connections)
-- [leadId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L174) (1 connections)
-- [renderPageHtml()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L9) (1 connections)
-- [successHtml](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L242) (1 connections)
-- [targetEmail](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L119) (1 connections)
-- [tokenParam](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L116) (1 connections)
-- [unsubscribeRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L7) (1 connections)
-- [validToken](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L120) (1 connections)
-- [verified](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L123) (1 connections)
+- [CommandPalette.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L1) (13 connections)
+- [baseItems](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L104) (1 connections)
+- [dealItems](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L241) (1 connections)
+- [[dealResults, setDealResults]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L53) (1 connections)
+- [filteredItems](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L276) (1 connections)
+- [handleKeyDown()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L292) (1 connections)
+- [Icon](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L358) (1 connections)
+- [inputRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L55) (1 connections)
+- [isSelected](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L359) (1 connections)
+- [leadItems](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L258) (1 connections)
+- [[leadResults, setLeadResults]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L54) (1 connections)
+- [[query, setQuery]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L51) (1 connections)
+- [[selectedIndex, setSelectedIndex]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L52) (1 connections)
+- [timer](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx#L74) (1 connections)
 
 ## Relationships
 
@@ -22,11 +25,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/CommandPalette.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 20 (100%)
+- EXTRACTED: 26 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

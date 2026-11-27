@@ -1,87 +1,75 @@
 # [GoogleEnrichmentService & cleanSiteUrl()] Cluster
 
-> 49 nodes · cohesion 0.06
+> 51 nodes · cohesion 0.07
 
 ## Key Concepts
 
-- [.sendEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L224) (25 connections)
-- [InboxRotationService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L39) (12 connections)
-- [EmailAdapter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L107) (10 connections)
-- [AutonomousDripEngine](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts#L47) (9 connections)
-- [WorkflowRoutingService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts#L19) (7 connections)
-- [.hasValidWebsite()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts#L23) (7 connections)
-- [.getAllInboxes()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L63) (6 connections)
-- [.getPoolSummary()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L106) (6 connections)
-- [.runDripCycle()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts#L271) (5 connections)
-- [.checkDailyReset()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L45) (5 connections)
-- [.getFullStatus()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts#L204) (4 connections)
-- [.getSettings()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts#L62) (4 connections)
-- [buildHumanoidHtml()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L56) (4 connections)
-- [.appendSentEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSentSyncService.ts#L22) (4 connections)
-- [.getNextAvailableInbox()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L148) (4 connections)
-- [.getTransporter()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L183) (4 connections)
-- [classifySmtpError()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/smtpClassifier.ts#L28) (4 connections)
-- [.updateSettings()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts#L98) (3 connections)
-- [.isMock()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L121) (3 connections)
-- [.isTestDatabase()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L116) (3 connections)
-- [testHtmlEscaping()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/htmlEscape.test.ts#L4) (3 connections)
-- [.getInboxById()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L175) (3 connections)
-- [.recordDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L237) (3 connections)
-- [.testConnection()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts#L270) (3 connections)
-- [emailAdapter.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts#L1) (3 connections)
-- *... and 24 more nodes in this community*
+- [suppression.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/suppression.ts#L1) (13 connections)
+- [.researchAndWrite()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L150) (11 connections)
+- [.generateEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L81) (11 connections)
+- [UnifiedAiService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L27) (10 connections)
+- [HumanizerService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L19) (8 connections)
+- [.generateOutreachCopy()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L214) (8 connections)
+- [.improviseText()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L287) (7 connections)
+- [.checkHealth()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts#L28) (7 connections)
+- [.generateCompletion()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts#L54) (7 connections)
+- [.generateAlgorithmicHumanEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L243) (6 connections)
+- [.classifyInboundReply()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L67) (6 connections)
+- [AiResearchWriterService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L43) (5 connections)
+- [.buildSalutation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L39) (5 connections)
+- [.cleanBusinessName()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L25) (5 connections)
+- [OllamaService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts#L16) (5 connections)
+- [.conductResearch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L47) (4 connections)
+- [.buildSignoff()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L70) (4 connections)
+- [.buildSalutation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L50) (4 connections)
+- [.callOllama()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L320) (4 connections)
+- [.cleanBusinessName()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L37) (4 connections)
+- [.compose()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L74) (3 connections)
+- [runInboundIntentTests()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/inbound-intent.test.ts#L4) (3 connections)
+- [.callGeminiApi()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L276) (3 connections)
+- [.parseSubjectAndBody()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L329) (3 connections)
+- [.batchResearchAndWrite()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L407) (2 connections)
+- *... and 26 more nodes in this community*
 
 ## Class Diagram
 
 ```mermaid
 classDiagram
-    class AutonomousDripEngine {
-        +autonomousDripEngine.ts()
-        +.sleep()
-        +.getSettings()
-        +.updateSettings()
-        +.getLeadsDueCounts()
-        +.getFullStatus()
-        +.runDripCycle()
-        +.startScheduler()
-        +.stopScheduler()
+    class AiResearchWriterService {
+        +aiResearchWriterService.ts()
+        +.conductResearch()
+        +.researchAndWrite()
+        +.improviseText()
+        +.batchResearchAndWrite()
     }
-    class EmailAdapter {
-        +emailAdapter.ts()
-        +.setMockMode()
-        +.isTestDatabase()
-        +.isMock()
-        +.getMockSentLog()
-        +.clearMockSentLog()
-        +.getWarmupStatus()
-        +.setSubdomain()
-        +.setWarmupStage()
-        +.sendEmail()
+    class HumanizerService {
+        +humanizerService.ts()
+        +.cleanBusinessName()
+        +.buildSalutation()
+        +.pick()
+        +.buildSignoff()
+        +.compose()
+        +.generateEmail()
+        +.generateAlgorithmicHumanEmail()
     }
-    class EmailSentSyncService {
-        +emailSentSyncService.ts()
-        +.appendSentEmail()
+    class OllamaService {
+        +ollamaService.ts()
+        +.constructor()
+        +.checkHealth()
+        +.generateCompletion()
+        +.generateRuleBasedFallback()
     }
-    class InboxRotationService {
-        +inboxRotationService.ts()
-        +.checkDailyReset()
-        +.getAllInboxes()
-        +.getPoolSummary()
-        +.getNextAvailableInbox()
-        +.getInboxById()
-        +.getTransporter()
-        +.recordDispatch()
-        +.testConnection()
-        +.addInbox()
-    }
-    class WorkflowRoutingService {
-        +workflowRoutingService.ts()
-        +.hasValidWebsite()
-        +.cleanWebsiteUrl()
-        +.determineWorkflow()
-        +.validateAuditPdf()
-        +.sanitizeTokens()
-        +.verifyCompliance()
+    class UnifiedAiService {
+        +unifiedAiService.ts()
+        +.constructor()
+        +.cleanBusinessName()
+        +.buildSalutation()
+        +.classifyInboundReply()
+        +.generateOutreachCopy()
+        +.callGeminiApi()
+        +.callOllama()
+        +.parseSubjectAndBody()
+        +.generateDynamicAlgorithmicCopy()
     }
 ```
 
@@ -91,19 +79,19 @@ classDiagram
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/adapters/emailAdapter.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/autonomousDripEngine.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSentSyncService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSentSyncService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/inboxRotationService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/workflowRoutingService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/smtpClassifier.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/utils/smtpClassifier.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/CrmPage.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/htmlEscape.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/htmlEscape.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/suppression.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/suppression.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/inbound-intent.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/inbound-intent.test.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 122 (65%)
-- INFERRED: 65 (35%)
+- EXTRACTED: 136 (75%)
+- INFERRED: 46 (25%)
 - AMBIGUOUS: 0 (0%)
 
 ---

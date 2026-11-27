@@ -5,11 +5,11 @@
 ## Key Concepts
 
 - [Sidebar.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L1) (5 connections)
-- [[channelsExpanded, setChannelsExpanded]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L89) (1 connections)
-- [[countriesExpanded, setCountriesExpanded]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L88) (1 connections)
-- [[crmExpanded, setCrmExpanded]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L87) (1 connections)
-- [isChannelActive](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L463) (1 connections)
-- [isCountryActive](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L394) (1 connections)
+- [[channelsExpanded, setChannelsExpanded]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L93) (1 connections)
+- [[countriesExpanded, setCountriesExpanded]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L92) (1 connections)
+- [[crmExpanded, setCrmExpanded]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L91) (1 connections)
+- [isChannelActive](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L467) (1 connections)
+- [isCountryActive](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Sidebar.tsx#L398) (1 connections)
 
 ## Relationships
 

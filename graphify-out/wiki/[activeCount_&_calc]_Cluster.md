@@ -1,46 +1,35 @@
 # [activeCount & calc] Cluster
 
-> 41 nodes · cohesion 0.05
+> 46 nodes · cohesion 0.05
 
 ## Key Concepts
 
-- [deals.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L1) (40 connections)
-- [activeCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L62) (1 connections)
-- [calc](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L207) (1 connections)
-- [calculation](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L143) (1 connections)
-- [clientCheck](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L342) (1 connections)
-- [closedAt](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L280) (1 connections)
-- [closedTotal](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L95) (1 connections)
-- [currentDeal](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L276) (1 connections)
-- [currentDealRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L271) (1 connections)
-- [deal](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L238) (1 connections)
-- [deals](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L54) (1 connections)
-- [dealsResult](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L36) (1 connections)
-- [dealsRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L5) (1 connections)
-- [finalContactEmail](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L183) (1 connections)
-- [finalContactName](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L182) (1 connections)
-- [finalContactPhone](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L184) (1 connections)
-- [finalProbability](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L186) (1 connections)
-- [finalValue](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L185) (1 connections)
-- [{ id }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L268) (1 connections)
-- [insertRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L219) (1 connections)
-- [isStageChanging](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L278) (1 connections)
-- [lead](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L142) (1 connections)
-- [leadId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L125) (1 connections)
-- [{
-      leadId,
-      title,
-      value = 0,
-      stage = 'interested',
-      probability = 25,
-      contactName,
-      contactEmail,
-      contactPhone,
-      notes,
-      expectedCloseDate,
-    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L164) (1 connections)
-- [leadInfo](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts#L344) (1 connections)
-- *... and 16 more nodes in this community*
+- [auditCallback.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L1) (45 connections)
+- [auditCallbackAuthMiddleware()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L81) (6 connections)
+- [checkRateLimit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L20) (4 connections)
+- [timingSafeEqualStr()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L37) (2 connections)
+- [auditCallbackRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L15) (1 connections)
+- [auditsDir](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L304) (1 connections)
+- [base64Data](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L357) (1 connections)
+- [cleanBase64](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L359) (1 connections)
+- [cleanupOldAuditPdfs()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L53) (1 connections)
+- [domain](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L317) (1 connections)
+- [estimatedBytes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L195) (1 connections)
+- [existingReadyMs](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L179) (1 connections)
+- [extractedFindings](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L285) (1 connections)
+- [{ failureLogService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L214) (1 connections)
+- [filename](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L372) (1 connections)
+- [finalPdfName](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L313) (1 connections)
+- [finalPdfPath](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L312) (1 connections)
+- [finalScore](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L231) (1 connections)
+- [finalTakeaways](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L248) (1 connections)
+- [genResult](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L346) (1 connections)
+- [hasAuditError](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L206) (1 connections)
+- [hasSendFailure](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L499) (1 connections)
+- [incomingMs](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L180) (1 connections)
+- [incomingTimestamp](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L177) (1 connections)
+- [isAuditQuarantine](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts#L494) (1 connections)
+- *... and 21 more nodes in this community*
 
 ## Relationships
 
@@ -48,12 +37,12 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/deals.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/auditCallback.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 80 (100%)
-- INFERRED: 0 (0%)
+- EXTRACTED: 94 (95%)
+- INFERRED: 5 (5%)
 - AMBIGUOUS: 0 (0%)
 
 ---

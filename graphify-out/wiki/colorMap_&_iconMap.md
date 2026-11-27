@@ -1,13 +1,12 @@
 # colorMap & iconMap
 
-> 4 nodes · cohesion 0.50
+> 3 nodes · cohesion 0.67
 
 ## Key Concepts
 
-- [scraperLocations.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L1) (3 connections)
-- [CONTINENTS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L23) (1 connections)
-- [COUNTRIES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L51) (1 connections)
-- [POPULAR_CATEGORIES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L34) (1 connections)
+- [types.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts#L1) (2 connections)
+- [channelLabels](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts#L247) (1 connections)
+- [consentLabels](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts#L254) (1 connections)
 
 ## Relationships
 
@@ -15,11 +14,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 6 (100%)
+- EXTRACTED: 4 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

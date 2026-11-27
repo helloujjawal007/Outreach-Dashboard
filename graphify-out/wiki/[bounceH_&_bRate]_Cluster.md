@@ -1,21 +1,33 @@
 # [bounceH & bRate] Cluster
 
-> 12 nodes · cohesion 0.17
+> 16 nodes · cohesion 0.12
 
 ## Key Concepts
 
-- [autopilot.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L1) (11 connections)
-- [autopilotRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L6) (1 connections)
-- [current](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L28) (1 connections)
-- [currentRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L44) (1 connections)
-- [{ dripSettings, inboundSettings }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L75) (1 connections)
-- [{ enabled, target = 'drip_engine' }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L25) (1 connections)
-- [fullStatus](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L93) (1 connections)
-- [limit](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L129) (1 connections)
-- [newEnabled](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L29) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L109) (1 connections)
-- [status](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L11) (1 connections)
-- [updated](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts#L30) (1 connections)
+- [tasks.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L1) (15 connections)
+- [completedAt](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L162) (1 connections)
+- [countsRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L67) (1 connections)
+- [{ id }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L153) (1 connections)
+- [insertRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L124) (1 connections)
+- [isPending](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L160) (1 connections)
+- [{
+      leadId,
+      dealId,
+      title,
+      dueDate = new Date().toISOString(),
+      priority = 'medium',
+      taskType = 'follow_up',
+      notes,
+    }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L110) (1 connections)
+- [newStatus](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L161) (1 connections)
+- [params](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L42) (1 connections)
+- [queryText](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L32) (1 connections)
+- [{ status, filter, leadId }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L30) (1 connections)
+- [summary](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L81) (1 connections)
+- [taskRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L155) (1 connections)
+- [tasksRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L64) (1 connections)
+- [tasksRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L4) (1 connections)
+- [updateRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts#L164) (1 connections)
 
 ## Relationships
 
@@ -23,11 +35,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/autopilot.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/tasks.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 22 (100%)
+- EXTRACTED: 30 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

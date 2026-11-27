@@ -1,35 +1,35 @@
 # [availableCountries & [batchName, setBatchName]] Cluster
 
-> 75 nodes · cohesion 0.03
+> 65 nodes · cohesion 0.03
 
 ## Key Concepts
 
-- [LinkedInOutreachHub.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L1) (68 connections)
-- [applyStyleToSelection()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts#L197) (6 connections)
-- [linkedinBeautifier.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts#L1) (5 connections)
-- [beautifyLinkedInPost()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts#L102) (4 connections)
-- [toUnicodeBold()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts#L10) (3 connections)
-- [toPlainText()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts#L46) (2 connections)
-- [toUnicodeItalic()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts#L30) (2 connections)
-- [fetchData](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L131) (2 connections)
-- [handleBeautifyPost()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L212) (2 connections)
-- [handleFormatSelection()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L221) (2 connections)
-- [handleGeneratePost()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L188) (2 connections)
-- [handlePublishPost()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L297) (2 connections)
-- [[activeTab, setActiveTab]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L44) (1 connections)
-- [applySchedulePreset()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L272) (1 connections)
-- [[approvingTaskId, setApprovingTaskId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L86) (1 connections)
-- [[autoPilotEnabled, setAutoPilotEnabled]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L79) (1 connections)
-- [[commentFeedback, setCommentFeedback]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L87) (1 connections)
-- [[comments, setComments]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L47) (1 connections)
-- [[commentSearch, setCommentSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L94) (1 connections)
-- [[commentStatusFilter, setCommentStatusFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L93) (1 connections)
-- [[connectCookie, setConnectCookie]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L53) (1 connections)
-- [[connectHeadline, setConnectHeadline]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L52) (1 connections)
-- [[connectName, setConnectName]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L51) (1 connections)
-- [[cookieTestResult, setCookieTestResult]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L56) (1 connections)
-- [[copiedPostId, setCopiedPostId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx#L72) (1 connections)
-- *... and 50 more nodes in this community*
+- [DealsPipelinePage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L1) (37 connections)
+- [ai.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L1) (26 connections)
+- [loadPipeline()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L79) (5 connections)
+- [handleMarkLost()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L134) (3 connections)
+- [handleMoveToStage()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L120) (3 connections)
+- [prompt](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L47) (2 connections)
+- [handleCreateDeal()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L157) (2 connections)
+- [handleDeleteDeal()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L145) (2 connections)
+- [handleStageMove()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx#L111) (2 connections)
+- [{ aiCommandService }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L180) (1 connections)
+- [aiRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L5) (1 connections)
+- [{ businessName, category, channel = 'email', intent }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L45) (1 connections)
+- [check](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L272) (1 connections)
+- [{ commandText, actionType, payload }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L192) (1 connections)
+- [contact](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L83) (1 connections)
+- [contacts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L151) (1 connections)
+- [data](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L211) (1 connections)
+- [diagnostic](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L253) (1 connections)
+- [{ functionality, payload }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L283) (1 connections)
+- [health](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L9) (1 connections)
+- [{ leadId, channel = 'email', customPrompt }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L82) (1 connections)
+- [{ leadIds, channel = 'email' }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L134) (1 connections)
+- [leadRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L87) (1 connections)
+- [leadsRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L141) (1 connections)
+- [limit](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts#L209) (1 connections)
+- *... and 40 more nodes in this community*
 
 ## Relationships
 
@@ -37,13 +37,13 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LinkedInOutreachHub.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/linkedinBeautifier.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/ai.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/DealsPipelinePage.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 156 (96%)
-- INFERRED: 7 (4%)
+- EXTRACTED: 136 (99%)
+- INFERRED: 2 (1%)
 - AMBIGUOUS: 0 (0%)
 
 ---

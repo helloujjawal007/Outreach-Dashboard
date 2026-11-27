@@ -1,63 +1,35 @@
 # [[autoOpenContact, setAutoOpenContact] & channelCounts] Cluster
 
-> 24 nodes · cohesion 0.14
+> 31 nodes · cohesion 0.06
 
 ## Key Concepts
 
-- [.processImportedLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L34) (11 connections)
-- [.autoAssignLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L106) (8 connections)
-- [EmailValidatorService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L65) (8 connections)
-- [.verifyEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L187) (8 connections)
-- [.flagAndMoveLeadToInvalidList()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L331) (6 connections)
-- [AutomatedIntakeEngine](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L18) (5 connections)
-- [ChannelListAutoAssignmentService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L14) (5 connections)
-- [.batchVerifyAndUpdateLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L408) (5 connections)
-- [.ensureChannelLists()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L21) (4 connections)
-- [.validateSyntax()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L73) (4 connections)
-- [emailValidatorService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L1) (4 connections)
-- [.getInitialScheduledPointer()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L298) (3 connections)
-- [.getStartOfRolloverDay()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L329) (3 connections)
-- [.checkDomainMx()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L130) (3 connections)
-- [.syncAllExistingLeads()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L284) (2 connections)
-- [.syncLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L262) (2 connections)
-- [.ensureInvalidList()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L294) (2 connections)
-- [.validateEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L180) (2 connections)
-- [.sleep()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L24) (1 connections)
-- [KNOWN_INVALID_USERNAMES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L48) (1 connections)
-- [KNOWN_PLACEHOLDER_DOMAINS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L16) (1 connections)
-- [RFC_EMAIL_REGEX](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts#L13) (1 connections)
-- [automatedIntakeEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts#L1) (1 connections)
-- [channelListAutoAssignmentService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts#L1) (1 connections)
-
-## Class Diagram
-
-```mermaid
-classDiagram
-    class AutomatedIntakeEngine {
-        +automatedIntakeEngine.ts()
-        +.sleep()
-        +.processImportedLeads()
-        +.getInitialScheduledPointer()
-        +.getStartOfRolloverDay()
-    }
-    class ChannelListAutoAssignmentService {
-        +channelListAutoAssignmentService.ts()
-        +.ensureChannelLists()
-        +.autoAssignLeads()
-        +.syncLead()
-        +.syncAllExistingLeads()
-    }
-    class EmailValidatorService {
-        +emailValidatorService.ts()
-        +.validateSyntax()
-        +.checkDomainMx()
-        +.validateEmail()
-        +.verifyEmail()
-        +.ensureInvalidList()
-        +.flagAndMoveLeadToInvalidList()
-        +.batchVerifyAndUpdateLeads()
-    }
-```
+- [LeadImportPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L1) (30 connections)
+- [[activeTab, setActiveTab]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L130) (1 connections)
+- [[batchName, setBatchName]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L143) (1 connections)
+- [bulkStats](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L310) (1 connections)
+- [categorySuggestions](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L43) (1 connections)
+- [displayedRows](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L322) (1 connections)
+- [duplicateWarning](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L169) (1 connections)
+- [emptySingleLead](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L70) (1 connections)
+- [handleFileUpload](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L252) (1 connections)
+- [handleFillSampleLead()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L228) (1 connections)
+- [handleImportBulk](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L273) (1 connections)
+- [handleLoadSampleBulk](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L302) (1 connections)
+- [handleParse](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L242) (1 connections)
+- [handleResetSingleForm()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L235) (1 connections)
+- [handleSingleSubmit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L186) (1 connections)
+- [[hasParsed, setHasParsed]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L145) (1 connections)
+- [[importError, setImportError]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L166) (1 connections)
+- [[importResult, setImportResult]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L147) (1 connections)
+- [[isImporting, setIsImporting]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L146) (1 connections)
+- [[isSubmittingSingle, setIsSubmittingSingle]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L134) (1 connections)
+- [leadStats](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L341) (1 connections)
+- [[previewFilter, setPreviewFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L319) (1 connections)
+- [[previewSearch, setPreviewSearch]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L320) (1 connections)
+- [[rawText, setRawText]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L142) (1 connections)
+- [recentLeads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx#L355) (1 connections)
+- *... and 6 more nodes in this community*
 
 ## Relationships
 
@@ -65,14 +37,12 @@ classDiagram
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/automatedIntakeEngine.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/channelListAutoAssignmentService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailValidatorService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/pages/LeadImportPage.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 66 (73%)
-- INFERRED: 25 (27%)
+- EXTRACTED: 60 (100%)
+- INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 
 ---

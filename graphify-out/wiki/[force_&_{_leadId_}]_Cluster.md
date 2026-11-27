@@ -1,19 +1,21 @@
 # [force & { leadId }] Cluster
 
-> 10 nodes · cohesion 0.20
+> 12 nodes · cohesion 0.18
 
 ## Key Concepts
 
-- [emailVerifier.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L1) (9 connections)
-- [cleanEmails](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L56) (1 connections)
-- [creditsData](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L11) (1 connections)
-- [{ email }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L27) (1 connections)
-- [{ emails }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L51) (1 connections)
-- [emailVerifierRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L5) (1 connections)
-- [forceRefresh](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L10) (1 connections)
-- [millionRaw](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L34) (1 connections)
-- [results](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L57) (1 connections)
-- [unifiedResult](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts#L33) (1 connections)
+- [MultiModelRateLimitModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L1) (11 connections)
+- [handleTestRateLimit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L52) (2 connections)
+- [loadModels()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L40) (2 connections)
+- [[checkingModelId, setCheckingModelId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L25) (1 connections)
+- [[diagnosticReport, setDiagnosticReport]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L24) (1 connections)
+- [handleRunFullDiagnostic()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L73) (1 connections)
+- [isChecking](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L199) (1 connections)
+- [isHealthy](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L198) (1 connections)
+- [[loading, setLoading]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L22) (1 connections)
+- [[models, setModels]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L21) (1 connections)
+- [[rateCheckFeedback, setRateCheckFeedback]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L26) (1 connections)
+- [[runningDiagnostic, setRunningDiagnostic]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L23) (1 connections)
 
 ## Relationships
 
@@ -21,11 +23,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/emailVerifier.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 18 (100%)
+- EXTRACTED: 24 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [useStore()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/store.ts#L22) (1 connections)
-- [store.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/store.ts#L1) (1 connections)
+- [EmptyState()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx#L10) (1 connections)
+- [EmptyState.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/store.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/store.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/EmptyState.tsx)
 
 ## Audit Trail
 

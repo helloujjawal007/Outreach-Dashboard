@@ -4,10 +4,10 @@
 
 ## Key Concepts
 
-- [ChannelIcon.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L1) (3 connections)
-- [ChannelIcon()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L28) (1 connections)
-- [colorMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L19) (1 connections)
-- [iconMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx#L10) (1 connections)
+- [scraperLocations.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L1) (3 connections)
+- [CONTINENTS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L23) (1 connections)
+- [COUNTRIES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L51) (1 connections)
+- [POPULAR_CATEGORIES](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts#L34) (1 connections)
 
 ## Relationships
 
@@ -15,7 +15,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelIcon.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/data/scraperLocations.ts)
 
 ## Audit Trail
 

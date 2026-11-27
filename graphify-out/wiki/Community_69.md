@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [runPdfCleanupTest()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts#L5) (1 connections)
-- [pdf-cleanup.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts#L1) (1 connections)
+- [SENDER_CONFIG](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts#L6) (1 connections)
+- [senderConfig.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/pdf-cleanup.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts)
 
 ## Audit Trail
 

@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [SENDER_CONFIG](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts#L6) (1 connections)
-- [senderConfig.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts#L1) (1 connections)
+- [main()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/test-five-slots.ts#L20) (1 connections)
+- [test-five-slots.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/test-five-slots.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/config/senderConfig.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/test-five-slots.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/scripts/test-five-slots.ts)
 
 ## Audit Trail
 

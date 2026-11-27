@@ -4,7 +4,7 @@
 
 ## Key Concepts
 
-- [postcss.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/postcss.config.js#L1) (0 connections)
+- [vite-env.d.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/vite-env.d.ts#L1) (0 connections)
 
 ## Relationships
 
@@ -12,7 +12,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/postcss.config.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/postcss.config.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/vite-env.d.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/vite-env.d.ts)
 
 ## Audit Trail
 

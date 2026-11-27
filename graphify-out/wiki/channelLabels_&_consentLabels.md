@@ -1,12 +1,11 @@
 # channelLabels & consentLabels
 
-> 3 nodes · cohesion 0.67
+> 2 nodes · cohesion 1.00
 
 ## Key Concepts
 
-- [Badge.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx#L1) (2 connections)
-- [Badge()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx#L19) (1 connections)
-- [variantMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx#L10) (1 connections)
+- [testHealthEndpoint()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts#L3) (1 connections)
+- [healthEndpoint.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -14,11 +13,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/healthEndpoint.test.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 4 (100%)
+- EXTRACTED: 2 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

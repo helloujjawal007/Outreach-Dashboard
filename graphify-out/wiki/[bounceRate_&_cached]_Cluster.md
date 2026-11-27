@@ -1,35 +1,35 @@
 # [bounceRate & cached] Cluster
 
-> 34 nodes · cohesion 0.06
+> 42 nodes · cohesion 0.05
 
 ## Key Concepts
 
-- [health.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L1) (33 connections)
-- [bounceRate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L146) (1 connections)
-- [cached](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L21) (1 connections)
-- [col](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L242) (1 connections)
-- [complaintRate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L147) (1 connections)
-- [dailyData](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L110) (1 connections)
-- [dbOk](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L183) (1 connections)
-- [{ fastCache }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L20) (1 connections)
-- [healthDescription](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L152) (1 connections)
-- [healthLabel](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L151) (1 connections)
-- [healthLevel](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L150) (1 connections)
-- [healthRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L7) (1 connections)
-- [isAuthenticated](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L13) (1 connections)
-- [isAutoThrottled](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L153) (1 connections)
-- [metricsByDate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L75) (1 connections)
-- [metricsRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L26) (1 connections)
-- [ollamaStatus](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L184) (1 connections)
-- [overallReplyRate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L148) (1 connections)
-- [pendingDrafts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L72) (1 connections)
-- [queueRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L69) (1 connections)
-- [repliesByDate](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L63) (1 connections)
-- [repliesRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L49) (1 connections)
-- [responsePayload](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L186) (1 connections)
-- [throttleReason](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L154) (1 connections)
-- [todayFormatted](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts#L97) (1 connections)
-- *... and 9 more nodes in this community*
+- [ScheduleOutreachModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L1) (41 connections)
+- [fetchQueue()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L149) (6 connections)
+- [.deleteFailedDispatches()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts#L2048) (4 connections)
+- [handleDeleteFailedDispatches()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L309) (3 connections)
+- [handleDeleteFailedDispatches()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L399) (2 connections)
+- [getPresetTime](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L98) (2 connections)
+- [handleCancelDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L284) (2 connections)
+- [handleDeleteDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L327) (2 connections)
+- [handlePresetSelect()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L162) (2 connections)
+- [handleRetryDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L296) (2 connections)
+- [[activeTab, setActiveTab]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L48) (1 connections)
+- [batchScheduleTimeline](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L360) (1 connections)
+- [[body, setBody]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L71) (1 connections)
+- [[cancellingId, setCancellingId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L92) (1 connections)
+- [[channel, setChannel]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L49) (1 connections)
+- [[copyMode, setCopyMode]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L67) (1 connections)
+- [[customInstructions, setCustomInstructions]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L72) (1 connections)
+- [[deletingId, setDeletingId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L95) (1 connections)
+- [[dispatches, setDispatches]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L87) (1 connections)
+- [eligibleLeads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L169) (1 connections)
+- [filteredQueue](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L340) (1 connections)
+- [[intervalSeconds, setIntervalSeconds]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L64) (1 connections)
+- [isBatch](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L57) (1 connections)
+- [[isDeletingFailed, setIsDeletingFailed]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L94) (1 connections)
+- [[isGeneratingAi, setIsGeneratingAi]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx#L73) (1 connections)
+- *... and 17 more nodes in this community*
 
 ## Relationships
 
@@ -37,12 +37,14 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/health.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/emailSchedulerService.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 66 (100%)
-- INFERRED: 0 (0%)
+- EXTRACTED: 93 (95%)
+- INFERRED: 5 (5%)
 - AMBIGUOUS: 0 (0%)
 
 ---

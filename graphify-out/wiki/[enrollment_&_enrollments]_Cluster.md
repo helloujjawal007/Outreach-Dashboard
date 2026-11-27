@@ -1,16 +1,16 @@
 # [enrollment & enrollments] Cluster
 
-> 7 nodes · cohesion 0.29
+> 7 nodes · cohesion 0.33
 
 ## Key Concepts
 
-- [SlotsPanel.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L1) (6 connections)
-- [colors](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L323) (1 connections)
-- [countdown](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L325) (1 connections)
-- [isActive](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L324) (1 connections)
-- [leads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L430) (1 connections)
-- [slot](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L428) (1 connections)
-- [SlotsPanel()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx#L23) (1 connections)
+- [LeadActivityDrawer.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L1) (4 connections)
+- [LeadActivityDrawer()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L64) (3 connections)
+- [getCountryFlag()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts#L1) (2 connections)
+- [getAvatarGradient()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L55) (2 connections)
+- [AVATAR_GRADIENTS](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L45) (1 connections)
+- [getCompanyInitials()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx#L38) (1 connections)
+- [countryFlag.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -18,12 +18,13 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/SlotsPanel.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/LeadActivityDrawer.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/utils/countryFlag.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 12 (100%)
-- INFERRED: 0 (0%)
+- EXTRACTED: 12 (86%)
+- INFERRED: 2 (14%)
 - AMBIGUOUS: 0 (0%)
 
 ---

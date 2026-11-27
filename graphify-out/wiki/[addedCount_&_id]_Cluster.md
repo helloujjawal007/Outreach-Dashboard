@@ -1,21 +1,24 @@
 # [addedCount & id] Cluster
 
-> 12 nodes · cohesion 0.18
+> 15 nodes · cohesion 0.13
 
 ## Key Concepts
 
-- [MultiModelRateLimitModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L1) (11 connections)
-- [handleTestRateLimit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L52) (2 connections)
-- [loadModels()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L40) (2 connections)
-- [[checkingModelId, setCheckingModelId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L25) (1 connections)
-- [[diagnosticReport, setDiagnosticReport]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L24) (1 connections)
-- [handleRunFullDiagnostic()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L73) (1 connections)
-- [isChecking](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L199) (1 connections)
-- [isHealthy](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L198) (1 connections)
-- [[loading, setLoading]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L22) (1 connections)
-- [[models, setModels]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L21) (1 connections)
-- [[rateCheckFeedback, setRateCheckFeedback]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L26) (1 connections)
-- [[runningDiagnostic, setRunningDiagnostic]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx#L23) (1 connections)
+- [unsubscribe.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L1) (14 connections)
+- [bodyToken](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L176) (1 connections)
+- [confirmationHtml](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L159) (1 connections)
+- [escapeHtmlAttr()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L112) (1 connections)
+- [leadId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L181) (1 connections)
+- [queryToken](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L177) (1 connections)
+- [renderPageHtml()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L9) (1 connections)
+- [safeEmail](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L157) (1 connections)
+- [safeToken](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L158) (1 connections)
+- [successHtml](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L259) (1 connections)
+- [targetEmail](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L126) (1 connections)
+- [tokenParam](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L124) (1 connections)
+- [unsubscribeRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L7) (1 connections)
+- [validToken](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L127) (1 connections)
+- [verified](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts#L130) (1 connections)
 
 ## Relationships
 
@@ -23,11 +26,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/MultiModelRateLimitModal.tsx)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/unsubscribe.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 24 (100%)
+- EXTRACTED: 28 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

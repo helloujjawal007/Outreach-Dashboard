@@ -4,8 +4,8 @@
 
 ## Key Concepts
 
-- [testLeadEmailValidation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/leadEmailValidation.test.ts#L3) (1 connections)
-- [leadEmailValidation.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/leadEmailValidation.test.ts#L1) (1 connections)
+- [testPdfAndTokenSecurity()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts#L3) (1 connections)
+- [auditPdfSecurity.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts#L1) (1 connections)
 
 ## Relationships
 
@@ -13,7 +13,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/leadEmailValidation.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/leadEmailValidation.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/auditPdfSecurity.test.ts)
 
 ## Audit Trail
 

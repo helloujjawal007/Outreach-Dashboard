@@ -1,19 +1,20 @@
 # [activitiesRes & activitiesRouter] Cluster
 
-> 10 nodes · cohesion 0.20
+> 11 nodes · cohesion 0.18
 
 ## Key Concepts
 
-- [scraper.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L1) (9 connections)
-- [{ category, categories, country, state, city, locations, limit, leadsPerLocation, continent }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L9) (1 connections)
-- [hasLocations](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L22) (1 connections)
-- [leads](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L30) (1 connections)
-- [{ leads, listId, batchName, scheduledStartTime }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L70) (1 connections)
-- [parsedLeadsPerLocation](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L28) (1 connections)
-- [parsedLimit](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L27) (1 connections)
-- [result](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L76) (1 connections)
-- [scraperRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L4) (1 connections)
-- [targetCategories](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts#L11) (1 connections)
+- [campaigns.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L1) (10 connections)
+- [{ campaign, steps: insertedSteps }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L52) (1 connections)
+- [campaigns](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L26) (1 connections)
+- [campaignsRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L9) (1 connections)
+- [campaignsRouter](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L4) (1 connections)
+- [delRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L97) (1 connections)
+- [id](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L95) (1 connections)
+- [list](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L14) (1 connections)
+- [{ name, targetCategory, targetChannel, steps }](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L46) (1 connections)
+- [stepsByCampaign](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L12) (1 connections)
+- [stepsRes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts#L10) (1 connections)
 
 ## Relationships
 
@@ -21,11 +22,11 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/scraper.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/campaigns.ts)
 
 ## Audit Trail
 
-- EXTRACTED: 18 (100%)
+- EXTRACTED: 20 (100%)
 - INFERRED: 0 (0%)
 - AMBIGUOUS: 0 (0%)
 

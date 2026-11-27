@@ -1,77 +1,35 @@
 # [auditRouter & auditsDir] Cluster
 
-> 51 nodes · cohesion 0.07
+> 55 nodes · cohesion 0.04
 
 ## Key Concepts
 
-- [suppression.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/suppression.ts#L1) (13 connections)
-- [.researchAndWrite()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L152) (11 connections)
-- [.generateEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L81) (11 connections)
-- [UnifiedAiService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L27) (10 connections)
-- [.generateCompletion()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts#L54) (9 connections)
-- [HumanizerService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L19) (8 connections)
-- [.checkHealth()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts#L28) (8 connections)
-- [.generateOutreachCopy()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L214) (8 connections)
-- [.improviseText()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L300) (7 connections)
-- [.generateAlgorithmicHumanEmail()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L243) (6 connections)
-- [.classifyInboundReply()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L67) (6 connections)
-- [AiResearchWriterService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L43) (5 connections)
-- [.buildSalutation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L39) (5 connections)
-- [.cleanBusinessName()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L25) (5 connections)
-- [.generatePost()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/linkedinService.ts#L302) (5 connections)
-- [OllamaService](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts#L16) (5 connections)
-- [.conductResearch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts#L47) (4 connections)
-- [.buildSignoff()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L70) (4 connections)
-- [.buildSalutation()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L50) (4 connections)
-- [.callOllama()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L320) (4 connections)
-- [.cleanBusinessName()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L37) (4 connections)
-- [.compose()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L74) (3 connections)
-- [.pick()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts#L63) (3 connections)
-- [runInboundIntentTests()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/inbound-intent.test.ts#L4) (3 connections)
-- [.callGeminiApi()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts#L276) (3 connections)
-- *... and 26 more nodes in this community*
-
-## Class Diagram
-
-```mermaid
-classDiagram
-    class AiResearchWriterService {
-        +aiResearchWriterService.ts()
-        +.conductResearch()
-        +.researchAndWrite()
-        +.improviseText()
-        +.batchResearchAndWrite()
-    }
-    class HumanizerService {
-        +humanizerService.ts()
-        +.cleanBusinessName()
-        +.buildSalutation()
-        +.pick()
-        +.buildSignoff()
-        +.compose()
-        +.generateEmail()
-        +.generateAlgorithmicHumanEmail()
-    }
-    class OllamaService {
-        +ollamaService.ts()
-        +.constructor()
-        +.checkHealth()
-        +.generateCompletion()
-        +.generateRuleBasedFallback()
-    }
-    class UnifiedAiService {
-        +unifiedAiService.ts()
-        +.constructor()
-        +.cleanBusinessName()
-        +.buildSalutation()
-        +.classifyInboundReply()
-        +.generateOutreachCopy()
-        +.callGeminiApi()
-        +.callOllama()
-        +.parseSubjectAndBody()
-        +.generateDynamicAlgorithmicCopy()
-    }
-```
+- [ScheduleListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L1) (55 connections)
+- [handleScheduleSubmit()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L275) (2 connections)
+- [active](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L109) (1 connections)
+- [[activeTab, setActiveTab]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L37) (1 connections)
+- [[cancellingId, setCancellingId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L68) (1 connections)
+- [[channel, setChannel]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L41) (1 connections)
+- [closeTimerRef](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L255) (1 connections)
+- [computedOffsetMin](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L692) (1 connections)
+- [curCycle](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L95) (1 connections)
+- [[customInstructions, setCustomInstructions]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L48) (1 connections)
+- [d](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L85) (1 connections)
+- [[deletingId, setDeletingId]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L71) (1 connections)
+- [[dispatchStatusFilter, setDispatchStatusFilter]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L67) (1 connections)
+- [eligibleLeadsCount](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L218) (1 connections)
+- [fallbackInboxes](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L114) (1 connections)
+- [fetchDispatchesStable](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L167) (1 connections)
+- [fetchPreview](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L237) (1 connections)
+- [filteredDispatches](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L428) (1 connections)
+- [handleCancelDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L375) (1 connections)
+- [handleDeleteDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L416) (1 connections)
+- [handleRetryDispatch()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L387) (1 connections)
+- [handleSelectChannel()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L225) (1 connections)
+- [[_inboxes, setInboxes]](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L53) (1 connections)
+- [initialListId](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L76) (1 connections)
+- [interval](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx#L170) (1 connections)
+- *... and 30 more nodes in this community*
 
 ## Relationships
 
@@ -79,19 +37,12 @@ classDiagram
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/suppression.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/routes/suppression.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/aiResearchWriterService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/humanizerService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/linkedinService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/linkedinService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/ollamaService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/server/src/services/unifiedAiService.ts)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleOutreachModal.tsx)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/inbound-intent.test.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/tests/inbound-intent.test.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ScheduleListModal.tsx)
 
 ## Audit Trail
 
-- EXTRACTED: 136 (72%)
-- INFERRED: 53 (28%)
+- EXTRACTED: 109 (99%)
+- INFERRED: 1 (1%)
 - AMBIGUOUS: 0 (0%)
 
 ---

@@ -4,9 +4,9 @@
 
 ## Key Concepts
 
-- [types.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts#L1) (2 connections)
-- [channelLabels](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts#L254) (1 connections)
-- [consentLabels](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts#L264) (1 connections)
+- [Badge.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx#L1) (2 connections)
+- [Badge()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx#L19) (1 connections)
+- [variantMap](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx#L10) (1 connections)
 
 ## Relationships
 
@@ -14,7 +14,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/types.ts)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/Badge.tsx)
 
 ## Audit Trail
 

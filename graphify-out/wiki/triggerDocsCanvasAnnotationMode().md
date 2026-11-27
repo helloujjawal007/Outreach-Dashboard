@@ -4,10 +4,10 @@
 
 ## Key Concepts
 
-- [s](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L7) (3 connections)
-- [content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L1) (1 connections)
-- [content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L1) (1 connections)
-- [content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js#L1) (1 connections)
+- [ChannelOutreachHub.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L1) (3 connections)
+- [ChannelOutreachHub()](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L65) (1 connections)
+- [isEligible](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L1694) (1 connections)
+- [isSelected](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx#L1696) (1 connections)
 
 ## Relationships
 
@@ -15,9 +15,7 @@
 
 ## Source Files
 
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-155.0.8059.39/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome-headless-shell/mac_arm-157.0.8103.38/chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js)
-- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/chrome-bin/chrome/mac_arm-157.0.8103.38/chrome-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js)
+- [/Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx](file:///Users/ujjawal/Documents/ChatBot/Outreach-Dashboard/src/components/ChannelOutreachHub.tsx)
 
 ## Audit Trail
 

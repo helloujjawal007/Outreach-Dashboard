@@ -629,7 +629,7 @@ export class FiveSlotSenderService {
           send_window_end_hour: row.send_window_end_hour !== null && row.send_window_end_hour !== undefined ? parseInt(row.send_window_end_hour as any, 10) : 24,
           weekdays_only: row.weekdays_only ?? false,
           global_min_gap_sec: Number.isFinite(Number(row.global_min_gap_sec))
-            ? Math.max(1, parseInt(row.global_min_gap_sec as any, 10))
+            ? Math.max(60, parseInt(row.global_min_gap_sec as any, 10)) // min 60s anti-spam
             : 90,
           td_endpoint_url: resolvedTdUrl,
           td_shared_secret: resolvedInboundSecret,
@@ -870,9 +870,9 @@ export class FiveSlotSenderService {
         : current.slot_batch_size ?? 1;
     const nextGlobalMinGapSec =
       partial.global_min_gap_sec !== undefined
-        ? Math.max(1, Math.round(Number(partial.global_min_gap_sec)))
+        ? Math.max(60, Math.round(Number(partial.global_min_gap_sec))) // min 60s anti-spam
         : incomingCycle !== undefined || partial.slot_offset_min !== undefined
-        ? Math.max(5, Math.floor(nextOffsetMin * 60 * 0.75))
+        ? Math.max(60, Math.floor(nextOffsetMin * 60 * 0.75)) // min 60s
         : current.global_min_gap_sec ?? 90;
     const nextActiveListId =
       'active_list_id' in partial ? partial.active_list_id || null : current.active_list_id ?? null;
